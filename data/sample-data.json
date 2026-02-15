@@ -1,0 +1,159 @@
+{
+  "calendar": [
+    {
+      "id": "2026-02-W1",
+      "month": "02",
+      "year": 2026,
+      "week": 1,
+      "country": "India",
+      "city": "Kovalam",
+      "dayTypes": {
+        "travel": 0,
+        "buffer": 0,
+        "stable": 0,
+        "project": 6,
+        "social": 1
+      },
+      "capacities": {
+        "total": 21.5,
+        "priority": 12,
+        "secondary1": 6,
+        "secondary2": 0
+      },
+      "capstone": "Kalari",
+      "capstoneCategory": "Physical"
+    },
+    {
+      "id": "2026-02-W2",
+      "month": "02",
+      "year": 2026,
+      "week": 2,
+      "country": "India",
+      "city": "Kovalam",
+      "dayTypes": {
+        "travel": 0,
+        "buffer": 0,
+        "stable": 2,
+        "project": 4,
+        "social": 1
+      },
+      "capacities": {
+        "total": 21.5,
+        "priority": 10,
+        "secondary1": 6,
+        "secondary2": 2
+      },
+      "capstone": "Surfing",
+      "capstoneCategory": "Physical"
+    }
+  ],
+  "priorities": [
+    {
+      "id": "2026-02-priorities",
+      "month": "02",
+      "year": 2026,
+      "period": "month",
+      "focuses": {
+        "primary": "Trading",
+        "secondary1": "Photography",
+        "secondary2": "Learning",
+        "floor": "Physical"
+      },
+      "timestamp": "2026-02-01T12:00:00.000Z"
+    }
+  ],
+  "epics": [
+    {
+      "id": "epic-1",
+      "name": "Systematic trading process",
+      "vision": "A systematic trading process which coherently synthesizes market and economic information into signals.",
+      "focus": "Trading",
+      "priorityLevel": "primary",
+      "month": "02",
+      "status": "active",
+      "createdAt": "2026-02-01T12:00:00.000Z"
+    },
+    {
+      "id": "epic-2",
+      "name": "Categorization of Photos Taken",
+      "vision": "A database which allows easy lookup of photos by location, subject, roll type, etc.",
+      "focus": "Photography",
+      "priorityLevel": "secondary1",
+      "month": "02",
+      "status": "active",
+      "createdAt": "2026-02-01T12:00:00.000Z"
+    },
+    {
+      "id": "epic-3",
+      "name": "Algebra fundamentals",
+      "vision": "Build strong foundation in algebra for finance and trading applications.",
+      "focus": "Learning",
+      "priorityLevel": "secondary2",
+      "month": "02",
+      "status": "active",
+      "createdAt": "2026-02-01T12:00:00.000Z"
+    },
+    {
+      "id": "epic-4",
+      "name": "Surfing progression",
+      "vision": "Improve surfing technique and confidence in larger waves.",
+      "focus": "Physical",
+      "priorityLevel": "floor",
+      "month": "02",
+      "status": "active",
+      "createdAt": "2026-02-01T12:00:00.000Z"
+    }
+  ],
+  "stories": [
+    {
+      "id": "story-1",
+      "epicId": "epic-1",
+      "name": "Research pipeline development",
+      "description": "Set up basic research workflow and data sources for market analysis.",
+      "month": "02",
+      "focus": "Trading",
+      "weight": 3,
+      "completed": false,
+      "createdAt": "2026-02-01T12:00:00.000Z"
+    },
+    {
+      "id": "story-2",
+      "epicId": "epic-2",
+      "name": "Create photo categorization system",
+      "description": "Design and implement spreadsheet structure with categories for location, subject, roll type.",
+      "month": "02",
+      "focus": "Photography",
+      "weight": 2,
+      "completed": false,
+      "createdAt": "2026-02-01T12:00:00.000Z"
+    },
+    {
+      "id": "story-3",
+      "epicId": "epic-3",
+      "name": "Complete algebra basics",
+      "description": "Work through algebra problem sets and examples for finance applications.",
+      "month": "02",
+      "focus": "Learning",
+      "weight": 1,
+      "completed": false,
+      "createdAt": "2026-02-01T12:00:00.000Z"
+    }
+  ],
+  "dailyLogs": [
+    {
+      "id": "log-2026-02-03",
+      "date": "2026-02-03",
+      "month": "2026-02",
+      "dayType": "Project",
+      "plannedCapacity": 3.5,
+      "actualCapacity": 3.5,
+      "stories": [
+        { "id": "story-2", "timeSpent": 1.5 },
+        { "id": "story-3", "timeSpent": 0.5 }
+      ],
+      "utilized": 2,
+      "notes": "Good progress on photo database. Algebra session shorter than planned but productive."
+    }
+  ],
+  "version": 1
+}

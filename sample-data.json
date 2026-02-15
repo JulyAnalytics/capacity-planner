@@ -1,0 +1,205 @@
+{
+  "calendar": [
+    {
+      "id": "2026-02-W1",
+      "month": "02",
+      "year": "2026",
+      "week": "1",
+      "country": "India",
+      "city": "Kovalam",
+      "dayTypes": {
+        "travel": 0,
+        "buffer": 0,
+        "stable": 0,
+        "project": 6,
+        "social": 1
+      },
+      "capacities": {
+        "total": 3.5,
+        "priority": 6,
+        "secondary1": 3,
+        "secondary2": 0
+      },
+      "capstone": "Kalari",
+      "capstoneCategory": "Physical"
+    },
+    {
+      "id": "2026-02-W2",
+      "month": "02",
+      "year": "2026",
+      "week": "2",
+      "country": "India",
+      "city": "Kovalam",
+      "dayTypes": {
+        "travel": 0,
+        "buffer": 0,
+        "stable": 2,
+        "project": 4,
+        "social": 1
+      },
+      "capacities": {
+        "total": 3.5,
+        "priority": 5,
+        "secondary1": 3,
+        "secondary2": 1
+      },
+      "capstone": "Surfing",
+      "capstoneCategory": "Physical"
+    }
+  ],
+  "priorities": [
+    {
+      "id": "02",
+      "periodType": "month",
+      "month": "02",
+      "week": "",
+      "focuses": {
+        "primary": "Trading",
+        "secondary1": "Photography",
+        "secondary2": "Learning",
+        "floor": "Physical"
+      },
+      "timestamp": "2026-02-01T12:00:00.000Z"
+    }
+  ],
+  "epics": [
+    {
+      "id": "epic-1",
+      "month": "02",
+      "week": "",
+      "focus": "Trading",
+      "subPriority": "Research",
+      "name": "Systematic trading process",
+      "vision": "A systematic trading process which coherently synthesizes market and economic information into signals which are evaluated and tested for confidence and probability over a range of timeframes, the best of which can be expressed in terms of risk positioned within the market when defined entry criteria are met and closed when any of a range of possible exit criteria are met.",
+      "priorityLevel": "Primary",
+      "createdAt": "2026-02-01T12:00:00.000Z"
+    },
+    {
+      "id": "epic-2",
+      "month": "02",
+      "week": "",
+      "focus": "Photography",
+      "subPriority": "Photo Database",
+      "name": "Categorization of Photos Taken",
+      "vision": "As a professional photographer, I want to have a database which allows me to easily know what photos are in a roll, which locations a roll was shot in, the roll type, subjects, etc",
+      "priorityLevel": "Primary",
+      "createdAt": "2026-02-01T12:00:00.000Z"
+    },
+    {
+      "id": "epic-3",
+      "month": "02",
+      "week": "",
+      "focus": "Photography",
+      "subPriority": "Photo Database",
+      "name": "Spreadsheet setup",
+      "vision": "Rename and enter first roll into spreadsheet",
+      "priorityLevel": "Primary",
+      "createdAt": "2026-02-01T12:00:00.000Z"
+    },
+    {
+      "id": "epic-4",
+      "month": "02",
+      "week": "",
+      "focus": "Learning",
+      "subPriority": "Math",
+      "name": "Algebra fundamentals",
+      "vision": "Build strong foundation in algebra for finance and trading applications",
+      "priorityLevel": "Secondary",
+      "createdAt": "2026-02-01T12:00:00.000Z"
+    },
+    {
+      "id": "epic-5",
+      "month": "02",
+      "week": "",
+      "focus": "Physical",
+      "subPriority": "Surfing",
+      "name": "Surfing progression",
+      "vision": "Improve surfing technique and confidence in larger waves",
+      "priorityLevel": "Floor",
+      "createdAt": "2026-02-01T12:00:00.000Z"
+    }
+  ],
+  "stories": [
+    {
+      "id": "story-1",
+      "epicId": "epic-2",
+      "epicName": "Categorization of Photos Taken",
+      "focus": "Photography",
+      "month": "02",
+      "week": "",
+      "name": "Create photo categorization system",
+      "description": "As a photographer, I want to categorize photos by location, subject, and roll type so that I can easily find specific images",
+      "actionItem": "Design and implement spreadsheet structure with categories",
+      "weight": 2,
+      "completed": false,
+      "createdAt": "2026-02-01T12:00:00.000Z"
+    },
+    {
+      "id": "story-2",
+      "epicId": "epic-3",
+      "epicName": "Spreadsheet setup",
+      "focus": "Photography",
+      "month": "02",
+      "week": "1",
+      "name": "Photobase V1 setup",
+      "description": "As a photographer, I want to set up the initial photo database so that I can start organizing my work",
+      "actionItem": "Rename and enter first roll into spreadsheet",
+      "weight": 1.5,
+      "completed": false,
+      "createdAt": "2026-02-01T12:00:00.000Z"
+    },
+    {
+      "id": "story-3",
+      "epicId": "epic-1",
+      "epicName": "Systematic trading process",
+      "focus": "Trading",
+      "month": "02",
+      "week": "",
+      "name": "Research pipeline development",
+      "description": "As a trader, I want a multifaceted research pipeline which highlights relevant trends in the market and extracts and synthesizes signal from the confluence of the various research streams",
+      "actionItem": "Set up basic research workflow and data sources",
+      "weight": 3,
+      "completed": false,
+      "createdAt": "2026-02-01T12:00:00.000Z"
+    },
+    {
+      "id": "story-4",
+      "epicId": "epic-4",
+      "epicName": "Algebra fundamentals",
+      "focus": "Learning",
+      "month": "02",
+      "week": "",
+      "name": "Complete algebra basics",
+      "description": "As a learner, I want to master algebra fundamentals so that I can apply them to finance and trading",
+      "actionItem": "Work through algebra problem sets and examples",
+      "weight": 1,
+      "completed": false,
+      "createdAt": "2026-02-01T12:00:00.000Z"
+    }
+  ],
+  "dailyLogs": [
+    {
+      "id": "log-2026-02-03",
+      "date": "2026-02-03",
+      "dayType": "Project",
+      "actualCapacity": 2.5,
+      "utilized": 2,
+      "storyEfforts": [
+        {
+          "storyId": "story-2",
+          "storyName": "Photobase V1 setup",
+          "epicName": "Spreadsheet setup",
+          "effort": 1.5
+        },
+        {
+          "storyId": "story-4",
+          "storyName": "Complete algebra basics",
+          "epicName": "Algebra fundamentals",
+          "effort": 0.5
+        }
+      ],
+      "notes": "Good progress on photo database. Algebra session was shorter than planned but productive.",
+      "timestamp": "2026-02-03T18:00:00.000Z"
+    }
+  ]
+}

@@ -1,0 +1,680 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Capacity Planner</title>
+    <link rel="stylesheet" href="css/styles.css">
+</head>
+<body>
+    <!-- Floating Sidebar Navigation -->
+    <nav id="floatingSidebar" class="floating-sidebar">
+        <div class="sidebar-content">
+            <div class="sidebar-header">
+                <h4>Quick Nav</h4>
+                <button class="sidebar-toggle" onclick="app.toggleSidebar()">&#9664;</button>
+            </div>
+            <div class="sidebar-sections" id="sidebarSections"></div>
+        </div>
+    </nav>
+
+    <!-- Expand button when sidebar is collapsed -->
+    <button class="sidebar-expand-button" onclick="app.toggleSidebar()">&#9654;</button>
+
+    <div class="container">
+        <header>
+            <h1>Capacity Planner</h1>
+            <div class="sync-status">
+                <span id="lastSaved">Last saved: Never</span>
+                <button id="exportBtn" class="btn-secondary btn-sm">Export</button>
+                <button id="importBtn" class="btn-secondary btn-sm">Import</button>
+                <input type="file" id="fileInput" accept=".json" style="display:none">
+            </div>
+        </header>
+
+        <nav class="nav-tabs">
+            <button class="nav-tab active" data-tab="daily">Daily Log</button>
+            <button class="nav-tab" data-tab="calendar">Calendar</button>
+            <button class="nav-tab" data-tab="epics">Epics</button>
+            <button class="nav-tab" data-tab="stories">Stories</button>
+            <button class="nav-tab" data-tab="analytics">Analytics</button>
+        </nav>
+
+        <!-- Tab 1: Daily Log (default) -->
+        <div id="daily" class="tab-content active">
+            <!-- Date & Day Status -->
+            <div class="card" id="dailyLogForm">
+                <h2>Daily Log</h2>
+                <div class="form-group">
+                    <label for="logDate">Date</label>
+                    <input type="date" id="logDate">
+                </div>
+                <div id="dayStatus"></div>
+            </div>
+
+            <!-- Floor Checklist -->
+            <div class="card" id="floorChecklistCard">
+                <h2>Daily Floor</h2>
+                <div id="floorChecklist"></div>
+            </div>
+
+            <!-- Missing Days (Collapsible) -->
+            <div class="card" id="missingDaysSection">
+                <h2>Missed Days</h2>
+                <div id="missingDaysAlert"></div>
+            </div>
+
+            <!-- Story Work -->
+            <div class="card" id="dailyStorySelection">
+                <h2>Story Work</h2>
+                <div class="form-grid">
+                    <div class="form-group">
+                        <label for="actualDayType">Day Type</label>
+                        <select id="actualDayType">
+                            <option value="Travel">Travel (0.25 blocks)</option>
+                            <option value="Buffer">Buffer (1.5 blocks)</option>
+                            <option value="Stable" selected>Stable (3.5 blocks)</option>
+                            <option value="Project">Project (3.5 blocks)</option>
+                            <option value="Social">Social (0.5 blocks)</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label for="actualCapacity">Actual Capacity (2hr blocks)</label>
+                        <input type="number" id="actualCapacity" min="0" step="0.25" value="3.5">
+                    </div>
+                </div>
+
+                <h3>Capacity Utilization</h3>
+                <div id="dailyStories"></div>
+
+                <div class="summary-grid" style="margin:16px 0">
+                    <div class="summary-item">
+                        <span>Available:</span>
+                        <span id="dailyAvailable">0</span>
+                    </div>
+                    <div class="summary-item">
+                        <span>Utilized:</span>
+                        <span id="dailyUtilized">0</span>
+                    </div>
+                    <div class="summary-item">
+                        <span>Remaining:</span>
+                        <span id="dailyRemaining">0</span>
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label for="dailyNotes">Notes</label>
+                    <textarea id="dailyNotes" rows="3" placeholder="What went well? Challenges?"></textarea>
+                </div>
+
+                <button id="saveDailyLog" class="btn-primary">Save Daily Log</button>
+            </div>
+
+            <!-- History -->
+            <div class="card" id="dailyLogHistoryCard">
+                <h2>History</h2>
+                <div id="dailyLogHistory"></div>
+            </div>
+        </div>
+
+        <!-- Tab 2: Calendar Planning -->
+        <div id="calendar" class="tab-content">
+            <div class="card" id="weeklyPlanningForm">
+                <h2>Weekly Planning</h2>
+                <div class="card-content">
+
+                    <!-- Week Identification -->
+                    <div class="form-grid form-grid-3">
+                        <div class="form-group">
+                            <label>Month</label>
+                            <select id="planMonth">
+                                <option value="01">January</option>
+                                <option value="02">February</option>
+                                <option value="03">March</option>
+                                <option value="04">April</option>
+                                <option value="05">May</option>
+                                <option value="06">June</option>
+                                <option value="07">July</option>
+                                <option value="08">August</option>
+                                <option value="09">September</option>
+                                <option value="10">October</option>
+                                <option value="11">November</option>
+                                <option value="12">December</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label>Year</label>
+                            <input type="number" id="planYear" value="2026" min="2024" max="2030">
+                        </div>
+                        <div class="form-group">
+                            <label>Week Number</label>
+                            <input type="number" id="weekNum" min="1" max="52" placeholder="6">
+                        </div>
+                    </div>
+
+                    <!-- Location -->
+                    <div class="form-grid">
+                        <div class="form-group">
+                            <label>Country</label>
+                            <input type="text" id="country" placeholder="India">
+                        </div>
+                        <div class="form-group">
+                            <label>City</label>
+                            <input type="text" id="city" placeholder="Kovalam">
+                        </div>
+                    </div>
+
+                    <!-- Day Type Distribution -->
+                    <div class="day-type-section">
+                        <h3>Day Type Distribution</h3>
+                        <div class="day-types-grid">
+                            <div class="day-type-input">
+                                <label>Floor</label>
+                                <input type="number" id="travelDays" value="0" min="0" max="7" onchange="app.updateCapacityPreview()">
+                                <span class="capacity-preview">0.25 blocks/day</span>
+                            </div>
+                            <div class="day-type-input">
+                                <label>Buffer</label>
+                                <input type="number" id="bufferDays" value="0" min="0" max="7" onchange="app.updateCapacityPreview()">
+                                <span class="capacity-preview">1.5 blocks/day</span>
+                            </div>
+                            <div class="day-type-input">
+                                <label>Stable</label>
+                                <input type="number" id="stableDays" value="3" min="0" max="7" onchange="app.updateCapacityPreview()">
+                                <span class="capacity-preview">3.5 blocks/day</span>
+                            </div>
+                            <div class="day-type-input">
+                                <label>Project</label>
+                                <input type="number" id="projectDays" value="2" min="0" max="7" onchange="app.updateCapacityPreview()">
+                                <span class="capacity-preview">3.5 blocks/day</span>
+                            </div>
+                            <div class="day-type-input">
+                                <label>Social</label>
+                                <input type="number" id="socialDays" value="0" min="0" max="7" onchange="app.updateCapacityPreview()">
+                                <span class="capacity-preview">0.5 blocks/day</span>
+                            </div>
+                        </div>
+
+                        <div class="capacity-summary">
+                            <div class="capacity-stat">
+                                <span class="capacity-stat-label">Total Days:</span>
+                                <span class="capacity-stat-value" id="totalDays">5</span>
+                            </div>
+                            <div class="capacity-stat">
+                                <span class="capacity-stat-label">Total Capacity:</span>
+                                <span class="capacity-stat-value" id="totalCapacity">17.5</span>
+                                <span class="capacity-unit">blocks</span>
+                            </div>
+                            <div class="capacity-stat">
+                                <span class="capacity-stat-label">Primary:</span>
+                                <span class="capacity-stat-value" id="primaryCapacity">7</span>
+                                <span class="capacity-unit">blocks</span>
+                            </div>
+                            <div class="capacity-stat">
+                                <span class="capacity-stat-label">Secondary 1:</span>
+                                <span class="capacity-stat-value" id="secondary1Capacity">5</span>
+                                <span class="capacity-unit">blocks</span>
+                            </div>
+                            <div class="capacity-stat">
+                                <span class="capacity-stat-label">Secondary 2:</span>
+                                <span class="capacity-stat-value" id="secondary2Capacity">3</span>
+                                <span class="capacity-unit">blocks</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Focus Area Allocation -->
+                    <div class="focus-allocation-section">
+                        <h3>Focus Area Allocation</h3>
+                        <p class="section-description">
+                            Assign your capacity blocks to focus areas for this week
+                        </p>
+
+                        <div class="focus-allocation-grid">
+                            <div class="focus-allocation-item priority-level">
+                                <div class="focus-header">
+                                    <label>Primary Focus</label>
+                                    <span class="capacity-available" id="primaryCapacityLabel">7 blocks</span>
+                                </div>
+                                <select id="primaryFocus">
+                                    <option value="">Select focus...</option>
+                                    <option value="Trading">Trading</option>
+                                    <option value="Photography">Photography</option>
+                                    <option value="Physical">Physical</option>
+                                    <option value="Learning">Learning</option>
+                                    <option value="Building">Building</option>
+                                    <option value="Social">Social</option>
+                                    <option value="Reading">Reading</option>
+                                    <option value="Admin">Admin</option>
+                                </select>
+                            </div>
+
+                            <div class="focus-allocation-item">
+                                <div class="focus-header">
+                                    <label>Secondary Focus 1</label>
+                                    <span class="capacity-available" id="secondary1CapacityLabel">5 blocks</span>
+                                </div>
+                                <select id="secondary1Focus">
+                                    <option value="">Select focus...</option>
+                                    <option value="Trading">Trading</option>
+                                    <option value="Photography">Photography</option>
+                                    <option value="Physical">Physical</option>
+                                    <option value="Learning">Learning</option>
+                                    <option value="Building">Building</option>
+                                    <option value="Social">Social</option>
+                                    <option value="Reading">Reading</option>
+                                    <option value="Admin">Admin</option>
+                                </select>
+                            </div>
+
+                            <div class="focus-allocation-item">
+                                <div class="focus-header">
+                                    <label>Secondary Focus 2</label>
+                                    <span class="capacity-available" id="secondary2CapacityLabel">3 blocks</span>
+                                </div>
+                                <select id="secondary2Focus">
+                                    <option value="">Select focus...</option>
+                                    <option value="Trading">Trading</option>
+                                    <option value="Photography">Photography</option>
+                                    <option value="Physical">Physical</option>
+                                    <option value="Learning">Learning</option>
+                                    <option value="Building">Building</option>
+                                    <option value="Social">Social</option>
+                                    <option value="Reading">Reading</option>
+                                    <option value="Admin">Admin</option>
+                                </select>
+                            </div>
+
+                            <div class="focus-allocation-item floor-focus">
+                                <div class="focus-header">
+                                    <label>Floor Focus</label>
+                                    <span class="capacity-available">Daily habits</span>
+                                </div>
+                                <select id="floorFocus">
+                                    <option value="">Select focus...</option>
+                                    <option value="Physical">Physical</option>
+                                    <option value="Learning">Learning</option>
+                                    <option value="Admin">Admin</option>
+                                    <option value="Trading">Trading</option>
+                                </select>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Capstone -->
+                    <div class="form-group">
+                        <label>Week Theme / Capstone (optional)</label>
+                        <input type="text" id="capstone" placeholder="e.g., Research Database Launch">
+                        <small class="form-hint">Optional: Main initiative or theme for this week</small>
+                    </div>
+
+                    <button class="btn-primary" onclick="app.saveWeekWithFocus()">
+                        Save Week Plan
+                    </button>
+                </div>
+            </div>
+
+            <!-- Calendar Table -->
+            <div class="card" id="calendarTableCard">
+                <h2>Planned Weeks</h2>
+                <div id="calendarTable"></div>
+            </div>
+        </div>
+
+        <!-- Tab 3: Epics -->
+        <div id="epics" class="tab-content">
+            <!-- Epic Timeline -->
+            <div class="card" id="epicTimelineCard">
+                <h2>Epic Timeline</h2>
+                <div class="timeline-controls">
+                    <label>View: </label>
+                    <button class="btn-secondary btn-sm" onclick="app.setTimelineWeeks(8)">8 Weeks</button>
+                    <button class="btn-secondary btn-sm" onclick="app.setTimelineWeeks(12)">12 Weeks</button>
+                    <button class="btn-secondary btn-sm" onclick="app.setTimelineWeeks(16)">16 Weeks</button>
+                </div>
+                <div id="epicTimeline"></div>
+            </div>
+
+            <div class="card" id="subFocusManagement">
+                <h2>Sub-Focus Management</h2>
+                <div class="form-group">
+                    <label for="subFocusFilterFocus">Filter by Focus</label>
+                    <select id="subFocusFilterFocus">
+                        <option value="">All Focuses</option>
+                        <option value="Trading">Trading</option>
+                        <option value="Photography">Photography</option>
+                        <option value="Physical">Physical</option>
+                        <option value="Learning">Learning</option>
+                        <option value="Building">Building</option>
+                        <option value="Social">Social</option>
+                        <option value="Reading">Reading</option>
+                        <option value="Admin">Admin</option>
+                    </select>
+                </div>
+
+                <h3>New Sub-Focus</h3>
+                <div class="form-grid">
+                    <div class="form-group">
+                        <label for="subFocusParent">Parent Focus</label>
+                        <select id="subFocusParent">
+                            <option value="">Select</option>
+                            <option value="Trading">Trading</option>
+                            <option value="Photography">Photography</option>
+                            <option value="Physical">Physical</option>
+                            <option value="Learning">Learning</option>
+                            <option value="Building">Building</option>
+                            <option value="Social">Social</option>
+                            <option value="Reading">Reading</option>
+                            <option value="Admin">Admin</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label for="subFocusName">Name</label>
+                        <input type="text" id="subFocusName" placeholder="e.g., Technical Analysis">
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label for="subFocusDescription">Description</label>
+                    <input type="text" id="subFocusDescription" placeholder="Brief description">
+                </div>
+                <div class="form-grid">
+                    <div class="form-group">
+                        <label for="subFocusIcon">Icon</label>
+                        <input type="text" id="subFocusIcon" placeholder="e.g., 📊" maxlength="4">
+                    </div>
+                    <div class="form-group">
+                        <label for="subFocusColor">Color</label>
+                        <input type="color" id="subFocusColor" value="#6d6e6f">
+                    </div>
+                </div>
+                <button id="addSubFocus" class="btn-primary">Add Sub-Focus</button>
+
+                <div id="subFocusList" style="margin-top: 16px;"></div>
+            </div>
+
+            <div class="card" id="epicManagement">
+                <h2>Epic Management</h2>
+                <div class="form-group">
+                    <label for="epicPeriodMonth">Month</label>
+                    <select id="epicPeriodMonth">
+                        <option value="01">January</option>
+                        <option value="02">February</option>
+                        <option value="03">March</option>
+                        <option value="04">April</option>
+                        <option value="05">May</option>
+                        <option value="06">June</option>
+                        <option value="07">July</option>
+                        <option value="08">August</option>
+                        <option value="09">September</option>
+                        <option value="10">October</option>
+                        <option value="11">November</option>
+                        <option value="12">December</option>
+                    </select>
+                </div>
+
+                <h3>New Epic</h3>
+                <div class="form-grid">
+                    <div class="form-group">
+                        <label for="epicFocus">Focus</label>
+                        <select id="epicFocus" onchange="app.loadSubFocusesForEpic()">
+                            <option value="">Select</option>
+                            <option value="Trading">Trading</option>
+                            <option value="Photography">Photography</option>
+                            <option value="Physical">Physical</option>
+                            <option value="Learning">Learning</option>
+                            <option value="Building">Building</option>
+                            <option value="Social">Social</option>
+                            <option value="Reading">Reading</option>
+                            <option value="Admin">Admin</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label for="epicSubFocus">Sub-Focus</label>
+                        <select id="epicSubFocus">
+                            <option value="">Select Focus first</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label for="epicPriorityLevel">Priority Level</label>
+                    <select id="epicPriorityLevel">
+                        <option value="primary">Primary</option>
+                        <option value="secondary1">Secondary 1</option>
+                        <option value="secondary2">Secondary 2</option>
+                        <option value="floor">Floor</option>
+                    </select>
+                </div>
+
+                <div class="form-group">
+                    <label for="epicName">Epic Name</label>
+                    <input type="text" id="epicName" placeholder="e.g., Systematic trading process">
+                </div>
+
+                <div class="form-group">
+                    <label for="epicVision">Vision</label>
+                    <textarea id="epicVision" rows="2" placeholder="What is the goal or outcome?"></textarea>
+                </div>
+
+                <button id="addEpic" class="btn-primary">Add Epic</button>
+            </div>
+
+            <div class="card" id="epicsListCard">
+                <h2>Active Epics</h2>
+                <div id="epicsList"></div>
+            </div>
+
+            <!-- Epic Archive -->
+            <div class="card" id="epicArchiveCard">
+                <h2>Epic Archive <span class="count-badge" id="archiveCountBadge">0</span></h2>
+                <div class="card-content" style="display: none;">
+                    <div id="epicArchive"></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Tab 5: User Stories -->
+        <div id="stories" class="tab-content">
+            <div class="card" id="storyManagement">
+                <h2>User Stories</h2>
+                <div class="form-group">
+                    <label for="storyPeriodMonth">Month</label>
+                    <select id="storyPeriodMonth">
+                        <option value="01">January</option>
+                        <option value="02">February</option>
+                        <option value="03">March</option>
+                        <option value="04">April</option>
+                        <option value="05">May</option>
+                        <option value="06">June</option>
+                        <option value="07">July</option>
+                        <option value="08">August</option>
+                        <option value="09">September</option>
+                        <option value="10">October</option>
+                        <option value="11">November</option>
+                        <option value="12">December</option>
+                    </select>
+                </div>
+
+                <div id="capacityOverview"></div>
+
+                <h3>Add Story</h3>
+                <div class="form-grid">
+                    <div class="form-group">
+                        <label for="storyEpic">Epic</label>
+                        <div class="epic-select-container">
+                            <select id="storyEpic">
+                                <option value="">Select Epic</option>
+                            </select>
+                            <label class="toggle-label">
+                                <input type="checkbox"
+                                       id="showCompletedEpicsInDropdown"
+                                       onchange="app.populateEpicDropdown()">
+                                <span>Show completed</span>
+                            </label>
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label for="storyStatus">Status</label>
+                        <select id="storyStatus">
+                            <option value="backlog">Backlog</option>
+                            <option value="active">Active</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label for="storyName">Story Name</label>
+                    <input type="text" id="storyName" placeholder="Brief description">
+                </div>
+
+                <div class="form-group">
+                    <label for="storyDescription">Description</label>
+                    <textarea id="storyDescription" rows="2" placeholder="As a [user], I want [goal] so that [benefit]"></textarea>
+                </div>
+
+                <div class="form-grid">
+                    <div class="form-group">
+                        <label for="storyWeight">Weight (blocks)</label>
+                        <input type="number" id="storyWeight" min="0.25" step="0.25" value="1">
+                    </div>
+                    <div class="form-group">
+                        <label for="storyFibSize">Fibonacci Size</label>
+                        <select id="storyFibSize">
+                            <option value="">None</option>
+                            <option value="1">1 - Trivial (&lt;30 min)</option>
+                            <option value="2">2 - Simple (30-60 min)</option>
+                            <option value="3">3 - Easy (1-2 hours)</option>
+                            <option value="5">5 - Medium (2-4 hours)</option>
+                            <option value="8">8 - Large (4-8 hours)</option>
+                            <option value="13">13 - Very Large (1-2 days)</option>
+                            <option value="21">21 - Epic (break it down!)</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label for="storyEstimate">Estimated Blocks (2hr each)</label>
+                    <input type="number" id="storyEstimate" min="0" step="0.5" placeholder="Optional estimate">
+                </div>
+
+                <button id="addStory" class="btn-primary">Add Story</button>
+            </div>
+
+            <div class="card" id="storyMapCard">
+                <h2>Story Map</h2>
+                <div id="storyMap"></div>
+            </div>
+
+            <!-- Edit Story Modal -->
+            <div id="editStoryModal" class="modal" style="display: none;">
+              <div class="modal-content">
+                <div class="modal-header">
+                  <h3>Edit Story</h3>
+                  <button class="modal-close" onclick="app.closeEditStoryModal()">&times;</button>
+                </div>
+
+                <div class="modal-body">
+                  <input type="hidden" id="editStoryId">
+
+                  <div class="form-group">
+                    <label>Story Name</label>
+                    <input type="text" id="editStoryName" class="form-input">
+                  </div>
+
+                  <div class="form-group">
+                    <label>Description (optional)</label>
+                    <textarea id="editStoryDescription" class="form-input" rows="3"></textarea>
+                  </div>
+
+                  <div class="form-grid">
+                    <div class="form-group">
+                      <label>Fibonacci Size</label>
+                      <select id="editStorySize" class="form-input">
+                        <option value="">Not sized</option>
+                        <option value="1">1 - Trivial</option>
+                        <option value="2">2 - Simple</option>
+                        <option value="3">3 - Easy</option>
+                        <option value="5">5 - Medium</option>
+                        <option value="8">8 - Large</option>
+                        <option value="13">13 - Very Large</option>
+                        <option value="21">21 - Epic</option>
+                      </select>
+                    </div>
+
+                    <div class="form-group">
+                      <label>Estimated Blocks</label>
+                      <input type="number" id="editStoryEstimate" class="form-input" step="0.5">
+                    </div>
+                  </div>
+
+                  <div class="form-group">
+                    <label>Action Items</label>
+                    <div id="actionItemsList"></div>
+                    <div class="action-item-add">
+                      <input type="text"
+                             id="newActionItemText"
+                             placeholder="Add action item..."
+                             class="form-input"
+                             onkeypress="if(event.key === 'Enter') app.addActionItem()">
+                      <button class="btn-secondary btn-sm" onclick="app.addActionItem()">
+                        + Add
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
+                <div class="modal-footer">
+                  <button class="btn-secondary" onclick="app.closeEditStoryModal()">
+                    Cancel
+                  </button>
+                  <button class="btn-primary" onclick="app.saveStoryEdit()">
+                    Save Changes
+                  </button>
+                </div>
+              </div>
+            </div>
+        </div>
+
+        <!-- Tab 6: Analytics -->
+        <div id="analytics" class="tab-content">
+            <div class="card" id="analyticsCard">
+                <h2>Analytics</h2>
+                <div class="form-grid">
+                    <div class="form-group">
+                        <label for="analyticsMonth">Month</label>
+                        <select id="analyticsMonth">
+                            <option value="01">January</option>
+                            <option value="02">February</option>
+                            <option value="03">March</option>
+                            <option value="04">April</option>
+                            <option value="05">May</option>
+                            <option value="06">June</option>
+                            <option value="07">July</option>
+                            <option value="08">August</option>
+                            <option value="09">September</option>
+                            <option value="10">October</option>
+                            <option value="11">November</option>
+                            <option value="12">December</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label for="analyticsWeek">Week</label>
+                        <select id="analyticsWeek">
+                            <option value="">Month Summary</option>
+                            <option value="1">Week 1</option>
+                            <option value="2">Week 2</option>
+                            <option value="3">Week 3</option>
+                            <option value="4">Week 4</option>
+                            <option value="5">Week 5</option>
+                        </select>
+                    </div>
+                </div>
+                <button id="generateAnalytics" class="btn-primary">Generate Report</button>
+                <div id="analyticsReport"></div>
+            </div>
+        </div>
+    </div>
+
+    <script src="js/db.js"></script>
+    <script src="js/app.js"></script>
+</body>
+</html>
