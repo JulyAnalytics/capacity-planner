@@ -41,6 +41,7 @@
                 <span id="lastSaved">Last saved: Never</span>
                 <button id="exportBtn" class="btn-secondary btn-sm">Export</button>
                 <button id="importBtn" class="btn-secondary btn-sm">Import</button>
+                <button id="migrate-idb-btn" class="btn-secondary btn-sm" onclick="migrateFromIDB()" title="Copy existing IndexedDB data to Supabase">Migrate Local Data</button>
                 <button id="signout-btn" onclick="authSignOut()" style="display:none;">Sign Out</button>
                 <input type="file" id="fileInput" accept=".json" style="display:none">
             </div>

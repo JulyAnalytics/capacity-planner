@@ -116,3 +116,29 @@ window.authSignOut = async function authSignOut() {
   window.currentUserId = null;
   _resetCache();
 };
+
+window.migrateFromIDB = async function migrateFromIDB() {
+  const btn = document.getElementById('migrate-idb-btn');
+  btn.disabled = true;
+  btn.textContent = 'Migrating...';
+
+  const result = await window.DB.migrateFromIndexedDB((store, count) => {
+    btn.textContent = `Migrating ${store} (${count})...`;
+  });
+
+  if (!result.ok) {
+    alert('Migration failed: ' + result.reason);
+    btn.disabled = false;
+    btn.textContent = 'Migrate Local Data';
+    return;
+  }
+
+  const summary = Object.entries(result.counts)
+    .filter(([, n]) => n > 0)
+    .map(([s, n]) => `${s}: ${n}`)
+    .join(', ');
+
+  btn.textContent = `Done (${result.total} records)`;
+  alert(`Migration complete!\n${summary || 'No records found.'}\n\nThe page will reload to show your data.`);
+  location.reload();
+};

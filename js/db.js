@@ -227,6 +227,53 @@ const DB = {
   async migrateFromLocalStorage() { return false; },
   async getStorageStats() { return {}; },
 
+  // ── One-time IndexedDB → Supabase migration ───────────────────────────────
+
+  async migrateFromIndexedDB(onProgress) {
+    const IDB_NAME = 'capacity-planner';
+    const STORE_NAMES = ['calendar', 'priorities', 'subFocuses', 'epics', 'stories', 'dailyLogs', 'monthlyPlans', 'focuses'];
+
+    // Open the old IndexedDB (read-only, don't upgrade)
+    const idb = await new Promise((resolve, reject) => {
+      const req = indexedDB.open(IDB_NAME);
+      req.onsuccess = e => resolve(e.target.result);
+      req.onerror   = e => reject(e.target.error);
+      req.onupgradeneeded = e => e.target.transaction.abort(); // don't create if missing
+    }).catch(() => null);
+
+    if (!idb) {
+      return { ok: false, reason: 'IndexedDB database not found — nothing to migrate.' };
+    }
+
+    const counts = {};
+    let total = 0;
+
+    for (const storeName of STORE_NAMES) {
+      if (!idb.objectStoreNames.contains(storeName)) continue;
+
+      const records = await new Promise((resolve, reject) => {
+        const tx  = idb.transaction(storeName, 'readonly');
+        const req = tx.objectStore(storeName).getAll();
+        req.onsuccess = () => resolve(req.result);
+        req.onerror   = () => reject(req.error);
+      });
+
+      if (records.length === 0) { counts[storeName] = 0; continue; }
+
+      await this.putAll(storeName, records);
+      counts[storeName] = records.length;
+      total += records.length;
+      if (onProgress) onProgress(storeName, records.length);
+    }
+
+    idb.close();
+
+    // Reload cache so app reflects migrated data immediately
+    await this.preloadAll();
+
+    return { ok: true, counts, total };
+  },
+
   // ── Monthly Plan helpers (used by epicSelection.js) ───────────────────────
 
   async getMonthlyPlan(year, month) {
