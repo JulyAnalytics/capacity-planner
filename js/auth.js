@@ -33,10 +33,15 @@ window.initAuth = function initAuth() {
         done();
         // Re-initialize app data after sign-in (if already booted)
         if (window.app && typeof window.app.loadData === 'function') {
-          window.app.loadData();
+          if (window.DB) {
+            window.DB.preloadAll().then(() => window.app.loadData());
+          } else {
+            window.app.loadData();
+          }
         }
       } else {
         window.currentUserId = null;
+        _resetCache();
         _showAuthOverlay();
       }
     });
@@ -91,7 +96,23 @@ window.authSubmit = async function authSubmit() {
   // onAuthStateChange in initAuth() handles the rest on success
 };
 
+function _resetCache() {
+  if (!window.DB) return;
+  window.DB._cache = {
+    calendar:     null,
+    priorities:   null,
+    subFocuses:   null,
+    epics:        null,
+    stories:      null,
+    dailyLogs:    null,
+    monthlyPlans: null,
+    focuses:      null,
+  };
+  window.DB._cacheReady = false;
+}
+
 window.authSignOut = async function authSignOut() {
   await _supabaseClient.auth.signOut();
   window.currentUserId = null;
+  _resetCache();
 };

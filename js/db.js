@@ -27,10 +27,59 @@ const DB = {
     FOCUSES:       'focuses',
   },
 
+  _cache: {
+    calendar:     null,
+    priorities:   null,
+    subFocuses:   null,
+    epics:        null,
+    stories:      null,
+    dailyLogs:    null,
+    monthlyPlans: null,
+    focuses:      null,
+  },
+  _cacheReady: false,
+
   async init() {
     // Wait until a user session is established before any DB calls
     await window.initAuth();
+    await this.preloadAll();
     return true;
+  },
+
+  async preloadAll() {
+    if (!this._uid()) return;
+
+    const stores = [
+      { store: 'calendar',     table: 'calendar' },
+      { store: 'priorities',   table: 'priorities' },
+      { store: 'subFocuses',   table: 'sub_focuses' },
+      { store: 'epics',        table: 'epics' },
+      { store: 'stories',      table: 'stories' },
+      { store: 'dailyLogs',    table: 'daily_logs' },
+      { store: 'monthlyPlans', table: 'monthly_plans' },
+      { store: 'focuses',      table: 'focuses' },
+    ];
+
+    const results = await Promise.all(
+      stores.map(({ table }) =>
+        this._sb()
+          .from(table)
+          .select('data')
+          .eq('user_id', this._uid())
+          .order('created_at', { ascending: true })
+      )
+    );
+
+    stores.forEach(({ store }, i) => {
+      const { data, error } = results[i];
+      if (!error && data) {
+        this._cache[store] = data.map(row => row.data);
+      } else {
+        this._cache[store] = [];
+      }
+    });
+
+    this._cacheReady = true;
   },
 
   _sb()  { return window.supabase; },
@@ -62,6 +111,12 @@ const DB = {
     const table = _TABLE_MAP[storeName];
     if (!table) return [];
 
+    // Serve from cache if ready
+    if (this._cacheReady && this._cache[storeName] !== null) {
+      return this._cache[storeName];
+    }
+
+    // Fallback: live fetch
     const { data, error } = await this._sb()
       .from(table)
       .select('data')
@@ -69,7 +124,9 @@ const DB = {
       .order('created_at', { ascending: true });
 
     if (error) { console.error('getAll error', storeName, error); return []; }
-    return (data || []).map(row => row.data);
+    const records = (data || []).map(row => row.data);
+    this._cache[storeName] = records;
+    return records;
   },
 
   async getByIndex(storeName, indexName, value) {
@@ -101,7 +158,13 @@ const DB = {
       .from(table)
       .upsert(row, { onConflict: 'id' });
 
-    if (error) console.error('put error', storeName, error);
+    if (error) { console.error('put error', storeName, error); return; }
+
+    // Update cache
+    if (this._cache[storeName] !== null) {
+      this._cache[storeName] = this._cache[storeName].filter(r => r.id !== record.id);
+      this._cache[storeName].push(record);
+    }
   },
 
   async putAll(storeName, records) {
@@ -117,7 +180,10 @@ const DB = {
       .from(table)
       .upsert(rows, { onConflict: 'id' });
 
-    if (error) console.error('putAll error', storeName, error);
+    if (error) { console.error('putAll error', storeName, error); return; }
+
+    // Invalidate so next getAll re-fetches fresh data
+    this._cache[storeName] = null;
   },
 
   async delete(storeName, id) {
@@ -134,7 +200,12 @@ const DB = {
       .eq('id', id)
       .eq('user_id', this._uid());
 
-    if (error) console.error('delete error', storeName, error);
+    if (error) { console.error('delete error', storeName, error); return; }
+
+    // Update cache
+    if (this._cache[storeName] !== null) {
+      this._cache[storeName] = this._cache[storeName].filter(r => r.id !== id);
+    }
   },
 
   async clear(storeName) {
@@ -147,7 +218,9 @@ const DB = {
       .delete()
       .eq('user_id', this._uid());
 
-    if (error) console.error('clear error', storeName, error);
+    if (error) { console.error('clear error', storeName, error); return; }
+
+    this._cache[storeName] = [];
   },
 
   // Stubs kept for API compatibility
@@ -288,4 +361,5 @@ const DB = {
   }
 };
 
+window.DB = DB;
 export default DB;
