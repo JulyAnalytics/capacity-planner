@@ -40,6 +40,13 @@ window.initAuth = function initAuth() {
         _showAuthOverlay();
       }
     });
+
+    // Allow Enter key to submit
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' && document.getElementById('auth-overlay').style.display !== 'none') {
+        authSubmit();
+      }
+    });
   });
 };
 
@@ -48,6 +55,10 @@ function _showAuthOverlay() {
   if (overlay) overlay.style.display = 'flex';
   const btn = document.getElementById('signout-btn');
   if (btn) btn.style.display = 'none';
+  const pwField = document.getElementById('auth-password');
+  if (pwField) pwField.value = '';
+  const status = document.getElementById('auth-status');
+  if (status) status.textContent = '';
 }
 
 function _onSignedIn(user) {
@@ -60,27 +71,24 @@ function _onSignedIn(user) {
 
 window.authSubmit = async function authSubmit() {
   const email = document.getElementById('auth-email').value.trim();
+  const password = document.getElementById('auth-password').value.trim();
   const status = document.getElementById('auth-status');
 
-  if (!email) {
-    status.textContent = 'Please enter an email address.';
+  if (!email || !password) {
+    status.textContent = 'Please enter your email and password.';
     return;
   }
 
-  status.textContent = 'Sending magic link...';
+  status.textContent = 'Signing in...';
   document.getElementById('auth-submit-btn').disabled = true;
 
-  const { error } = await _supabaseClient.auth.signInWithOtp({
-    email,
-    options: { emailRedirectTo: window.location.href }
-  });
+  const { error } = await _supabaseClient.auth.signInWithPassword({ email, password });
 
   if (error) {
     status.textContent = 'Error: ' + error.message;
     document.getElementById('auth-submit-btn').disabled = false;
-  } else {
-    status.textContent = 'Check your email for the magic link!';
   }
+  // onAuthStateChange in initAuth() handles the rest on success
 };
 
 window.authSignOut = async function authSignOut() {
