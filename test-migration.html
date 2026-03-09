@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>v4 Migration Test</title>
+  <style>
+    body { font-family: monospace; padding: 2rem; max-width: 700px; }
+    pre { background: #f4f4f4; padding: 1rem; border-radius: 4px; white-space: pre-wrap; }
+    button { margin: 0.25rem; padding: 0.5rem 1rem; cursor: pointer; }
+  </style>
+</head>
+<body>
+  <h1>Database v4 Migration Test</h1>
+  <p>Tests the v3→v4 migration: epic.month + epic.priorityLevel → monthlyPlans store.</p>
+
+  <button onclick="runTest()">1. Run Migration Test</button>
+  <button onclick="checkResults()">2. Check Results</button>
+  <button onclick="cleanup()">3. Cleanup (Delete Test DB)</button>
+
+  <pre id="output"></pre>
+
+  <script>
+    const DB_NAME = 'capacity-planner-migration-test';
+    const output = document.getElementById('output');
+
+    function log(msg) {
+      output.textContent += msg + '\n';
+      console.log(msg);
+    }
+
+    function openDB(name, version, upgradeCallback) {
+      return new Promise((resolve, reject) => {
+        const req = indexedDB.open(name, version);
+        if (upgradeCallback) req.onupgradeneeded = upgradeCallback;
+        req.onsuccess = e => resolve(e.target.result);
+        req.onerror = e => reject(e.target.error);
+      });
+    }
+
+    function getAll(db, storeName) {
+      return new Promise((resolve, reject) => {
+        const tx = db.transaction(storeName, 'readonly');
+        const req = tx.objectStore(storeName).getAll();
+        req.onsuccess = () => resolve(req.result);
+        req.onerror = () => reject(req.error);
+      });
+    }
+
+    function putAll(db, storeName, items) {
+      return new Promise((resolve, reject) => {
+        const tx = db.transaction(storeName, 'readwrite');
+        const store = tx.objectStore(storeName);
+        items.forEach(item => store.put(item));
+        tx.oncomplete = resolve;
+        tx.onerror = () => reject(tx.error);
+      });
+    }
+
+    async function runTest() {
+      output.textContent = '';
+      log('=== Running v4 Migration Test ===\n');
+
+      try {
+        // Step 1: Delete any previous test DB
+        await new Promise(resolve => {
+          const req = indexedDB.deleteDatabase(DB_NAME);
+          req.onsuccess = resolve;
+          req.onerror = resolve;
+        });
+
+        // Step 2: Create v3-style DB with epics having month + priorityLevel
+        log('1. Creating v3-style test database...');
+        const v3db = await openDB(DB_NAME, 3, e => {
+          const db = e.target.result;
+          if (!db.objectStoreNames.contains('epics')) {
+            db.createObjectStore('epics', { keyPath: 'id' });
+          }
+          if (!db.objectStoreNames.contains('metadata')) {
+            db.createObjectStore('metadata', { keyPath: 'key' });
+          }
+        });
+
+        const testEpics = [
+          { id: 'epic-1', name: 'V1 Tool',      focus: 'Building',     status: 'active',   month: '2026-02', priorityLevel: 'primary',    createdAt: '2026-02-01T00:00:00Z' },
+          { id: 'epic-2', name: 'Trade Journal', focus: 'Trading',      status: 'active',   month: '2026-02', priorityLevel: 'secondary1', createdAt: '2026-02-01T00:00:00Z' },
+          { id: 'epic-3', name: 'Photography',   focus: 'Photography',  status: 'active',   month: '2026-02', priorityLevel: 'floor',      createdAt: '2026-02-01T00:00:00Z' },
+          { id: 'epic-4', name: 'Future Epic',   focus: 'Building',     status: 'planning', createdAt: '2026-02-01T00:00:00Z' }
+        ];
+
+        await putAll(v3db, 'epics', testEpics);
+        testEpics.forEach(e => log(`   Added: ${e.name} (${e.month || 'no month'} / ${e.priorityLevel || 'no priority'})`));
+        v3db.close();
+        log('✓ v3 database created\n');
+
+        // Step 3: Open as v4 (runs migration)
+        log('2. Running v4 migration...');
+        const v4db = await openDB(DB_NAME, 4, e => {
+          const db = e.target.result;
+          const tx = e.target.transaction;
+          const oldVersion = e.oldVersion;
+
+          if (!db.objectStoreNames.contains('monthlyPlans')) {
+            const planStore = db.createObjectStore('monthlyPlans', { keyPath: 'id' });
+            planStore.createIndex('by_month', 'month');
+            log('   Created monthlyPlans store');
+          }
+
+          if (oldVersion >= 1 && oldVersion < 4) {
+            const epicStore = tx.objectStore('epics');
+            const planStore = tx.objectStore('monthlyPlans');
+            const req = epicStore.getAll();
+
+            req.onsuccess = () => {
+              const epics = req.result;
+              const byMonth = {};
+
+              epics.forEach(epic => {
+                if (epic.month && epic.priorityLevel) {
+                  const [year, month] = epic.month.split('-');
+                  const key = `${year}-${month}`;
+                  if (!byMonth[key]) {
+                    byMonth[key] = { id: `plan-${key}`, month, year: parseInt(year), epics: [], createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() };
+                  }
+                  byMonth[key].epics.push({ epicId: epic.id, priorityLevel: epic.priorityLevel, addedAt: epic.createdAt, order: byMonth[key].epics.length + 1 });
+                  log(`   Migrated: ${epic.name} → ${epic.month} (${epic.priorityLevel})`);
+                }
+                delete epic.month;
+                delete epic.priorityLevel;
+                epicStore.put(epic);
+              });
+
+              Object.values(byMonth).forEach(plan => {
+                planStore.put(plan);
+                log(`   Created plan: ${plan.id} with ${plan.epics.length} epic(s)`);
+              });
+            };
+          }
+        });
+        log('✓ Migration complete\n');
+        log('3. Click "Check Results" to verify...');
+        v4db.close();
+
+      } catch (err) {
+        log(`\n❌ ERROR: ${err.message}`);
+        console.error(err);
+      }
+    }
+
+    async function checkResults() {
+      output.textContent = '';
+      log('=== Checking Migration Results ===\n');
+      try {
+        const db = await openDB(DB_NAME, 4);
+
+        log('EPICS (should have no month/priorityLevel):');
+        const epics = await getAll(db, 'epics');
+        let epicsFail = false;
+        epics.forEach(epic => {
+          const hasMonth = epic.month !== undefined;
+          const hasPriority = epic.priorityLevel !== undefined;
+          log(`  ${epic.name}:`);
+          log(`    month field:         ${hasMonth ? '❌ STILL PRESENT' : '✓ removed'}`);
+          log(`    priorityLevel field: ${hasPriority ? '❌ STILL PRESENT' : '✓ removed'}`);
+          if (hasMonth || hasPriority) epicsFail = true;
+        });
+
+        log('\nMONTHLY PLANS:');
+        const plans = await getAll(db, 'monthlyPlans');
+        let plansFail = plans.length === 0;
+        if (plansFail) {
+          log('  ❌ No plans created!');
+        } else {
+          plans.forEach(plan => {
+            log(`  ${plan.id}: ${plan.epics.length} epic(s)`);
+            plan.epics.forEach(ref => log(`    - ${ref.epicId} (${ref.priorityLevel})`));
+          });
+        }
+
+        log('\nUNSCHEDULED EPICS (should include Future Epic):');
+        const scheduledIds = new Set(plans.flatMap(p => p.epics.map(r => r.epicId)));
+        const unscheduled = epics.filter(e => !scheduledIds.has(e.id));
+        unscheduled.forEach(e => log(`  - ${e.name}`));
+
+        log('\n' + (epicsFail || plansFail ? '❌ MIGRATION FAILED' : '✅ MIGRATION PASSED'));
+        db.close();
+      } catch (err) {
+        log(`\n❌ ERROR: ${err.message}`);
+        console.error(err);
+      }
+    }
+
+    async function cleanup() {
+      if (!confirm('Delete test database?')) return;
+      const req = indexedDB.deleteDatabase(DB_NAME);
+      req.onsuccess = () => { output.textContent = 'Test database deleted. Run test again to recreate.\n'; };
+    }
+  </script>
+</body>
+</html>

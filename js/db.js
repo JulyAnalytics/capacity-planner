@@ -1,10 +1,11 @@
 // IndexedDB Module for Capacity Planner
 // Provides promise-based CRUD operations and localStorage migration
 
+
 const DB = {
   db: null,
   DB_NAME: 'capacity-planner',
-  DB_VERSION: 3,
+  DB_VERSION: 5,
 
   STORES: {
     CALENDAR: 'calendar',
@@ -13,7 +14,9 @@ const DB = {
     EPICS: 'epics',
     STORIES: 'stories',
     DAILY_LOGS: 'dailyLogs',
-    METADATA: 'metadata'
+    METADATA: 'metadata',
+    MONTHLY_PLANS: 'monthlyPlans',
+    FOCUSES: 'focuses',
   },
 
   async init() {
@@ -22,6 +25,7 @@ const DB = {
 
       request.onupgradeneeded = (event) => {
         const db = event.target.result;
+        const transaction = event.target.transaction;
 
         // calendar store
         if (!db.objectStoreNames.contains('calendar')) {
@@ -47,9 +51,7 @@ const DB = {
         // epics store
         if (!db.objectStoreNames.contains('epics')) {
           const epicsStore = db.createObjectStore('epics', { keyPath: 'id' });
-          epicsStore.createIndex('by_month', 'month', { unique: false });
           epicsStore.createIndex('by_focus', 'focus', { unique: false });
-          epicsStore.createIndex('by_priority', 'priorityLevel', { unique: false });
           epicsStore.createIndex('by_status', 'status', { unique: false });
         }
 
@@ -72,6 +74,67 @@ const DB = {
         // metadata store
         if (!db.objectStoreNames.contains('metadata')) {
           db.createObjectStore('metadata', { keyPath: 'key' });
+        }
+
+        // monthlyPlans store (v4)
+        if (!db.objectStoreNames.contains('monthlyPlans')) {
+          const planStore = db.createObjectStore('monthlyPlans', { keyPath: 'id' });
+          planStore.createIndex('by_month', 'month', { unique: false });
+          planStore.createIndex('by_year_month', ['year', 'month'], { unique: false });
+        }
+
+        // focuses store (v5)
+        if (!db.objectStoreNames.contains('focuses')) {
+          db.createObjectStore('focuses', { keyPath: 'id' });
+        }
+
+        // v3 → v4: migrate epic.month + epic.priorityLevel → monthlyPlans
+        if (event.oldVersion >= 1 && event.oldVersion < 4) {
+          const epicStore = transaction.objectStore('epics');
+          const planStore = transaction.objectStore('monthlyPlans');
+          const allEpicsReq = epicStore.getAll();
+
+          allEpicsReq.onsuccess = () => {
+            const allEpics = allEpicsReq.result;
+            const epicsByMonth = {};
+
+            allEpics.forEach(epic => {
+              if (epic.month && epic.priorityLevel) {
+                const parts = epic.month.split('-');
+                const year = parts[0];
+                const month = parts[1];
+                const key = `${year}-${month}`;
+
+                if (!epicsByMonth[key]) {
+                  epicsByMonth[key] = {
+                    id: `plan-${key}`,
+                    month,
+                    year: parseInt(year),
+                    epics: [],
+                    createdAt: epic.createdAt || new Date().toISOString(),
+                    updatedAt: new Date().toISOString()
+                  };
+                }
+
+                epicsByMonth[key].epics.push({
+                  epicId: epic.id,
+                  priorityLevel: epic.priorityLevel,
+                  addedAt: epic.createdAt || new Date().toISOString(),
+                  order: epicsByMonth[key].epics.length + 1
+                });
+              }
+
+              delete epic.month;
+              delete epic.priorityLevel;
+              epicStore.put(epic);
+            });
+
+            Object.values(epicsByMonth).forEach(plan => {
+              planStore.put(plan);
+            });
+
+            console.log(`v4 migration: created ${Object.keys(epicsByMonth).length} monthly plans`);
+          };
         }
       };
 
@@ -256,7 +319,7 @@ const DB = {
 
   async getStorageStats() {
     const stats = {};
-    const storeNames = ['calendar', 'priorities', 'subFocuses', 'epics', 'stories', 'dailyLogs'];
+    const storeNames = ['calendar', 'priorities', 'subFocuses', 'epics', 'stories', 'dailyLogs', 'monthlyPlans', 'focuses'];
 
     for (const name of storeNames) {
       const items = await this.getAll(name);
@@ -264,5 +327,142 @@ const DB = {
     }
 
     return stats;
+  },
+
+  // ============================================================================
+  // MONTHLY PLAN QUERIES
+  // ============================================================================
+
+  async getMonthlyPlan(year, month) {
+    const planId = `plan-${year}-${String(month).padStart(2, '0')}`;
+    return await this.get(this.STORES.MONTHLY_PLANS, planId);
+  },
+
+  async getAllMonthlyPlans() {
+    return await this.getAll(this.STORES.MONTHLY_PLANS);
+  },
+
+  async saveMonthlyPlan(year, month, planData) {
+    const planId = `plan-${year}-${String(month).padStart(2, '0')}`;
+    const plan = {
+      id: planId,
+      month: String(month).padStart(2, '0'),
+      year: parseInt(year),
+      epics: planData.epics || [],
+      notes: planData.notes || '',
+      createdAt: planData.createdAt || new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    };
+    await this.put(this.STORES.MONTHLY_PLANS, plan);
+    return plan;
+  },
+
+  async addEpicToMonth(epicId, year, month, priorityLevel) {
+    const planId = `plan-${year}-${String(month).padStart(2, '0')}`;
+    let plan = await this.get(this.STORES.MONTHLY_PLANS, planId);
+
+    if (!plan) {
+      plan = {
+        id: planId,
+        month: String(month).padStart(2, '0'),
+        year: parseInt(year),
+        epics: [],
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString()
+      };
+    }
+
+    const existingIndex = plan.epics.findIndex(e => e.epicId === epicId);
+    if (existingIndex !== -1) {
+      plan.epics[existingIndex].priorityLevel = priorityLevel;
+    } else {
+      plan.epics.push({
+        epicId,
+        priorityLevel,
+        addedAt: new Date().toISOString(),
+        order: plan.epics.length + 1
+      });
+    }
+
+    plan.updatedAt = new Date().toISOString();
+    await this.put(this.STORES.MONTHLY_PLANS, plan);
+    return plan;
+  },
+
+  async removeEpicFromMonth(epicId, year, month) {
+    const planId = `plan-${year}-${String(month).padStart(2, '0')}`;
+    const plan = await this.get(this.STORES.MONTHLY_PLANS, planId);
+    if (!plan) return null;
+
+    plan.epics = plan.epics.filter(e => e.epicId !== epicId);
+    plan.epics.forEach((ref, i) => { ref.order = i + 1; });
+    plan.updatedAt = new Date().toISOString();
+
+    await this.put(this.STORES.MONTHLY_PLANS, plan);
+    return plan;
+  },
+
+  async updateEpicPriorityInMonth(epicId, year, month, newPriorityLevel) {
+    const planId = `plan-${year}-${String(month).padStart(2, '0')}`;
+    const plan = await this.get(this.STORES.MONTHLY_PLANS, planId);
+    if (!plan) return null;
+
+    const epicRef = plan.epics.find(e => e.epicId === epicId);
+    if (epicRef) {
+      epicRef.priorityLevel = newPriorityLevel;
+      plan.updatedAt = new Date().toISOString();
+      await this.put(this.STORES.MONTHLY_PLANS, plan);
+    }
+    return plan;
+  },
+
+  async getAvailableEpicsForMonth(year, month) {
+    const allEpics = await this.getAll(this.STORES.EPICS);
+    const planId = `plan-${year}-${String(month).padStart(2, '0')}`;
+    const currentPlan = await this.get(this.STORES.MONTHLY_PLANS, planId);
+
+    const scheduledThisMonth = new Set();
+    if (currentPlan && currentPlan.epics) {
+      currentPlan.epics.forEach(ref => scheduledThisMonth.add(ref.epicId));
+    }
+
+    return allEpics.filter(epic =>
+      !scheduledThisMonth.has(epic.id) &&
+      epic.status !== 'completed' &&
+      epic.status !== 'archived'
+    );
+  },
+
+  async getUnscheduledEpics() {
+    const allEpics = await this.getAll(this.STORES.EPICS);
+    const allPlans = await this.getAll(this.STORES.MONTHLY_PLANS);
+
+    const scheduledIds = new Set();
+    allPlans.forEach(plan => {
+      plan.epics.forEach(ref => scheduledIds.add(ref.epicId));
+    });
+
+    return allEpics.filter(epic =>
+      !scheduledIds.has(epic.id) &&
+      epic.status !== 'completed' &&
+      epic.status !== 'archived'
+    );
+  },
+
+  async getEpicsForMonth(year, month) {
+    const plan = await this.getMonthlyPlan(year, month);
+    if (!plan || !plan.epics.length) return [];
+
+    const epicsWithPriority = [];
+    for (const ref of plan.epics) {
+      const epic = await this.get(this.STORES.EPICS, ref.epicId);
+      if (epic) {
+        epicsWithPriority.push({ ...epic, priorityLevel: ref.priorityLevel, addedAt: ref.addedAt, order: ref.order });
+      }
+    }
+
+    return epicsWithPriority.sort((a, b) => a.order - b.order);
   }
 };
+
+export default DB;

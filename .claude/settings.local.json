@@ -3,7 +3,8 @@
     "allow": [
       "Bash(ls:*)",
       "Bash(wc:*)",
-      "Bash(node:*)"
+      "Bash(node:*)",
+      "Bash(\"/Users/jun/Library/CloudStorage/OneDrive-Personal/Tools/capacity-planner/css/styles.css\":*)"
     ]
   }
 }

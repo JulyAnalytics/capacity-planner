@@ -1,0 +1,958 @@
+/* ============================================================================
+   PORTFOLIO VIEW STYLES - Phase 1
+   Light theme using existing CSS variables from styles.css
+   ============================================================================ */
+
+/* Portfolio Container */
+.portfolio-view {
+  max-width: 1400px;
+  margin: 0 auto;
+}
+
+/* Portfolio Header */
+.portfolio-header {
+  margin-bottom: 1.5rem;
+}
+
+.portfolio-header h1 {
+  font-size: 1.5rem;
+  font-weight: 600;
+  margin: 0 0 0.25rem 0;
+  color: var(--text-dark);
+}
+
+.portfolio-subtitle {
+  color: var(--text-muted);
+  font-size: 0.875rem;
+  margin: 0;
+}
+
+/* Portfolio Grid */
+.portfolio-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(380px, 1fr));
+  gap: 1.25rem;
+}
+
+@media (max-width: 768px) {
+  .portfolio-grid {
+    grid-template-columns: 1fr;
+    gap: 1rem;
+  }
+}
+
+/* Focus Section Card */
+.focus-section {
+  background: var(--bg-white);
+  border: 1px solid var(--border);
+  border-left: 4px solid;
+  border-radius: var(--radius);
+  padding: 1.25rem;
+  box-shadow: var(--shadow-sm);
+  transition: box-shadow 0.2s, border-color 0.2s;
+}
+
+.focus-section:hover {
+  box-shadow: var(--shadow-md);
+}
+
+/* Focus Header */
+.focus-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-bottom: 1rem;
+}
+
+.focus-title {
+  font-size: 1.1rem;
+  font-weight: 600;
+  margin: 0;
+  color: var(--text-dark);
+}
+
+.focus-badges {
+  display: flex;
+  gap: 0.375rem;
+  flex-shrink: 0;
+  flex-wrap: wrap;
+}
+
+.epic-badge {
+  font-size: 0.7rem;
+  font-weight: 500;
+  padding: 0.2rem 0.5rem;
+  border-radius: 20px;
+}
+
+.badge-active {
+  background: var(--info-bg);
+  color: var(--info);
+}
+
+.badge-completed {
+  background: var(--success-bg);
+  color: var(--success);
+}
+
+/* Focus Stats */
+.focus-stats {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 0.5rem;
+  margin-bottom: 1rem;
+  padding: 0.75rem 0;
+  border-top: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+}
+
+.stat {
+  text-align: center;
+}
+
+.stat-value {
+  display: block;
+  font-size: 1.375rem;
+  font-weight: 700;
+  color: var(--text-dark);
+  line-height: 1.2;
+}
+
+.stat-label {
+  display: block;
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  margin-top: 0.125rem;
+}
+
+/* Sub-Focus Cards */
+.focus-subfocuses {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  gap: 0.625rem;
+  margin-bottom: 1rem;
+}
+
+.subfocus-card {
+  background: var(--bg-light);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 0.625rem;
+  display: flex;
+  gap: 0.5rem;
+  align-items: flex-start;
+  transition: background 0.15s, border-color 0.15s;
+}
+
+.subfocus-card:hover {
+  background: var(--bg-white);
+  border-color: var(--border-strong);
+}
+
+.subfocus-icon {
+  width: 32px;
+  height: 32px;
+  border-radius: var(--radius-sm);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1rem;
+  flex-shrink: 0;
+  background: var(--border);
+}
+
+.subfocus-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.subfocus-name {
+  font-weight: 500;
+  color: var(--text-dark);
+  font-size: 0.8125rem;
+  line-height: 1.3;
+  margin-bottom: 0.125rem;
+}
+
+.subfocus-description {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Focus Footer */
+.focus-footer {
+  padding-top: 0.75rem;
+  border-top: 1px solid var(--border);
+}
+
+.btn-text {
+  background: none;
+  border: none;
+  color: var(--primary);
+  font-size: 0.875rem;
+  font-weight: 500;
+  cursor: pointer;
+  padding: 0.25rem 0;
+  transition: color 0.15s;
+}
+
+.btn-text:hover {
+  color: var(--primary-hover);
+}
+
+/* Loading State */
+.portfolio-loading {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 300px;
+  color: var(--text-muted);
+}
+
+.loading-spinner {
+  width: 36px;
+  height: 36px;
+  border: 3px solid var(--border);
+  border-top-color: var(--primary);
+  border-radius: 50%;
+  animation: portfolio-spin 0.8s linear infinite;
+  margin-bottom: 0.75rem;
+}
+
+@keyframes portfolio-spin {
+  to { transform: rotate(360deg); }
+}
+
+/* Error State */
+.portfolio-error {
+  text-align: center;
+  padding: 3rem 1.5rem;
+  color: var(--error);
+}
+
+.portfolio-error button {
+  margin-top: 1rem;
+}
+
+/* Empty State */
+.portfolio-empty {
+  text-align: center;
+  padding: 4rem 1.5rem;
+}
+
+.portfolio-empty h2 {
+  color: var(--text-dark);
+  font-size: 1.25rem;
+  margin-bottom: 0.5rem;
+}
+
+.portfolio-empty p {
+  color: var(--text-muted);
+  margin-bottom: 1.5rem;
+}
+
+.empty-message {
+  color: var(--text-muted);
+  font-size: 0.8125rem;
+  font-style: italic;
+  text-align: center;
+  padding: 1rem 0.5rem;
+  grid-column: 1 / -1;
+}
+
+/* ============================================================================
+   FOCUS DRILL-DOWN STYLES - Phase 2
+   Light theme using existing CSS variables
+   ============================================================================ */
+
+.focus-drilldown {
+  max-width: 1200px;
+  margin: 0 auto;
+}
+
+/* Header: back button + breadcrumb */
+.dd-header {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  margin-bottom: 1.5rem;
+}
+
+.dd-back-btn {
+  background: none;
+  border: 1px solid var(--border-strong);
+  color: var(--primary);
+  padding: 0.375rem 0.875rem;
+  border-radius: var(--radius-sm);
+  font-size: 0.875rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+  white-space: nowrap;
+}
+
+.dd-back-btn:hover {
+  background: var(--primary);
+  color: #fff;
+  border-color: var(--primary);
+}
+
+.dd-breadcrumb {
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+  font-size: 0.875rem;
+}
+
+.dd-breadcrumb-item {
+  color: var(--text-muted);
+}
+
+.dd-breadcrumb-active {
+  color: var(--text-dark);
+  font-weight: 500;
+}
+
+.dd-breadcrumb-sep {
+  color: var(--text-muted);
+}
+
+/* Focus title card */
+.dd-title-section {
+  background: var(--bg-white);
+  border: 1px solid var(--border);
+  border-left: 4px solid;
+  border-radius: var(--radius);
+  padding: 1.5rem;
+  margin-bottom: 2rem;
+  box-shadow: var(--shadow-sm);
+}
+
+.dd-title-section h1 {
+  font-size: 1.75rem;
+  font-weight: 700;
+  margin: 0 0 0.5rem 0;
+  color: var(--text-dark);
+}
+
+.dd-summary-stats {
+  display: flex;
+  gap: 0.5rem;
+  font-size: 0.875rem;
+  color: var(--text-muted);
+}
+
+/* Sections */
+.dd-section {
+  margin-bottom: 2.5rem;
+}
+
+.dd-section-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 1rem;
+  padding-bottom: 0.625rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.dd-section-header h2 {
+  font-size: 1.125rem;
+  font-weight: 600;
+  color: var(--text-dark);
+  margin: 0;
+}
+
+.dd-count {
+  font-size: 0.875rem;
+  color: var(--text-muted);
+  font-weight: 400;
+  margin-left: 0.375rem;
+}
+
+.dd-btn-secondary {
+  background: var(--bg-light);
+  color: var(--text-dark);
+  border: 1px solid var(--border);
+  padding: 0.375rem 0.875rem;
+  border-radius: var(--radius-sm);
+  font-size: 0.8125rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+}
+
+.dd-btn-secondary:hover {
+  background: var(--bg-white);
+  border-color: var(--border-strong);
+}
+
+/* Sub-Focus grid (larger cards than portfolio overview) */
+.dd-subfocus-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 1rem;
+}
+
+.dd-subfocus-card {
+  background: var(--bg-white);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 1rem;
+  display: flex;
+  gap: 0.75rem;
+  align-items: flex-start;
+  box-shadow: var(--shadow-sm);
+  transition: box-shadow 0.15s, border-color 0.15s;
+}
+
+.dd-subfocus-card:hover {
+  box-shadow: var(--shadow-md);
+  border-color: var(--border-strong);
+}
+
+.dd-subfocus-icon {
+  width: 40px;
+  height: 40px;
+  border-radius: var(--radius-sm);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.25rem;
+  flex-shrink: 0;
+  background: var(--border);
+}
+
+.dd-subfocus-info h3 {
+  font-size: 0.9375rem;
+  font-weight: 600;
+  color: var(--text-dark);
+  margin: 0 0 0.25rem 0;
+}
+
+.dd-subfocus-info p {
+  font-size: 0.8125rem;
+  color: var(--text-muted);
+  margin: 0;
+}
+
+/* Epic list */
+.dd-epic-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.625rem;
+}
+
+.dd-epic-item {
+  background: var(--bg-white);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 1rem 1.25rem;
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 1rem;
+  box-shadow: var(--shadow-sm);
+  transition: box-shadow 0.15s;
+}
+
+.dd-epic-item:hover {
+  box-shadow: var(--shadow-md);
+}
+
+.dd-epic-content {
+  flex: 1;
+}
+
+.dd-epic-content h3 {
+  font-size: 0.9375rem;
+  font-weight: 600;
+  color: var(--text-dark);
+  margin: 0 0 0.25rem 0;
+}
+
+.dd-epic-vision {
+  font-size: 0.8125rem;
+  color: var(--text-muted);
+  margin: 0;
+  font-style: italic;
+}
+
+.dd-epic-meta {
+  flex-shrink: 0;
+}
+
+.dd-status-badge {
+  padding: 0.2rem 0.625rem;
+  border-radius: 20px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: capitalize;
+}
+
+/* Story Map Placeholder */
+.dd-story-map-placeholder {
+  background: var(--bg-light);
+  border: 2px dashed var(--border);
+  border-radius: var(--radius);
+  padding: 3rem 2rem;
+  text-align: center;
+  color: var(--text-muted);
+}
+
+.dd-story-map-placeholder p {
+  margin: 0 0 0.375rem 0;
+  font-size: 0.9375rem;
+}
+
+.dd-placeholder-detail {
+  font-size: 0.8125rem;
+  color: var(--text-muted);
+}
+
+/* Empty state */
+.dd-empty-message {
+  color: var(--text-muted);
+  font-size: 0.8125rem;
+  font-style: italic;
+  padding: 1.5rem 0;
+  grid-column: 1 / -1;
+}
+
+/* Mobile responsive */
+@media (max-width: 768px) {
+  .dd-header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.5rem;
+  }
+
+  .dd-subfocus-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .dd-section-header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.625rem;
+  }
+
+  .dd-btn-secondary {
+    width: 100%;
+    text-align: center;
+  }
+
+  .dd-epic-item {
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+}
+
+/* ============================================================================
+   PHASE 5 & 6 — SELECTION SYSTEM (story + epic level)
+   ============================================================================ */
+
+/* Checkbox wrapper — invisible by default, revealed on hover / selection mode */
+.dd-checkbox-wrap {
+  display: flex;
+  align-items: center;
+  cursor: pointer;
+  flex-shrink: 0;
+  padding: 0 0.25rem;
+}
+
+.dd-story-checkbox,
+.dd-epic-checkbox {
+  width: 16px;
+  height: 16px;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.15s;
+  accent-color: var(--primary);
+}
+
+/* Show on hover (desktop) */
+.dd-story-item:hover .dd-story-checkbox,
+.dd-epic-group-header:hover .dd-epic-checkbox,
+.dd-epic-item:hover .dd-epic-checkbox {
+  opacity: 1;
+}
+
+/* Always show when selection mode is active */
+.has-selection .dd-story-checkbox,
+.has-selection .dd-epic-checkbox {
+  opacity: 1;
+}
+
+/* Always show when checked */
+.dd-story-checkbox:checked,
+.dd-epic-checkbox:checked {
+  opacity: 1;
+}
+
+/* Mobile: always show checkboxes */
+@media (hover: none) {
+  .dd-story-checkbox,
+  .dd-epic-checkbox {
+    opacity: 1;
+  }
+
+  /* Subtle long-press visual feedback */
+  .dd-story-item:active {
+    background: rgba(0, 123, 255, 0.06);
+  }
+}
+
+/* Selected state */
+.dd-story-item.dd-selected {
+  background: var(--info-bg);
+  border-color: var(--info);
+}
+
+.dd-epic-group.dd-epic-selected > .dd-epic-group-header {
+  background: var(--info-bg);
+}
+
+.dd-epic-item.dd-selected {
+  background: var(--info-bg);
+  border-color: var(--info);
+}
+
+/* Soft-delete pending state */
+.dd-pending-delete {
+  opacity: 0.35;
+  pointer-events: none;
+  text-decoration: line-through;
+  transition: opacity 0.3s;
+}
+
+/* ============================================================================
+   PHASE 5 — ACTION BAR (drill-down)
+   ============================================================================ */
+
+.dd-action-bar {
+  position: sticky;
+  bottom: 1rem;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.75rem 1.25rem;
+  background: var(--text-dark);
+  color: #fff;
+  border-radius: var(--radius);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
+  z-index: 200;
+  margin-top: 1.5rem;
+  animation: dd-bar-in 0.18s ease;
+}
+
+@keyframes dd-bar-in {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: translateY(0);   }
+}
+
+.dd-action-info {
+  flex: 1;
+  font-size: 0.875rem;
+  font-weight: 500;
+}
+
+.dd-action-buttons {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-shrink: 0;
+}
+
+.dd-action-select {
+  background: rgba(255, 255, 255, 0.15);
+  color: #fff;
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  border-radius: var(--radius-sm);
+  padding: 0.3rem 0.625rem;
+  font-size: 0.8125rem;
+  cursor: pointer;
+}
+
+.dd-action-select option {
+  background: var(--text-dark);
+  color: #fff;
+}
+
+.dd-action-btn {
+  background: rgba(255, 255, 255, 0.15);
+  color: #fff;
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  border-radius: var(--radius-sm);
+  padding: 0.3rem 0.75rem;
+  font-size: 0.8125rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.dd-action-btn:hover {
+  background: rgba(255, 255, 255, 0.25);
+}
+
+.dd-action-btn-danger {
+  background: rgba(220, 38, 38, 0.7);
+  border-color: rgba(220, 38, 38, 0.8);
+}
+
+.dd-action-btn-danger:hover {
+  background: rgba(220, 38, 38, 0.9);
+}
+
+.dd-action-close {
+  background: none;
+  border: none;
+  color: rgba(255, 255, 255, 0.7);
+  font-size: 1rem;
+  cursor: pointer;
+  padding: 0.125rem 0.375rem;
+  border-radius: var(--radius-sm);
+  flex-shrink: 0;
+  transition: color 0.15s;
+}
+
+.dd-action-close:hover {
+  color: #fff;
+}
+
+/* Undo toast styles */
+.dd-undo-toast {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.dd-undo-msg {
+  flex: 1;
+}
+
+.dd-undo-btn {
+  background: rgba(255, 255, 255, 0.2);
+  border: 1px solid rgba(255, 255, 255, 0.4);
+  color: #fff;
+  border-radius: var(--radius-sm);
+  padding: 0.2rem 0.625rem;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: background 0.15s;
+}
+
+.dd-undo-btn:hover {
+  background: rgba(255, 255, 255, 0.35);
+}
+
+/* ============================================================================
+   PHASE 4 — STORY MAP
+   ============================================================================ */
+
+.dd-story-map {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+}
+
+/* Epic group */
+.dd-epic-group {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-white);
+  box-shadow: var(--shadow-sm);
+  overflow: hidden;
+}
+
+.dd-epic-group-header {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.75rem 1rem;
+  background: var(--bg-light);
+  border-bottom: 1px solid var(--border);
+}
+
+.dd-epic-group-title {
+  flex: 1;
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  min-width: 0;
+}
+
+.dd-epic-group-name {
+  font-weight: 600;
+  font-size: 0.9375rem;
+  color: var(--text-dark);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.dd-epic-group-count {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+
+/* Story list within an epic group */
+.dd-story-list {
+  display: flex;
+  flex-direction: column;
+}
+
+.dd-story-item {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.625rem 1rem;
+  border-bottom: 1px solid var(--border);
+  transition: background 0.12s, border-color 0.12s;
+  cursor: default;
+}
+
+.dd-story-item:last-child {
+  border-bottom: none;
+}
+
+.dd-story-item:hover {
+  background: var(--bg-light);
+}
+
+.dd-story-content {
+  flex: 1;
+  min-width: 0;
+  cursor: pointer;
+}
+
+.dd-story-content:hover .dd-story-name {
+  color: var(--primary);
+}
+
+.dd-story-name {
+  font-size: 0.875rem;
+  color: var(--text-dark);
+  transition: color 0.12s;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.dd-story-meta {
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+  margin-top: 0.2rem;
+}
+
+.dd-story-status {
+  font-size: 0.6875rem;
+  font-weight: 600;
+  padding: 0.15rem 0.5rem;
+  border-radius: 12px;
+  text-transform: capitalize;
+}
+
+.dd-fib-badge {
+  font-size: 0.6875rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  background: var(--bg-light);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 0.15rem 0.5rem;
+}
+
+.dd-story-empty {
+  color: var(--text-muted);
+  font-size: 0.8125rem;
+  font-style: italic;
+  padding: 0.875rem 1rem;
+  margin: 0;
+}
+
+/* Epic item in Epics section (with checkbox) */
+.dd-epic-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+}
+
+/* ============================================================================
+   PHASE 7 — PORTFOLIO FOCUS SELECTION
+   ============================================================================ */
+
+.pf-checkbox-wrap {
+  display: flex;
+  align-items: center;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.pf-focus-checkbox {
+  width: 16px;
+  height: 16px;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.15s;
+  accent-color: var(--primary);
+  flex-shrink: 0;
+}
+
+.focus-section:hover .pf-focus-checkbox {
+  opacity: 1;
+}
+
+.has-selection .pf-focus-checkbox,
+.pf-focus-checkbox:checked {
+  opacity: 1;
+}
+
+@media (hover: none) {
+  .pf-focus-checkbox {
+    opacity: 1;
+  }
+}
+
+.focus-section.pf-selected {
+  background: var(--info-bg);
+  border-color: var(--info);
+}
+
+/* Portfolio action bar (Phase 7) */
+.pf-action-bar {
+  position: sticky;
+  bottom: 1rem;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.75rem 1.25rem;
+  background: var(--text-dark);
+  color: #fff;
+  border-radius: var(--radius);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
+  z-index: 200;
+  margin-top: 1rem;
+  animation: dd-bar-in 0.18s ease;
+}
+
+.pf-action-info {
+  flex: 1;
+  font-size: 0.875rem;
+  font-weight: 500;
+}
+
+.pf-action-buttons {
+  display: flex;
+  gap: 0.5rem;
+  flex-shrink: 0;
+}
