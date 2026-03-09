@@ -8,25 +8,6 @@
 import DB from './db.js';
 
 // ============================================================================
-// FOCUS COLOR MAPPING
-// ============================================================================
-
-const FOCUS_COLORS = {
-  Trading:     '#f06a6a',
-  Photography: '#4a90d9',
-  Physical:    '#4caf50',
-  Learning:    '#f5a623',
-  Building:    '#9b59b6',
-  Social:      '#e67e22',
-  Reading:     '#1abc9c',
-  Admin:       '#95a5a6'
-};
-
-function getFocusColor(focusName) {
-  return FOCUS_COLORS[focusName] || '#6b7784';
-}
-
-// ============================================================================
 // PORTFOLIO SELECTION STATE — Phase 7
 // ============================================================================
 
@@ -101,11 +82,24 @@ function renderPortfolioActionBar() {
 // ============================================================================
 
 async function loadPortfolioData() {
-  const [subFocuses, epics, stories] = await Promise.all([
+  const [focuses, subFocuses, epics, stories] = await Promise.all([
+    DB.getAll(DB.STORES.FOCUSES),
     DB.getAll(DB.STORES.SUB_FOCUSES),
     DB.getAll(DB.STORES.EPICS),
     DB.getAll(DB.STORES.STORIES)
   ]);
+
+  // Only show active focuses, sorted alphabetically
+  const activeFocuses = focuses
+    .filter(f => f.status === 'active')
+    .sort((a, b) => a.name.localeCompare(b.name));
+
+  // Index sub-focuses by focusId
+  const sfByFocusId = {};
+  subFocuses.forEach(sf => {
+    if (!sfByFocusId[sf.focusId]) sfByFocusId[sf.focusId] = [];
+    sfByFocusId[sf.focusId].push(sf);
+  });
 
   // Index epics by subFocusId
   const epicsBySubFocus = {};
@@ -121,33 +115,22 @@ async function loadPortfolioData() {
     storiesByEpic[s.epicId].push(s);
   });
 
-  // Derive unique focus names from subFocuses (preserving insertion order)
-  const seen = new Set();
-  const focusNames = [];
-  subFocuses.forEach(sf => {
-    if (sf.focus && !seen.has(sf.focus)) {
-      seen.add(sf.focus);
-      focusNames.push(sf.focus);
-    }
-  });
-
-  return focusNames.map(focusName => {
-    const focusSubFocuses = subFocuses.filter(sf => sf.focus === focusName);
+  return activeFocuses.map(focus => {
+    const focusSubFocuses = sfByFocusId[focus.id] || [];
     const focusEpics      = focusSubFocuses.flatMap(sf => epicsBySubFocus[sf.id] || []);
     const focusStories    = focusEpics.flatMap(e => storiesByEpic[e.id] || []);
 
     return {
-      name: focusName,
-      color: getFocusColor(focusName),
+      ...focus,
       subFocuses: focusSubFocuses,
-      epics: focusEpics,
-      stories: focusStories,
+      epics:      focusEpics,
+      stories:    focusStories,
       stats: {
         subFocusCount:  focusSubFocuses.length,
         epicCount:      focusEpics.length,
         storyCount:     focusStories.length,
         activeEpics:    focusEpics.filter(e => e.status === 'active').length,
-        completedEpics: focusEpics.filter(e => e.status === 'completed').length
+        completedEpics: focusEpics.filter(e => e.status === 'completed').length,
       }
     };
   });
@@ -183,7 +166,7 @@ function renderSubFocusCard(sf) {
 }
 
 function renderFocusSection(focus) {
-  const { name, color, subFocuses, stats } = focus;
+  const { id, name, color, subFocuses, stats } = focus;
 
   const cards = subFocuses.length > 0
     ? subFocuses.map(renderSubFocusCard).join('')
@@ -197,8 +180,8 @@ function renderFocusSection(focus) {
     : '';
 
   return `
-    <div class="focus-section" style="border-left-color: ${color}" data-focus-name="${esc(name)}">
-      <div class="focus-header">
+    <div class="focus-section" style="border-left-color: ${color}" data-focus-name="${esc(name)}" data-focus-id="${esc(id)}">
+      <div class="focus-header" data-action="open-focus-modal" data-focus-id="${esc(id)}" style="cursor:pointer">
         <label class="pf-checkbox-wrap" onclick="event.stopPropagation()" title="Select focus">
           <input type="checkbox" class="pf-focus-checkbox"
             data-action="toggle-focus" data-focus-name="${esc(name)}" />
@@ -249,6 +232,11 @@ function renderPortfolio(data) {
       </div>
       <div class="portfolio-grid">
         ${data.map(renderFocusSection).join('')}
+      </div>
+      <div class="portfolio-add-focus">
+        <button class="btn-secondary" onclick="app.modal.open('newFocus', null)">
+          + Add Focus
+        </button>
       </div>
     </div>
   `;
@@ -352,6 +340,14 @@ document.addEventListener('click', (e) => {
   if (!btn) return;
   const focusName = btn.dataset.focusName;
   if (focusName && window.navigationState) window.navigationState.drillDown(focusName);
+});
+
+document.addEventListener('click', (e) => {
+  const el = e.target.closest('[data-action="open-focus-modal"]');
+  if (!el) return;
+  if (e.target.closest('input, button')) return;
+  const focusId = el.dataset.focusId;
+  if (focusId && window.app?.modal) window.app.modal.open('focus', focusId);
 });
 
 document.addEventListener('change', (e) => {

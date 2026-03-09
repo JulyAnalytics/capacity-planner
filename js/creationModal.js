@@ -470,7 +470,7 @@ function renderSubFocusForm() {
 }
 
 // ----------------------------------------------------------------------------
-// Focus form — creation not yet supported
+// Focus form
 // ----------------------------------------------------------------------------
 
 function renderFocusForm() {
@@ -486,10 +486,8 @@ function renderFocusForm() {
     </div>
 
     <div class="cm-form-group">
-      <p class="cm-placeholder-text">
-        ℹ️ Focuses are currently maintained as app constants.<br>
-        Dynamic focus creation is planned for a future phase.
-      </p>
+      <label for="cm-focus-color" class="cm-form-label">Color</label>
+      <input type="color" id="cm-focus-color" class="cm-form-input-color" value="#007bff" />
     </div>
   `;
 }
@@ -618,11 +616,11 @@ function getFormData() {
       const status = document.getElementById('cm-story-status')?.value || 'active';
       const epicId = document.getElementById('story-epic')?.value || null;
 
-      // Derive focus string from epic → subFocus hierarchy
+      // Derive focus name from epic.focusId via app helper
       let focusStr = '';
       if (epicId) {
         const epic = getEpicById(epicId);
-        if (epic) focusStr = epic.focus || '';
+        if (epic) focusStr = window.app?.getFocusName(epic.focusId) || '';
       }
 
       return {
@@ -651,43 +649,36 @@ function getFormData() {
 
     case 'epic': {
       const subFocusId = document.getElementById('epic-subfocus')?.value || null;
-
-      // Derive focus string from subFocus
-      let focusStr = '';
-      if (subFocusId) {
-        const sf = getSubFocusById(subFocusId);
-        if (sf) focusStr = sf.focus || '';
-      }
-      if (!focusStr && creationModalState.formData.focusId) {
-        focusStr = creationModalState.formData.focusId;
-      }
+      const focusId    = creationModalState.formData.focusId || null;
 
       return {
         ...base,
         vision:     document.getElementById('cm-epic-vision')?.value || '',
         status:     document.getElementById('cm-epic-status')?.value || 'planning',
-        focus:      focusStr,
-        subFocusId,
-        // Expose focusId on entityData so saveCreationDefaults can persist it
-        focusId:    creationModalState.formData.focusId
+        focusId,
+        subFocusId
       };
     }
 
     case 'subFocus': {
-      // SubFocuses use `focus` (string name), NOT `focusId`
       const focusId = document.getElementById('subfocus-focus')?.value || null;
       return {
         ...base,
         description: document.getElementById('cm-subfocus-description')?.value || '',
         icon:        document.getElementById('cm-subfocus-icon')?.value || '',
         color:       document.getElementById('cm-subfocus-color')?.value || '#007bff',
-        focus:       focusId,  // store as `focus` to match existing schema
-        focusId,               // also expose for saveCreationDefaults
+        focusId,
         month:       String(new Date().getMonth() + 1).padStart(2, '0')
       };
     }
 
     case 'focus':
+      return {
+        ...base,
+        color:  document.getElementById('cm-focus-color')?.value || '#007bff',
+        status: 'active'
+      };
+
     default:
       return { ...base };
   }
@@ -696,11 +687,6 @@ function getFormData() {
 async function createEntity(options = {}) {
   const { keepOpen = false } = options;
   const type = creationModalState.selectedType;
-
-  if (type === 'focus') {
-    showToast('Focus creation is not yet supported — manage focuses in the app config.', 'info');
-    return { success: false };
-  }
 
   const entityData = getFormData();
 
@@ -720,7 +706,7 @@ async function createEntity(options = {}) {
   // Pre-save snapshot for undo capability
   const snapshotId = await createSnapshot(type, entityData.id);
 
-  const storeMap = { story: 'stories', epic: 'epics', subFocus: 'subFocuses' };
+  const storeMap = { focus: 'focuses', story: 'stories', epic: 'epics', subFocus: 'subFocuses' };
   const storeName = storeMap[type];
 
   disableForm();

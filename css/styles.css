@@ -1,5 +1,75 @@
 /* Capacity Planner - Asana-inspired Design System */
 
+/* ── Auth Overlay ─────────────────────────────────────────────────────────── */
+#auth-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 12, 41, 0.97);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 9999;
+}
+
+#auth-box {
+  background: #1a1a2e;
+  border: 1px solid #64ffda;
+  border-radius: 12px;
+  padding: 2.5rem;
+  max-width: 380px;
+  width: 90%;
+  text-align: center;
+}
+
+#auth-box h2 {
+  color: #64ffda;
+  margin-bottom: 0.5rem;
+}
+
+#auth-box p {
+  color: #aaa;
+  margin-bottom: 1.5rem;
+  font-size: 0.9rem;
+}
+
+#auth-email {
+  width: 100%;
+  padding: 0.75rem 1rem;
+  border-radius: 8px;
+  border: 1px solid #333;
+  background: #0f0c29;
+  color: white;
+  font-size: 1rem;
+  margin-bottom: 1rem;
+  box-sizing: border-box;
+}
+
+#auth-submit-btn {
+  width: 100%;
+  padding: 0.75rem;
+  background: #64ffda;
+  color: #0f0c29;
+  border: none;
+  border-radius: 8px;
+  font-size: 1rem;
+  font-weight: bold;
+  cursor: pointer;
+}
+
+#auth-submit-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+#auth-status {
+  margin-top: 1rem;
+  font-size: 0.85rem;
+  color: #64ffda;
+  min-height: 1.2em;
+}
+/* ── End Auth Overlay ─────────────────────────────────────────────────────── */
+
+
 :root {
   --primary: #f06a6a;
   --primary-hover: #e05555;

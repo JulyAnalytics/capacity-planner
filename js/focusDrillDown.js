@@ -10,24 +10,6 @@
 
 import DB from './db.js';
 
-// ============================================================================
-// FOCUS COLOR MAPPING (mirrors portfolioView.js)
-// ============================================================================
-
-const FOCUS_COLORS = {
-  Trading:     '#f06a6a',
-  Photography: '#4a90d9',
-  Physical:    '#4caf50',
-  Learning:    '#f5a623',
-  Building:    '#9b59b6',
-  Social:      '#e67e22',
-  Reading:     '#1abc9c',
-  Admin:       '#95a5a6'
-};
-
-function getFocusColor(focusName) {
-  return FOCUS_COLORS[focusName] || '#6b7784';
-}
 
 // ============================================================================
 // SELECTION STATE — Phase 5 & 6
@@ -339,11 +321,18 @@ function initLongPressHandlers() {
 
 /**
  * Load data for a focus by name.
- * Sequential loading: subFocuses → epics → stories (each depends on previous)
+ * Sequential loading: focuses → subFocuses → epics → stories
  */
 export async function loadFocusData(focusName) {
+  const allFocuses = await DB.getAll(DB.STORES.FOCUSES);
+  const focus      = allFocuses.find(f => f.name === focusName);
+  const focusId    = focus?.id || null;
+  const focusColor = focus?.color || '#6b7784';
+
   const allSubFocuses = await DB.getAll(DB.STORES.SUB_FOCUSES);
-  const subFocuses    = allSubFocuses.filter(sf => sf.focus === focusName);
+  const subFocuses    = focusId
+    ? allSubFocuses.filter(sf => sf.focusId === focusId)
+    : [];
 
   const allEpics  = await DB.getAll(DB.STORES.EPICS);
   const sfIds     = new Set(subFocuses.map(sf => sf.id));
@@ -353,7 +342,7 @@ export async function loadFocusData(focusName) {
   const epicIds    = new Set(epics.map(e => e.id));
   const stories    = allStories.filter(s => epicIds.has(s.epicId));
 
-  return { focusName, subFocuses, epics, stories };
+  return { focusName, focusId, focusColor, subFocuses, epics, stories };
 }
 
 /**
@@ -511,12 +500,13 @@ function renderStoryMapContent(epics, stories) {
   return `<div class="dd-story-map">${groups.map(({ epic, stories }) => renderEpicGroup(epic, stories)).join('')}</div>`;
 }
 
-function renderDrillDown(focusName, subFocuses, epics, stories) {
-  const color      = getFocusColor(focusName);
+function renderDrillDown(focusName, focusId, focusColor, subFocuses, epics, stories) {
+  const color      = focusColor || '#6b7784';
   const storyCount = stories.length;
   const epicCount  = epics.length;
   const sfCount    = subFocuses.length;
   const focusEsc   = esc(focusName);
+  const focusIdEsc = esc(focusId || '');
 
   const subFocusCards = sfCount > 0
     ? subFocuses.map(renderSubFocusCard).join('')
@@ -558,7 +548,7 @@ function renderDrillDown(focusName, subFocuses, epics, stories) {
         <div class="dd-section-header">
           <h2>Sub-Focuses</h2>
           <button class="dd-btn-secondary"
-            data-action="dd-add-entity" data-type="subFocus" data-focus-name="${focusEsc}">
+            data-action="dd-add-entity" data-type="subFocus" data-focus-name="${focusEsc}" data-focus-id="${focusIdEsc}">
             + Add Sub-Focus
           </button>
         </div>
@@ -572,7 +562,7 @@ function renderDrillDown(focusName, subFocuses, epics, stories) {
         <div class="dd-section-header">
           <h2>Epics <span class="dd-count">${epicCount}</span></h2>
           <button class="dd-btn-secondary"
-            data-action="dd-add-entity" data-type="epic" data-focus-name="${focusEsc}">
+            data-action="dd-add-entity" data-type="epic" data-focus-name="${focusEsc}" data-focus-id="${focusIdEsc}">
             + Add Epic
           </button>
         </div>
@@ -586,7 +576,7 @@ function renderDrillDown(focusName, subFocuses, epics, stories) {
         <div class="dd-section-header">
           <h2>Story Map</h2>
           <button class="dd-btn-secondary"
-            data-action="dd-add-entity" data-type="story" data-focus-name="${focusEsc}">
+            data-action="dd-add-entity" data-type="story" data-focus-name="${focusEsc}" data-focus-id="${focusIdEsc}">
             + Add Story
           </button>
         </div>
@@ -623,8 +613,8 @@ async function render(focusName) {
   `;
 
   try {
-    const { subFocuses, epics, stories } = await loadFocusData(focusName);
-    root.innerHTML = renderDrillDown(focusName, subFocuses, epics, stories);
+    const { focusId, focusColor, subFocuses, epics, stories } = await loadFocusData(focusName);
+    root.innerHTML = renderDrillDown(focusName, focusId, focusColor, subFocuses, epics, stories);
 
     // Re-sync selection UI after re-render
     updateSelectionUI();
@@ -654,8 +644,8 @@ async function render(focusName) {
 document.addEventListener('click', (e) => {
   const btn = e.target.closest('[data-action="dd-add-entity"]');
   if (!btn) return;
-  const { type, focusName } = btn.dataset;
-  if (type && window.openCreationModal) window.openCreationModal({ type, focusId: focusName });
+  const { type, focusId } = btn.dataset;
+  if (type && window.openCreationModal) window.openCreationModal({ type, focusId: focusId || null });
 });
 
 // ============================================================================

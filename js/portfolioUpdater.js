@@ -19,7 +19,7 @@ async function updatePortfolioAfterCreate(entity) {
   if (!type) return;
 
   // Push entity into app's in-memory data so re-renders reflect it immediately
-  const storeKey = { story: 'stories', epic: 'epics', subFocus: 'subFocuses' }[type];
+  const storeKey = { focus: 'focuses', story: 'stories', epic: 'epics', subFocus: 'subFocuses' }[type];
   if (storeKey && !app.data[storeKey].find(e => e.id === entity.id)) {
     app.data[storeKey].push(entity);
   }
@@ -57,6 +57,7 @@ async function updatePortfolioAfterCreate(entity) {
 
 function detectEntityType(entity) {
   if (!entity || !entity.id) return null;
+  if (entity.id.startsWith('focus-'))    return 'focus';
   if (entity.id.startsWith('story-'))    return 'story';
   if (entity.id.startsWith('epic-'))     return 'epic';
   if (entity.id.startsWith('subFocus-')) return 'subFocus';

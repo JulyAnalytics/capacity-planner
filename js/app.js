@@ -1176,6 +1176,7 @@ class CapacityManager {
 
     if (tabName === 'calendar') {
       this.updateCapacityPreview();
+      this.populateFocusSelects();
       if (window.epicSelection) window.epicSelection.initEpicSelection();
     }
     if (tabName === 'portfolio') {
@@ -1884,10 +1885,11 @@ class CapacityManager {
 
     const byFocus = {};
     activeEpics.forEach(epic => {
-      if (!byFocus[epic.focus]) {
-        byFocus[epic.focus] = [];
+      const focusName = this.getFocusName(epic.focusId);
+      if (!byFocus[focusName]) {
+        byFocus[focusName] = [];
       }
-      byFocus[epic.focus].push(epic);
+      byFocus[focusName].push(epic);
     });
 
     let html = `<div class="timeline-view" style="--timeline-cols: ${this.timelineWeeks}">`;
@@ -2052,13 +2054,13 @@ class CapacityManager {
 
   // Sub-Focus Management
   async addSubFocus() {
-    const focus = document.getElementById('subFocusParent').value;
+    const focusId = document.getElementById('subFocusParent')?.value;
     const name = document.getElementById('subFocusName').value.trim();
     const description = document.getElementById('subFocusDescription').value.trim();
     const icon = document.getElementById('subFocusIcon').value.trim();
     const color = document.getElementById('subFocusColor').value;
 
-    if (!focus || !name) {
+    if (!focusId || !name) {
       this.showNotification('Please select a parent focus and enter a name', 'warning');
       return;
     }
@@ -2070,7 +2072,7 @@ class CapacityManager {
       id: `sf-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`,
       name,
       description,
-      focus,
+      focusId,
       icon,
       color,
       month,
@@ -2093,7 +2095,7 @@ class CapacityManager {
 
     const filterFocus = document.getElementById('subFocusFilterFocus').value;
     const filtered = filterFocus
-      ? this.data.subFocuses.filter(sf => sf.focus === filterFocus)
+      ? this.data.subFocuses.filter(sf => this.getFocusName(sf.focusId) === filterFocus)
       : this.data.subFocuses;
 
     if (filtered.length === 0) {
@@ -2101,11 +2103,12 @@ class CapacityManager {
       return;
     }
 
-    // Group by focus
+    // Group by focus name
     const grouped = {};
     filtered.forEach(sf => {
-      if (!grouped[sf.focus]) grouped[sf.focus] = [];
-      grouped[sf.focus].push(sf);
+      const key = this.getFocusName(sf.focusId);
+      if (!grouped[key]) grouped[key] = [];
+      grouped[key].push(sf);
     });
 
     let html = '';
@@ -2138,15 +2141,16 @@ class CapacityManager {
   }
 
   loadSubFocusesForEpic() {
-    const focus = document.getElementById('epicFocus').value;
+    const focusId = document.getElementById('epicFocus')?.value;
     const select = document.getElementById('epicSubFocus');
+    if (!select) return;
 
-    if (!focus) {
+    if (!focusId) {
       select.innerHTML = '<option value="">Select Focus first</option>';
       return;
     }
 
-    const subs = this.data.subFocuses.filter(sf => sf.focus === focus);
+    const subs = this.data.subFocuses.filter(sf => sf.focusId === focusId);
 
     if (subs.length === 0) {
       select.innerHTML = '<option value="">No sub-focuses for this focus</option>';
@@ -2163,12 +2167,12 @@ class CapacityManager {
 
   // Epic Management
   async handleAddEpic() {
-    const focus = document.getElementById('epicFocus').value;
-    const subFocusId = document.getElementById('epicSubFocus').value;
+    const focusId = document.getElementById('epicFocus')?.value;
+    const subFocusId = document.getElementById('epicSubFocus')?.value;
     const name = document.getElementById('epicName').value.trim();
     const vision = document.getElementById('epicVision').value.trim();
 
-    if (!focus || !name) {
+    if (!focusId || !name) {
       this.showNotification('Please fill in focus and epic name', 'warning');
       return;
     }
@@ -2177,7 +2181,7 @@ class CapacityManager {
       id: `epic-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`,
       name,
       vision,
-      focus,
+      focusId,
       subFocusId: subFocusId || '',
       status: 'active',
       createdAt: new Date().toISOString()
@@ -2264,7 +2268,7 @@ class CapacityManager {
         <div class="epic-meta">
           <div class="meta-item">
             <span class="meta-label">Focus:</span>
-            <span class="meta-value">${epic.focus}</span>
+            <span class="meta-value">${this.getFocusName(epic.focusId)}</span>
           </div>
           ${subFocusLabel ? `<div class="meta-item">
             <span class="meta-label">Sub:</span>
@@ -2299,7 +2303,7 @@ class CapacityManager {
     const epics = this.data.epics.filter(e => e.month === month);
     let html = '<option value="">Select Epic</option>';
     epics.forEach(epic => {
-      html += `<option value="${epic.id}">${this.escapeHtml(epic.name)} (${epic.focus})</option>`;
+      html += `<option value="${epic.id}">${this.escapeHtml(epic.name)} (${this.getFocusName(epic.focusId)})</option>`;
     });
     select.innerHTML = html;
   }
@@ -2371,7 +2375,7 @@ class CapacityManager {
       name,
       description,
       month: storyMonth,
-      focus: epic.focus,
+      focus: this.getFocusName(epic.focusId),
       weight,
       status: status || STORY_STATUS.BACKLOG,
       fibonacciSize: fibSize ? parseInt(fibSize) : null,
@@ -2461,10 +2465,11 @@ class CapacityManager {
 
     const byFocus = {};
     this.data.epics.forEach(epic => {
-      if (!byFocus[epic.focus]) {
-        byFocus[epic.focus] = [];
+      const focusName = this.getFocusName(epic.focusId);
+      if (!byFocus[focusName]) {
+        byFocus[focusName] = [];
       }
-      byFocus[epic.focus].push(epic);
+      byFocus[focusName].push(epic);
     });
 
     let html = '<div class="story-map-container">';
@@ -3649,6 +3654,7 @@ class CapacityManager {
   // Export/Import
   async exportData() {
     const data = {
+      focuses: this.data.focuses,
       calendar: this.data.calendar,
       priorities: this.data.priorities,
       subFocuses: this.data.subFocuses,
@@ -3656,7 +3662,7 @@ class CapacityManager {
       stories: this.data.stories,
       dailyLogs: this.data.dailyLogs,
       exportedAt: new Date().toISOString(),
-      version: 3
+      version: 4
     };
 
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
@@ -3681,6 +3687,7 @@ class CapacityManager {
           await DB.clear(storeName);
         }
 
+        if (data.focuses) await DB.putAll(DB.STORES.FOCUSES, data.focuses);
         if (data.calendar) await DB.putAll(DB.STORES.CALENDAR, data.calendar);
         if (data.priorities) await DB.putAll(DB.STORES.PRIORITIES, data.priorities);
         if (data.subFocuses) await DB.putAll(DB.STORES.SUB_FOCUSES, data.subFocuses);
@@ -3951,17 +3958,20 @@ class CapacityManager {
     });
 
     epics.sort((a, b) => {
-      if (a.focus !== b.focus) return a.focus.localeCompare(b.focus);
+      const fa = this.getFocusName(a.focusId);
+      const fb = this.getFocusName(b.focusId);
+      if (fa !== fb) return fa.localeCompare(fb);
       return a.name.localeCompare(b.name);
     });
 
     let html = '<option value="">Select Epic</option>';
     let currentFocus = null;
     epics.forEach(epic => {
-      if (epic.focus !== currentFocus) {
+      const epicFocusName = this.getFocusName(epic.focusId);
+      if (epicFocusName !== currentFocus) {
         if (currentFocus !== null) html += '</optgroup>';
-        html += `<optgroup label="${this.escapeHtml(epic.focus)}">`;
-        currentFocus = epic.focus;
+        html += `<optgroup label="${this.escapeHtml(epicFocusName)}">`;
+        currentFocus = epicFocusName;
       }
       const statusBadge = epic.status === 'completed' ? ' (completed)' :
                            epic.status === 'planning' ? ' (planning)' : '';
@@ -4068,7 +4078,7 @@ class CapacityManager {
             ` : ''}
           </div>
           <div class="archive-epic-meta">
-            <span>🎯 ${this.escapeHtml(epic.focus)}</span>
+            <span>🎯 ${this.escapeHtml(this.getFocusName(epic.focusId))}</span>
             <span>📅 ${completedDate}</span>
           </div>
           <div class="archive-epic-stats">

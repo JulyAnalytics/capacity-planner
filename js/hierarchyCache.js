@@ -1,10 +1,10 @@
 /**
  * Hierarchy Cache Manager
- * Loads and caches Sub-Focus and Epic data for cascading dropdowns.
+ * Loads and caches Focus, Sub-Focus, and Epic data for cascading dropdowns.
  *
- * Note: Focuses are hardcoded constants (Trading, Photography, etc.) — there
- * is no 'focuses' IndexedDB store.  SubFocuses link to a focus via the `focus`
- * string field, NOT a `focusId`.  Epics link to a sub-focus via `subFocusId`.
+ * F-0: Focuses are now stored in IndexedDB ('focuses' store).
+ *      SubFocuses link to a focus via `focusId` (not the old `focus` string).
+ *      Epics link to a sub-focus via `subFocusId`.
  *
  * Phase 2.1: Basic cache loading
  * Phase 4.1: Multi-tab sync via Broadcast Channel + Storage Events + TTL
@@ -13,22 +13,14 @@
 import DB from './db.js';
 
 // ============================================================================
-// HARDCODED FOCUSES (no DB store — maintained as app constants)
-// ============================================================================
-
-const HARDCODED_FOCUSES = [
-  'Trading', 'Photography', 'Physical', 'Learning',
-  'Building', 'Social', 'Reading', 'Admin'
-].map(name => ({ id: name, name }));
-
-// ============================================================================
 // STATE
 // ============================================================================
 
 const hierarchyCache = {
   data: {
+    focuses:    [],
     subFocuses: [],
-    epics: []
+    epics:      []
   },
   lastRefresh: null,
   isLoaded: false
@@ -171,6 +163,7 @@ async function refreshHierarchyCache() {
   try {
     if (!DB.db) await DB.init();
 
+    hierarchyCache.data.focuses    = await DB.getAll('focuses');
     hierarchyCache.data.subFocuses = await DB.getAll('subFocuses');
     hierarchyCache.data.epics      = await DB.getAll('epics');
 
@@ -178,6 +171,7 @@ async function refreshHierarchyCache() {
     hierarchyCache.isLoaded    = true;
 
     console.log('Hierarchy cache loaded:', {
+      focuses:    hierarchyCache.data.focuses.length,
       subFocuses: hierarchyCache.data.subFocuses.length,
       epics:      hierarchyCache.data.epics.length
     });
@@ -190,7 +184,9 @@ async function refreshHierarchyCache() {
  * Add a newly-created entity to the cache (optimistic update).
  */
 function addToCache(entityType, entity) {
-  if (entityType === 'subFocus') {
+  if (entityType === 'focus') {
+    hierarchyCache.data.focuses.push(entity);
+  } else if (entityType === 'subFocus') {
     hierarchyCache.data.subFocuses.push(entity);
   } else if (entityType === 'epic') {
     hierarchyCache.data.epics.push(entity);
@@ -238,16 +234,12 @@ async function invalidateCache(entityType) {
 // ============================================================================
 
 function getAllFocuses() {
-  return HARDCODED_FOCUSES;
+  return hierarchyCache.data.focuses.filter(f => f.status !== 'archived');
 }
 
-/**
- * SubFocuses are stored with a `focus` string field (the focus name),
- * NOT a `focusId`.  focusId in our case IS the focus name string.
- */
 function getSubFocusesForFocus(focusId) {
   if (!focusId) return [];
-  return hierarchyCache.data.subFocuses.filter(sf => sf.focus === focusId);
+  return hierarchyCache.data.subFocuses.filter(sf => sf.focusId === focusId);
 }
 
 function getEpicsForSubFocus(subFocusId) {
@@ -256,7 +248,7 @@ function getEpicsForSubFocus(subFocusId) {
 }
 
 function getFocusById(focusId) {
-  return HARDCODED_FOCUSES.find(f => f.id === focusId) || null;
+  return hierarchyCache.data.focuses.find(f => f.id === focusId) || null;
 }
 
 function getSubFocusById(subFocusId) {

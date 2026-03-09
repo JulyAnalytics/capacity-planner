@@ -122,7 +122,7 @@ function createEpicCard(epic, priority) {
       <button class="es-epic-card-remove" onclick="window.epicSelection.removeEpicFromLane('${epic.id}')" title="Remove from month">&times;</button>
     </div>
     <div class="es-epic-card-meta">
-      <span>${escapeHtml(epic.focus)}</span>
+      <span>${escapeHtml(window.app?.getFocusName(epic.focusId) || '')}</span>
       ${epic.vision ? `<br><em>${escapeHtml(epic.vision)}</em>` : ''}
     </div>
     <div class="es-epic-card-actions">
@@ -156,11 +156,12 @@ async function renderAvailableEpics() {
     return;
   }
 
-  // Group by focus
+  // Group by focus name (resolved from focusId)
   const byFocus = {};
   available.forEach(epic => {
-    if (!byFocus[epic.focus]) byFocus[epic.focus] = [];
-    byFocus[epic.focus].push(epic);
+    const focusName = window.app?.getFocusName(epic.focusId) || '(No Focus)';
+    if (!byFocus[focusName]) byFocus[focusName] = [];
+    byFocus[focusName].push(epic);
   });
 
   const listDiv = document.createElement('div');
@@ -193,7 +194,7 @@ function createAvailableEpicItem(epic) {
   item.innerHTML = `
     <div class="es-available-info">
       <div class="es-available-name">${escapeHtml(epic.name)}</div>
-      <div class="es-available-meta">${escapeHtml(epic.focus)} &bull; ${epic.status}</div>
+      <div class="es-available-meta">${escapeHtml(window.app?.getFocusName(epic.focusId) || '')} &bull; ${epic.status}</div>
     </div>
     <div class="es-available-actions">
       <button class="btn-primary btn-sm" onclick="window.epicSelection.showEpicSelector('primary', '${epic.id}')">+ Add</button>
@@ -231,7 +232,7 @@ async function showEpicSelector(priorityLevel, preSelectId) {
         ${available.map(epic => `
           <div class="es-selector-item" onclick="window.epicSelection.selectEpic('${epic.id}', '${priorityLevel}')">
             <div class="es-available-name">${escapeHtml(epic.name)}</div>
-            <div class="es-available-meta">${escapeHtml(epic.focus)} &bull; ${epic.status}</div>
+            <div class="es-available-meta">${escapeHtml(window.app?.getFocusName(epic.focusId) || '')} &bull; ${epic.status}</div>
           </div>
         `).join('')}
       </div>
