@@ -6,6 +6,7 @@
     <title>Capacity Planner</title>
     <link rel="stylesheet" href="css/styles.css">
     <link rel="stylesheet" href="css/portfolio.css">
+    <link rel="stylesheet" href="css/backlog.css">
 </head>
 <body>
     <!-- Auth Overlay — shown when no session exists -->
@@ -52,6 +53,7 @@
             <button class="nav-tab" data-tab="calendar">Calendar</button>
             <button class="nav-tab" data-tab="portfolio">Portfolio</button>
             <button class="nav-tab" data-tab="analytics">Analytics</button>
+            <button class="nav-tab" data-tab="backlog">Backlog</button>
         </nav>
 
         <!-- Tab 1: Daily Log (default) -->
@@ -432,7 +434,16 @@
                 <div id="analyticsReport"></div>
             </div>
         </div>
+
+        <!-- Tab 7: Backlog -->
+        <div id="backlog" class="tab-content panel-expanded">
+          <div id="backlog-root"></div>
+        </div>
+
     </div>
+
+    <!-- Backlog detail panel -->
+    <div id="backlog-detail-panel" class="bdp-container" aria-hidden="true"></div>
 
     <!-- Floating Create Button -->
     <div class="global-actions">
@@ -468,5 +479,8 @@
     <script type="module" src="js/creationModal.js"></script>
     <script type="module" src="js/navigationState.js"></script>
     <script type="module" src="js/focusDrillDown.js"></script>
+    <script type="module" src="js/sprintManager.js"></script>
+    <script type="module" src="js/backlogView.js"></script>
+    <script type="module" src="js/backlogDetailPanel.js"></script>
 </body>
 </html>

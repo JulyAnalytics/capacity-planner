@@ -20,7 +20,8 @@ const hierarchyCache = {
   data: {
     focuses:    [],
     subFocuses: [],
-    epics:      []
+    epics:      [],
+    sprints:    [],  // sprint records only (no segments)
   },
   lastRefresh: null,
   isLoaded: false
@@ -106,6 +107,20 @@ function startTTLTimer() {
  * Handle invalidation message from another tab
  */
 async function handleInvalidationMessage(message) {
+  // Handle sprint/travelSegment broadcast messages from sprintManager.js
+  if (message?.type === 'sprint') {
+    const { action, sprint } = message;
+    if (action === 'created') {
+      hierarchyCache.data.sprints.push(sprint);
+      hierarchyCache.data.sprints.sort((a, b) => b.startDate.localeCompare(a.startDate));
+    } else if (action === 'updated') {
+      const idx = hierarchyCache.data.sprints.findIndex(s => s.id === sprint.id);
+      if (idx >= 0) hierarchyCache.data.sprints[idx] = sprint;
+    }
+    return;
+  }
+  if (message?.type === 'travelSegment') return; // segments not cached
+
   if (!message || message.type !== 'invalidate') return;
 
   // Ignore messages from this tab (already handled locally)
@@ -166,6 +181,8 @@ async function refreshHierarchyCache() {
     hierarchyCache.data.focuses    = await DB.getAll('focuses');
     hierarchyCache.data.subFocuses = await DB.getAll('subFocuses');
     hierarchyCache.data.epics      = await DB.getAll('epics');
+    const sprints = await DB.getAll(DB.STORES.SPRINTS);
+    hierarchyCache.data.sprints    = sprints.sort((a, b) => b.startDate.localeCompare(a.startDate));
 
     hierarchyCache.lastRefresh = Date.now();
     hierarchyCache.isLoaded    = true;
@@ -275,6 +292,9 @@ refreshHierarchyCache();
 window.addEventListener('beforeunload', () => {
   if (broadcastChannel) broadcastChannel.close();
 });
+
+// Expose for use by creationModal.js sprint dropdown
+window.hierarchyCache = hierarchyCache;
 
 // ============================================================================
 // EXPORTS

@@ -3,15 +3,17 @@
 // Records are stored as a JSONB `data` column to avoid field-name mapping issues.
 
 const _TABLE_MAP = {
-  calendar:     'calendar',
-  priorities:   'priorities',
-  subFocuses:   'sub_focuses',
-  epics:        'epics',
-  stories:      'stories',
-  dailyLogs:    'daily_logs',
-  monthlyPlans: 'monthly_plans',
-  focuses:      'focuses',
-  metadata:     null  // stored in localStorage, not synced
+  calendar:        'calendar',
+  priorities:      'priorities',
+  subFocuses:      'sub_focuses',
+  epics:           'epics',
+  stories:         'stories',
+  dailyLogs:       'daily_logs',
+  monthlyPlans:    'monthly_plans',
+  focuses:         'focuses',
+  sprints:         'sprints',
+  travelSegments:  'travel_segments',
+  metadata:        null  // stored in localStorage, not synced
 };
 
 const DB = {
@@ -23,8 +25,10 @@ const DB = {
     STORIES:       'stories',
     DAILY_LOGS:    'dailyLogs',
     METADATA:      'metadata',
-    MONTHLY_PLANS: 'monthlyPlans',
-    FOCUSES:       'focuses',
+    MONTHLY_PLANS:   'monthlyPlans',
+    FOCUSES:         'focuses',
+    SPRINTS:         'sprints',
+    TRAVEL_SEGMENTS: 'travelSegments',
   },
 
   _cache: {
@@ -34,8 +38,10 @@ const DB = {
     epics:        null,
     stories:      null,
     dailyLogs:    null,
-    monthlyPlans: null,
-    focuses:      null,
+    monthlyPlans:   null,
+    focuses:        null,
+    sprints:        null,
+    travelSegments: null,
   },
   _cacheReady: false,
 
@@ -57,7 +63,9 @@ const DB = {
       { store: 'stories',      table: 'stories' },
       { store: 'dailyLogs',    table: 'daily_logs' },
       { store: 'monthlyPlans', table: 'monthly_plans' },
-      { store: 'focuses',      table: 'focuses' },
+      { store: 'focuses',         table: 'focuses'          },
+      { store: 'sprints',         table: 'sprints'          },
+      { store: 'travelSegments',  table: 'travel_segments'  },
     ];
 
     const results = await Promise.all(

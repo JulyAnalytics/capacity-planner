@@ -61,6 +61,8 @@ function detectEntityType(entity) {
   if (entity.id.startsWith('story-'))    return 'story';
   if (entity.id.startsWith('epic-'))     return 'epic';
   if (entity.id.startsWith('subFocus-')) return 'subFocus';
+  if (/^\d{4}-S\d{2}$/.test(entity.id) || /^\d{4}-CAL-W/.test(entity.id)) return 'sprint';
+  if (entity.id.startsWith('seg-'))      return 'travelSegment';
   return null;
 }
 

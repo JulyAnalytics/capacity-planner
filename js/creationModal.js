@@ -54,7 +54,8 @@ const creationModalState = {
     name:       '',
     focusId:    null,
     subFocusId: null,
-    epicId:     null
+    epicId:     null,
+    sprintId:   null,
   }
 };
 
@@ -76,7 +77,8 @@ function openCreationModal(overrides = {}) {
     name:       '',
     focusId:    overrides.focusId    ?? defaults.focusId    ?? null,
     subFocusId: overrides.subFocusId ?? defaults.subFocusId ?? null,
-    epicId:     overrides.epicId     ?? defaults.epicId     ?? null
+    epicId:     overrides.epicId     ?? defaults.epicId     ?? null,
+    sprintId:   overrides.sprintId   ?? null,
   };
 
   createModalDOM();
@@ -298,6 +300,14 @@ function renderStoryForm() {
     </div>
 
     <div class="cm-form-group">
+      <label for="story-sprint" class="cm-form-label">Sprint (optional)</label>
+      <select id="story-sprint" class="cm-form-select">
+        <option value="">Backlog (no sprint)</option>
+        ${_renderSprintOptions(creationModalState.formData.sprintId)}
+      </select>
+    </div>
+
+    <div class="cm-form-group">
       <label for="cm-story-status" class="cm-form-label">Status</label>
       <select id="cm-story-status" class="cm-form-select">
         <option value="backlog">Backlog</option>
@@ -496,6 +506,15 @@ function renderFocusForm() {
 // Breadcrumb
 // ----------------------------------------------------------------------------
 
+function _renderSprintOptions(selectedSprintId) {
+  const sprints = (window.hierarchyCache?.data?.sprints || [])
+    .filter(s => s.status !== 'done')
+    .sort((a, b) => a.startDate.localeCompare(b.startDate));
+  return sprints.map(s =>
+    `<option value="${s.id}" ${selectedSprintId === s.id ? 'selected' : ''}>${s.id} · ${s.startDate}</option>`
+  ).join('');
+}
+
 function renderBreadcrumb(focusId, subFocusId, epicId) {
   const parts = [];
 
@@ -611,10 +630,11 @@ function getFormData() {
 
   switch (type) {
     case 'story': {
-      const fib    = document.getElementById('cm-story-fib')?.value;
-      const est    = document.getElementById('cm-story-estimate')?.value;
-      const status = document.getElementById('cm-story-status')?.value || 'active';
-      const epicId = document.getElementById('story-epic')?.value || null;
+      const fib      = document.getElementById('cm-story-fib')?.value;
+      const est      = document.getElementById('cm-story-estimate')?.value;
+      const status   = document.getElementById('cm-story-status')?.value || 'active';
+      const epicId   = document.getElementById('story-epic')?.value || null;
+      const sprintId = document.getElementById('story-sprint')?.value || null;
 
       // Derive focus name from epic.focusId via app helper
       let focusStr = '';
@@ -626,6 +646,7 @@ function getFormData() {
       return {
         ...base,
         epicId,
+        sprintId,
         focus: focusStr,
         description: '',
         month: String(new Date().getMonth() + 1).padStart(2, '0'),

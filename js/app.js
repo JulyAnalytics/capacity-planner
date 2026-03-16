@@ -2,24 +2,7 @@
 
 import DB from './db.js';
 import { openBulkEditModal } from './bulkEdit.js';
-
-// Story & Epic status constants
-const STORY_STATUS = {
-  BACKLOG: 'backlog',
-  ACTIVE: 'active',
-  COMPLETED: 'completed',
-  ABANDONED: 'abandoned',
-  BLOCKED: 'blocked'
-};
-
-const EPIC_STATUS = {
-  PLANNING: 'planning',
-  ACTIVE: 'active',
-  COMPLETED: 'completed',
-  ARCHIVED: 'archived'
-};
-
-const FIBONACCI_SIZES = [1, 2, 3, 5, 8, 13, 21];
+import { DAY_CAPACITY, STORY_STATUS, EPIC_STATUS } from './constants.js';
 
 const FIBONACCI_DESCRIPTIONS = {
   1: 'Trivial (<30 min)',
@@ -38,14 +21,6 @@ const FLOOR_ITEMS = {
   tradeJournaling: 'Trade Journaling'
 };
 
-// Capacity per day type (in 2-hour blocks)
-const DAY_CAPACITY = {
-  travel:  { priority: 0, secondary1: 0, secondary2: 0, floor: 0.25, total: 0.25 },
-  buffer:  { priority: 0, secondary1: 1, secondary2: 0, floor: 0.5,  total: 1.5 },
-  stable:  { priority: 1, secondary1: 1, secondary2: 1, floor: 0.5,  total: 3.5 },
-  project: { priority: 2, secondary1: 1, secondary2: 0, floor: 0.5,  total: 3.5 },
-  social:  { priority: 0, secondary1: 0, secondary2: 0, floor: 0.5,  total: 0.5 }
-};
 
 // ── Shared sub-focus form component (OQ-4) ────────────────────────────────────
 class SubFocusForm {
@@ -574,6 +549,12 @@ class CapacityManager {
       subFocus: () => {
         this.renderSubFocusList();
         this.loadSubFocusesForEpic();
+      },
+      sprint: () => {
+        if (window.backlogView) window.backlogView.render();
+      },
+      travelSegment: () => {
+        if (window.backlogView) window.backlogView.renderSprintCapacityHeaders();
       },
     };
     map[type]?.();
@@ -1195,6 +1176,9 @@ class CapacityManager {
     }
     if (tabName === 'daily') {
       this.refreshDailyView();
+    }
+    if (tabName === 'backlog') {
+      if (window.backlogView) window.backlogView.render();
     }
   }
 
@@ -2810,10 +2794,12 @@ class CapacityManager {
     await this.saveStory(story);
 
     // Also activate the parent epic if it's still in planning
-    const epic = this.data.epics.find(e => e.id === story.epicId);
-    if (epic && epic.status === EPIC_STATUS.PLANNING) {
-      epic.status = EPIC_STATUS.ACTIVE;
-      await this.saveEpic(epic);
+    if (story.epicId) {
+      const epic = this.data.epics.find(e => e.id === story.epicId);
+      if (epic && epic.status === EPIC_STATUS.PLANNING) {
+        epic.status = EPIC_STATUS.ACTIVE;
+        await this.saveEpic(epic);
+      }
     }
   }
 
@@ -2845,7 +2831,7 @@ class CapacityManager {
     }
 
     // Check if the epic is now complete
-    await this.checkEpicCompletion(story.epicId);
+    if (story.epicId) await this.checkEpicCompletion(story.epicId);
   }
 
   async abandonStory(storyId, reason) {
@@ -2868,7 +2854,7 @@ class CapacityManager {
       await this.saveStory(dep);
     }
 
-    await this.checkEpicCompletion(story.epicId);
+    if (story.epicId) await this.checkEpicCompletion(story.epicId);
   }
 
   async blockStory(storyId, unblockedByStoryId) {

@@ -342,7 +342,13 @@ export async function loadFocusData(focusName) {
   const epicIds    = new Set(epics.map(e => e.id));
   const stories    = allStories.filter(s => epicIds.has(s.epicId));
 
-  return { focusName, focusId, focusColor, subFocuses, epics, stories };
+  // Epicless stories that belong to this focus via story.focus field
+  const epiclessStories = allStories.filter(s =>
+    !s.epicId &&
+    s.focus === focusName
+  );
+
+  return { focusName, focusId, focusColor, subFocuses, epics, stories, epiclessStories };
 }
 
 /**
@@ -492,17 +498,34 @@ function renderEpicGroup(epic, stories) {
 }
 
 // Phase 4: full story map section
-function renderStoryMapContent(epics, stories) {
-  if (epics.length === 0) {
+function renderStoryMapContent(epics, stories, epiclessStories = []) {
+  if (epics.length === 0 && epiclessStories.length === 0) {
     return '<p class="dd-empty-message">No epics yet — add one above</p>';
   }
   const groups = groupStoriesByEpic(epics, stories);
-  return `<div class="dd-story-map">${groups.map(({ epic, stories }) => renderEpicGroup(epic, stories)).join('')}</div>`;
+  let html = `<div class="dd-story-map">${groups.map(({ epic, stories }) => renderEpicGroup(epic, stories)).join('')}`;
+
+  if (epiclessStories.length > 0) {
+    html += `
+      <div class="dd-epic-group dd-epic-group--unassigned">
+        <div class="dd-epic-group-header">
+          <span class="dd-epic-group-name" style="color: var(--text-muted)">No epic</span>
+          <span class="dd-epic-group-count">${epiclessStories.length} stor${epiclessStories.length !== 1 ? 'ies' : 'y'}</span>
+        </div>
+        <div class="dd-story-list">
+          ${epiclessStories.map(renderStoryItem).join('')}
+        </div>
+      </div>
+    `;
+  }
+
+  html += '</div>';
+  return html;
 }
 
-function renderDrillDown(focusName, focusId, focusColor, subFocuses, epics, stories) {
+function renderDrillDown(focusName, focusId, focusColor, subFocuses, epics, stories, epiclessStories = []) {
   const color      = focusColor || '#6b7784';
-  const storyCount = stories.length;
+  const storyCount = stories.length + (epiclessStories || []).length;
   const epicCount  = epics.length;
   const sfCount    = subFocuses.length;
   const focusEsc   = esc(focusName);
@@ -580,7 +603,7 @@ function renderDrillDown(focusName, focusId, focusColor, subFocuses, epics, stor
             + Add Story
           </button>
         </div>
-        ${renderStoryMapContent(epics, stories)}
+        ${renderStoryMapContent(epics, stories, epiclessStories)}
       </section>
 
     </div>
@@ -613,8 +636,8 @@ async function render(focusName) {
   `;
 
   try {
-    const { focusId, focusColor, subFocuses, epics, stories } = await loadFocusData(focusName);
-    root.innerHTML = renderDrillDown(focusName, focusId, focusColor, subFocuses, epics, stories);
+    const { focusId, focusColor, subFocuses, epics, stories, epiclessStories } = await loadFocusData(focusName);
+    root.innerHTML = renderDrillDown(focusName, focusId, focusColor, subFocuses, epics, stories, epiclessStories);
 
     // Re-sync selection UI after re-render
     updateSelectionUI();

@@ -1,3 +1,5 @@
+import { deriveSprintMeta } from './sprintCapacity.js';
+
 /**
  * Business Rules & Validation
  * Shared between bulk edit (Phase 2) and import pipeline (Phase 3-4)
@@ -120,9 +122,7 @@ export function validateStory(story, context = {}) {
     errors.push({ field: 'name', message: 'Story name is required' });
   }
 
-  if (!story.epicId) {
-    errors.push({ field: 'epicId', message: 'Epic is required' });
-  }
+  // epicId is optional (stories can be unassigned)
 
   if (!story.focus) {
     errors.push({ field: 'focus', message: 'Focus is required' });
@@ -389,4 +389,77 @@ export function validateEpics(epics, context = {}) {
   });
 
   return { valid, invalid };
+}
+
+// ============================================================================
+// SPRINT + TRAVEL SEGMENT VALIDATION
+// ============================================================================
+
+/**
+ * Validate a TravelSegment record against its parent sprint.
+ * Returns array of validation errors (empty = valid).
+ */
+export function validateTravelSegment(seg, sprint) {
+  const errors = [];
+
+  const { endDate: sprintEnd } = deriveSprintMeta(sprint.startDate, sprint.durationWeeks);
+  if (seg.startDate < sprint.startDate || seg.endDate > sprintEnd) {
+    errors.push({ field: 'dateRange', message: 'Segment dates must fall within sprint range' });
+  }
+  if (seg.endDate < seg.startDate) {
+    errors.push({ field: 'endDate', message: 'End date must be on or after start date' });
+  }
+
+  const segmentDays = _daysBetween(seg.startDate, seg.endDate) + 1;
+  const dayTypeSum  = Object.values(seg.dayTypes).reduce((a, b) => a + b, 0);
+  if (dayTypeSum !== segmentDays) {
+    errors.push({
+      field: 'dayTypes',
+      message: `Day types sum to ${dayTypeSum} but segment spans ${segmentDays} day${segmentDays !== 1 ? 's' : ''}. They must match exactly.`,
+    });
+  }
+
+  for (const [type, count] of Object.entries(seg.dayTypes)) {
+    if (count < 0)                errors.push({ field: 'dayTypes', message: `${type} count cannot be negative` });
+    if (!Number.isInteger(count)) errors.push({ field: 'dayTypes', message: `${type} count must be a whole number` });
+  }
+
+  const validOverrides = ['travel', 'buffer', null, undefined];
+  if (!validOverrides.includes(seg.departureDayOverride)) {
+    errors.push({ field: 'departureDayOverride', message: 'Override must be "travel", "buffer", or null' });
+  }
+
+  return errors;
+}
+
+/**
+ * Validate a Sprint record.
+ * Returns array of validation errors (empty = valid).
+ */
+export function validateSprint(sprint) {
+  const errors = [];
+
+  if (!sprint.startDate) {
+    errors.push({ field: 'startDate', message: 'Start date is required' });
+    return errors;
+  }
+
+  const d = new Date(sprint.startDate);
+  if (d.getDay() !== 1) {
+    errors.push({ field: 'startDate', message: 'Sprint must start on a Monday' });
+  }
+
+  if (![1, 2].includes(sprint.durationWeeks)) {
+    errors.push({ field: 'durationWeeks', message: 'Duration must be 1 or 2 weeks' });
+  }
+
+  if (!['planning', 'active', 'done'].includes(sprint.status)) {
+    errors.push({ field: 'status', message: 'Invalid sprint status' });
+  }
+
+  return errors;
+}
+
+function _daysBetween(dateA, dateB) {
+  return Math.round((new Date(dateB) - new Date(dateA)) / 86400000);
 }

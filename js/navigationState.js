@@ -7,6 +7,7 @@
  * - Scroll restoration via deferred callback (no stale closures)
  * - History-based routing (browser back/forward works)
  * - Sequential data loading is in focusDrillDown.js
+ * - Extended to handle 'backlog' panel state (story/epic)
  */
 
 // ============================================================================
@@ -22,12 +23,32 @@ const scrollPositions = {};
 
 window.addEventListener('popstate', (e) => {
   const state = e.state;
-  if (state?.view === 'focus' && state?.focusName) {
+  if (state?.view === 'backlog') {
+    _handleBacklogPopstate(state);
+  } else if (state?.view === 'focus' && state?.focusName) {
     _renderFocusDrillDown(state.focusName);
   } else {
     _renderPortfolio();
   }
 });
+
+// ============================================================================
+// BACKLOG PANEL POPSTATE
+// ============================================================================
+
+function _handleBacklogPopstate(state) {
+  if (!window.backlogView) return;
+  // Prevent double-push when triggered by history navigation
+  window.backlogView._historyTriggered = true;
+  if (state.panelType === 'story' && state.panelId) {
+    window.backlogView.openStoryPanel(state.panelId);
+  } else if (state.panelType === 'epic' && state.panelId) {
+    window.backlogView.openEpicPanel(state.panelId);
+  } else {
+    window.backlogView.closePanel();
+  }
+  window.backlogView._historyTriggered = false;
+}
 
 // ============================================================================
 // PUBLIC NAVIGATION FUNCTIONS
