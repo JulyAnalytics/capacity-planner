@@ -223,3 +223,5 @@ export function validateSprint(sprint) {
   }
   return errors;
 }
+
+window._locationCapacityUtils = { addDays: isoAddDays };

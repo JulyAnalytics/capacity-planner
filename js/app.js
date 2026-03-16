@@ -3,6 +3,7 @@
 import DB from './db.js';
 import { openBulkEditModal } from './bulkEdit.js';
 import { DAY_CAPACITY, STORY_STATUS, EPIC_STATUS } from './constants.js';
+import { deriveCapacityForDateRange } from './locationCapacity.js';
 
 const FIBONACCI_DESCRIPTIONS = {
   1: 'Trivial (<30 min)',
@@ -2362,17 +2363,40 @@ class CapacityManager {
 
     const calendarData = this.data.calendar.filter(c => c.month === month);
 
-    if (calendarData.length === 0) {
+    const locPeriods    = this.data.locationPeriods || [];
+    const overrides     = this.data.dayTypeOverrides || [];
+    const year          = new Date().getFullYear();
+    const monthStart    = `${year}-${String(month).padStart(2, '0')}-01`;
+    const [y, m]        = monthStart.split('-').map(Number);
+    const monthEndDate  = new Date(Date.UTC(y, m, 0));
+    const monthEnd      = monthEndDate.toISOString().slice(0, 10);
+
+    const periodsInMonth = locPeriods.filter(p =>
+      p.startDate <= monthEnd && p.endDate >= monthStart
+    );
+
+    let totals;
+    if (periodsInMonth.length > 0) {
+      const derived = deriveCapacityForDateRange(monthStart, monthEnd, locPeriods, overrides);
+      totals = {
+        total:      derived.total,
+        priority:   derived.priority,
+        secondary1: derived.secondary1,
+        secondary2: derived.secondary2,
+      };
+    } else {
+      totals = calendarData.reduce((acc, w) => ({
+        total:      acc.total      + w.capacities.total,
+        priority:   acc.priority   + w.capacities.priority,
+        secondary1: acc.secondary1 + w.capacities.secondary1,
+        secondary2: acc.secondary2 + w.capacities.secondary2,
+      }), { total: 0, priority: 0, secondary1: 0, secondary2: 0 });
+    }
+
+    if (totals.total === 0 && periodsInMonth.length === 0 && calendarData.length === 0) {
       container.innerHTML = '<div class="alert alert-info">No capacity data for this month. Add calendar weeks first.</div>';
       return;
     }
-
-    const totals = calendarData.reduce((acc, w) => ({
-      total: acc.total + w.capacities.total,
-      priority: acc.priority + w.capacities.priority,
-      secondary1: acc.secondary1 + w.capacities.secondary1,
-      secondary2: acc.secondary2 + w.capacities.secondary2
-    }), { total: 0, priority: 0, secondary1: 0, secondary2: 0 });
 
     const stories = this.data.stories.filter(s => s.month === month);
     const allocated = stories.reduce((sum, s) => sum + (s.weight || 0), 0);
@@ -3388,6 +3412,52 @@ class CapacityManager {
     this.renderDailyStories();
   }
 
+  _getStoriesForDate(dateStr) {
+    const { sprints, stories } = this.data;
+
+    if (sprints === null) {
+      const month = dateStr.slice(5, 7);
+      return stories.filter(s =>
+        s.month === month &&
+        s.status !== STORY_STATUS.COMPLETED &&
+        s.status !== STORY_STATUS.ABANDONED
+      );
+    }
+
+    if (sprints.length > 0) {
+      const { addDays } = window._locationCapacityUtils || {};
+      const sprint = sprints.find(s => {
+        const endDate = addDays
+          ? addDays(s.startDate, s.durationWeeks * 7 - 1)
+          : (() => {
+              const [y, m, d] = s.startDate.split('-').map(Number);
+              return new Date(Date.UTC(y, m - 1, d + s.durationWeeks * 7 - 1))
+                .toISOString().slice(0, 10);
+            })();
+        return dateStr >= s.startDate && dateStr <= endDate;
+      });
+
+      if (sprint) {
+        return stories.filter(s =>
+          s.sprintId === sprint.id ||
+          (!s.sprintId && (s.status === STORY_STATUS.ACTIVE || s.status === STORY_STATUS.BLOCKED))
+        );
+      }
+
+      return stories.filter(s =>
+        !s.sprintId &&
+        (s.status === STORY_STATUS.ACTIVE || s.status === STORY_STATUS.BLOCKED)
+      );
+    }
+
+    const month = dateStr.slice(5, 7);
+    return stories.filter(s =>
+      s.month === month &&
+      s.status !== STORY_STATUS.COMPLETED &&
+      s.status !== STORY_STATUS.ABANDONED
+    );
+  }
+
   // Daily Log — two-phase layout (§6.3)
   renderDailyStories() {
     const container = document.getElementById('dailyStories');
@@ -3422,15 +3492,14 @@ class CapacityManager {
       (existingLog?.stories || existingLog?.storyEfforts || []).map(s => s.id || s.storyId)
     );
 
-    // All eligible stories for this month
-    const allStories = this.data.stories.filter(s =>
-      s.month === month && (
-        s.status === STORY_STATUS.ACTIVE ||
-        s.status === STORY_STATUS.BACKLOG ||
-        s.status === STORY_STATUS.BLOCKED ||
-        loggedStoryIds.has(s.id)
-      )
-    );
+    // All eligible stories for this date
+    const allStories = date
+      ? this._getStoriesForDate(date)
+      : this.data.stories.filter(s =>
+          s.month === month &&
+          s.status !== STORY_STATUS.COMPLETED &&
+          s.status !== STORY_STATUS.ABANDONED
+        );
 
     if (allStories.length === 0) {
       container.innerHTML = '<p class="empty-state">No active stories for this month</p>';
@@ -3635,22 +3704,41 @@ class CapacityManager {
     let calendarData = this.data.calendar.filter(c => c.month === month);
     if (week) calendarData = calendarData.filter(c => String(c.week) === week);
 
-    if (calendarData.length === 0) {
-      container.innerHTML = '<div class="alert alert-info">No data for this period.</div>';
-      return;
-    }
-
-    const planned = calendarData.reduce((s, w) => s + w.capacities.total, 0);
-    const plannedPriority = calendarData.reduce((s, w) => s + w.capacities.priority, 0);
-
-    const stories = this.data.stories.filter(s => s.month === month);
-    const storyCapacity = stories.reduce((s, st) => s + (st.weight || 0), 0);
-
-    const year = calendarData[0]?.year || new Date().getFullYear();
+    const year = new Date().getFullYear();
     const startDate = new Date(year, parseInt(month) - 1, week ? (parseInt(week) - 1) * 7 + 1 : 1);
     const endDate = week
       ? new Date(year, parseInt(month) - 1, parseInt(week) * 7)
       : new Date(year, parseInt(month), 0);
+
+    const periodStartIso = startDate.toISOString().slice(0, 10);
+    const periodEndIso   = endDate.toISOString().slice(0, 10);
+
+    const allLocPeriods  = this.data.locationPeriods || [];
+    const allOverrides   = this.data.dayTypeOverrides || [];
+
+    const periodsInRange = allLocPeriods.filter(p =>
+      p.startDate <= periodEndIso && p.endDate >= periodStartIso
+    );
+
+    if (calendarData.length === 0 && periodsInRange.length === 0) {
+      container.innerHTML = '<div class="alert alert-info">No data for this period.</div>';
+      return;
+    }
+
+    let planned, plannedPriority;
+    if (periodsInRange.length > 0) {
+      const derived = deriveCapacityForDateRange(
+        periodStartIso, periodEndIso, allLocPeriods, allOverrides
+      );
+      planned         = derived.total;
+      plannedPriority = derived.priority;
+    } else {
+      planned         = calendarData.reduce((s, w) => s + w.capacities.total, 0);
+      plannedPriority = calendarData.reduce((s, w) => s + w.capacities.priority, 0);
+    }
+
+    const stories = this.data.stories.filter(s => s.month === month);
+    const storyCapacity = stories.reduce((s, st) => s + (st.weight || 0), 0);
 
     const logs = this.data.dailyLogs.filter(l => {
       const d = new Date(l.date);

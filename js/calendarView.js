@@ -172,7 +172,7 @@ function _renderMonthGrid(periods, overrides, sprints, stories) {
   const rows = [];
   for (let i = 0; i < allDates.length; i += 7) {
     const week = allDates.slice(i, i + 7);
-    rows.push(_renderWeekRow(week, month, dayMap, periodMap, sprintMeta, overrideByDate, storyCountByDate, today, periods, overrides, sprints));
+    rows.push(_renderWeekRow(week, month, dayMap, periodMap, sprintMeta, overrideByDate, storyCountByDate, today, periods, overrides, sprints, stories));
   }
 
   const dayHeaders = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
@@ -184,13 +184,13 @@ function _renderMonthGrid(periods, overrides, sprints, stories) {
   </div>`;
 }
 
-function _renderWeekRow(week, currentMonth, dayMap, periodMap, sprintMeta, overrideByDate, storyCountByDate, today, periods, overrides, sprints) {
+function _renderWeekRow(week, currentMonth, dayMap, periodMap, sprintMeta, overrideByDate, storyCountByDate, today, periods, overrides, sprints, stories) {
   const cells = week.map(ds => _renderDayCell(ds, currentMonth, dayMap, periodMap, overrideByDate, storyCountByDate, today)).join('');
 
   // Sprint bars overlapping this week
   const sprintBars = sprintMeta
     .filter(sm => sm.endDate >= week[0] && sm.startDate <= week[6])
-    .map(sm => _renderSprintBar(sm, week, periods, overrides))
+    .map(sm => _renderSprintBar(sm, week, periods, overrides, stories))
     .join('');
 
   // Location period bands overlapping this week
@@ -239,8 +239,15 @@ function _renderDayCell(ds, currentMonth, dayMap, periodMap, overrideByDate, sto
     ? `<div class="cv-story-count">${storyCount} stor${storyCount === 1 ? 'y' : 'ies'}</div>`
     : '';
 
-  const ghostSprint = !_dateInAnySprint(ds, storyCountByDate)
+  const isUncovered = info.source === 'uncovered';
+  const inSprint    = _dateInAnySprint(ds);
+
+  const ghostSprint = !inSprint
     ? `<button class="cv-ghost-sprint" onclick="window.calendarView._openCreateSprint('${ds}')" title="Create sprint starting here">+ Sprint</button>`
+    : '';
+
+  const ghostLocation = isUncovered
+    ? `<button class="cv-ghost-location" onclick="event.stopPropagation(); window.calendarView._openNewPeriodFromDate('${ds}')" title="Add location period">+ Location</button>`
     : '';
 
   return `<div class="${classes}" data-date="${ds}" onclick="window.calendarView._onCellClick('${ds}')">
@@ -252,12 +259,11 @@ function _renderDayCell(ds, currentMonth, dayMap, periodMap, overrideByDate, sto
     ${dayTypeBadge}
     ${storyBadge}
     ${ghostSprint}
+    ${ghostLocation}
   </div>`;
 }
 
-function _dateInAnySprint(ds, storyCountByDate) {
-  // We use storyCountByDate as a proxy for sprint-covered dates
-  // Actually check properly from sprints
+function _dateInAnySprint(ds) {
   const sprints = _data().sprints || [];
   return sprints.some(s => {
     const end = isoAddDays(s.startDate, s.durationWeeks * 7 - 1);
@@ -265,7 +271,7 @@ function _dateInAnySprint(ds, storyCountByDate) {
   });
 }
 
-function _renderSprintBar(sm, week, periods, overrides) {
+function _renderSprintBar(sm, week, periods, overrides, allStories) {
   const { sprint, startDate, endDate } = sm;
 
   // Clamp to this week's range
@@ -283,11 +289,16 @@ function _renderSprintBar(sm, week, periods, overrides) {
   const uncovered = detectUncoveredDays(sprint.startDate, isoAddDays(sprint.startDate, sprint.durationWeeks * 7 - 1), periods);
   const hasGap = uncovered.length > 0;
 
+  const allocated = (allStories || [])
+    .filter(s => s.sprintId === sprint.id)
+    .reduce((sum, s) => sum + (s.weight || 0), 0);
+  const totalStr    = cap.total.toFixed(1);
+  const allocStr    = allocated.toFixed(1);
+  const isOver      = allocated > cap.total;
+
   const statusClass = `cv-sprint-bar--${sprint.status}`;
   const gapClass    = hasGap ? 'cv-sprint-bar--gap' : '';
 
-  const totalBlocks = cap.total.toFixed(1);
-  const maxBlocks   = (sprint.durationWeeks * 7 * 3.5).toFixed(1); // rough max
   const sprintLabel = sprint.id || 'Sprint';
   const dateRange   = `${_formatDate(sprint.startDate)}–${_formatDate(isoAddDays(sprint.startDate, sprint.durationWeeks * 7 - 1))}`;
   const noRoundLeft  = startDate < week[0] ? 'cv-sprint-bar--no-round-left' : '';
@@ -300,7 +311,7 @@ function _renderSprintBar(sm, week, periods, overrides) {
     <span class="cv-sprint-icon">&#9654;</span>
     <span class="cv-sprint-id">${esc(sprintLabel)}</span>
     <span class="cv-sprint-dates">${esc(dateRange)}</span>
-    <span class="cv-sprint-cap">${totalBlocks} blocks</span>
+    <span class="cv-sprint-cap${isOver ? ' cv-sprint-cap--over' : ''}">${allocStr}/${totalStr} blocks</span>
     <span class="cv-sprint-status">${sprint.status}</span>
     ${hasGap ? '<span class="cv-sprint-gap-warn" title="Uncovered days">&#9888;</span>' : ''}
   </div>`;
@@ -333,6 +344,7 @@ function _renderPeriodBands(week, periodMap, periods) {
       style="grid-column: ${colStart} / span ${colSpan};"
       onclick="window.calendarView._openPeriodPanel('${esc(p.id)}')"
       title="${esc(p.city || '')}${p.city && p.country ? ', ' : ''}${esc(p.country || '')}">
+      <span class="cv-period-band-label">${esc(p.city || p.country || '')}</span>
     </div>`;
   }).join('');
 }
@@ -366,7 +378,7 @@ function _renderWeekGrid(periods, overrides, sprints, stories) {
 
   const sprintBars = sprintMeta
     .filter(sm => sm.endDate >= start && sm.startDate <= end)
-    .map(sm => _renderSprintBar(sm, allDates, periods, overrides))
+    .map(sm => _renderSprintBar(sm, allDates, periods, overrides, stories))
     .join('');
   const periodBands = _renderPeriodBands(allDates, periodMap, periods);
 
@@ -447,7 +459,7 @@ function _buildStoryCountByDate(sprints, stories) {
 // ── Day type helpers ───────────────────────────────────────────────────────────
 
 function _dayTypeShort(type) {
-  return { travel: 'T', buffer: 'B', stable: 'S', project: 'P', social: 'So' }[type] || type;
+  return { travel: 'T', buffer: 'B', stable: 'S', project: 'P', social: 'Sc' }[type] || type;
 }
 
 function _dayTypeLabel(type) {
@@ -526,6 +538,23 @@ function _openNewPeriodPanel(startDate) {
     notes: '',
   };
   _deleteConfirmPending = false;
+  _renderDetailPanel();
+  _openPanel();
+}
+
+function _openNewPeriodFromDate(ds) {
+  const defaultEnd = isoAddDays(ds, 6);
+  _editingPeriodId = null;
+  _periodForm = {
+    startDate:    ds,
+    endDate:      defaultEnd,
+    city:         '',
+    country:      '',
+    locationType: 'domestic',
+    dayTypes:     { travel: 0, buffer: 0, stable: 7, project: 0, social: 0 },
+    notes:        '',
+  };
+  _panelMode = 'period';
   _renderDetailPanel();
   _openPanel();
 }
@@ -1054,6 +1083,7 @@ window.calendarView = {
   _openPeriodPanel,
   _openCreateSprint,
   _openSprintDetail,
+  _openNewPeriodFromDate,
   _closePanel,
   _updateField,
   _updateDateField,

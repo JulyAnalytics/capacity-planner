@@ -1038,29 +1038,31 @@ button.bl-focus-name {
 
 .cv-day-cell {
   min-height: 80px;
-  padding: 6px;
+  padding: 6px 8px;
   border-right: 1px solid var(--border-light, #e5e7eb);
   cursor: pointer;
   position: relative;
   transition: filter 0.1s;
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 3px;
 }
 .cv-day-cell:last-child { border-right: none; }
 .cv-day-cell:hover { filter: brightness(0.96); }
 
 .cv-day--other-month { opacity: 0.4; }
 .cv-day--today .cv-day-num {
-  background: var(--primary, #6366f1);
-  color: #fff;
+  background: transparent;
+  color: var(--danger);
+  font-weight: 700;
+  border: 1.5px solid var(--danger);
   border-radius: 50%;
   width: 20px;
   height: 20px;
-  display: inline-flex;
+  display: flex;
   align-items: center;
   justify-content: center;
-  font-weight: 700;
+  font-size: 12px;
 }
 
 /* Day type backgrounds (z-index 4) */
@@ -1110,6 +1112,7 @@ button.bl-focus-name {
 }
 
 .cv-story-count {
+  margin-top: auto;
   font-size: 10px;
   color: var(--primary, #6366f1);
 }
@@ -1133,6 +1136,23 @@ button.bl-focus-name {
   opacity: 1;
   pointer-events: all;
 }
+
+.cv-ghost-location {
+  font-size: 10px;
+  color: var(--primary);
+  background: transparent;
+  border: 1px dashed var(--primary);
+  border-radius: var(--radius-sm);
+  padding: 2px 6px;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.15s;
+  margin-top: 2px;
+  display: block;
+  width: fit-content;
+}
+
+.cv-day-cell:hover .cv-ghost-location { opacity: 1; }
 
 .cv-override-note {
   font-size: 10px;
@@ -1158,7 +1178,7 @@ button.bl-focus-name {
 /* ── Location period bands (z-index 2) ─────────────────────────────────────── */
 
 .cv-period-band {
-  height: 5px;
+  height: 20px;
   border-radius: 3px;
   align-self: start;
   margin-top: 2px;
@@ -1166,7 +1186,26 @@ button.bl-focus-name {
   pointer-events: all;
   transition: filter 0.1s;
   grid-row: 1;
+  display: flex;
+  align-items: center;
+  padding: 0 8px;
+  overflow: hidden;
 }
+
+.cv-period-band-label {
+  font-size: 11px;
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  opacity: 0.85;
+  pointer-events: none;
+}
+
+/* International band: teal text; domestic: muted */
+.cv-period-band--intl .cv-period-band-label  { color: #0F6E56; }
+.cv-period-band--domestic .cv-period-band-label { color: var(--text-muted); }
+
 .cv-period-band:hover { filter: brightness(0.88); }
 
 .cv-period-band--intl {
@@ -1187,7 +1226,8 @@ button.bl-focus-name {
   display: flex;
   align-items: center;
   gap: 6px;
-  padding: 3px 8px;
+  height: 22px;
+  padding: 0 8px;
   border-radius: 4px;
   font-size: 11px;
   cursor: pointer;
@@ -1211,11 +1251,41 @@ button.bl-focus-name {
 .cv-sprint-bar--no-round-left  { border-top-left-radius:  0; border-bottom-left-radius:  0; }
 .cv-sprint-bar--no-round-right { border-top-right-radius: 0; border-bottom-right-radius: 0; }
 
+/* Hide dates/cap/status on multi-week continuation segments */
+.cv-sprint-bar--no-round-left .cv-sprint-dates,
+.cv-sprint-bar--no-round-left .cv-sprint-cap,
+.cv-sprint-bar--no-round-left .cv-sprint-status {
+  display: none;
+}
+
+.cv-sprint-bar--no-round-left .cv-sprint-id {
+  display: inline;
+  opacity: 0.7;
+}
+
+.cv-sprint-bar--no-round-left::before {
+  content: '→';
+  font-size: 10px;
+  opacity: 0.5;
+  margin-right: 4px;
+}
+
+/* Ensure all 7 columns stay visible */
+.cv-grid--month {
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  overflow-x: auto;
+  min-width: 560px;
+}
+
 .cv-sprint-icon    { font-size: 9px; flex-shrink: 0; }
 .cv-sprint-id      { font-weight: 700; flex-shrink: 0; }
 .cv-sprint-dates   { color: var(--text-muted, #6b7280); font-size: 10px; flex-shrink: 0; }
 .cv-sprint-cap     { flex-shrink: 0; }
 .cv-sprint-status  { color: var(--text-muted, #6b7280); font-size: 10px; }
+.cv-sprint-cap--over {
+  color: var(--danger);
+  font-weight: 500;
+}
 .cv-sprint-gap-warn { color: #f59e0b; flex-shrink: 0; }
 
 /* ── Location period panel ──────────────────────────────────────────────────── */
