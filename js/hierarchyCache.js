@@ -18,10 +18,12 @@ import DB from './db.js';
 
 const hierarchyCache = {
   data: {
-    focuses:    [],
-    subFocuses: [],
-    epics:      [],
-    sprints:    [],  // sprint records only (no segments)
+    focuses:          [],
+    subFocuses:       [],
+    epics:            [],
+    sprints:          [],  // sprint records only (no segments)
+    locationPeriods:  [],
+    dayTypeOverrides: [],
   },
   lastRefresh: null,
   isLoaded: false
@@ -178,11 +180,13 @@ async function refreshHierarchyCache() {
   try {
     if (!DB.db) await DB.init();
 
-    hierarchyCache.data.focuses    = await DB.getAll('focuses');
-    hierarchyCache.data.subFocuses = await DB.getAll('subFocuses');
-    hierarchyCache.data.epics      = await DB.getAll('epics');
+    hierarchyCache.data.focuses          = await DB.getAll('focuses');
+    hierarchyCache.data.subFocuses       = await DB.getAll('subFocuses');
+    hierarchyCache.data.epics            = await DB.getAll('epics');
     const sprints = await DB.getAll(DB.STORES.SPRINTS);
-    hierarchyCache.data.sprints    = sprints.sort((a, b) => b.startDate.localeCompare(a.startDate));
+    hierarchyCache.data.sprints          = sprints.sort((a, b) => b.startDate.localeCompare(a.startDate));
+    hierarchyCache.data.locationPeriods  = await DB.getAll(DB.STORES.LOCATION_PERIODS);
+    hierarchyCache.data.dayTypeOverrides = await DB.getAll(DB.STORES.DAY_TYPE_OVERRIDES);
 
     hierarchyCache.lastRefresh = Date.now();
     hierarchyCache.isLoaded    = true;
@@ -277,12 +281,63 @@ function getEpicById(epicId) {
 }
 
 // ============================================================================
+// CAPACITY_PLANNER CHANNEL — locationPeriod + dayTypeOverride sync (Phase 3.4)
+// ============================================================================
+
+function _initCapacityPlannerChannel() {
+  if (typeof BroadcastChannel === 'undefined') return;
+  try {
+    const ch = new BroadcastChannel('capacity_planner');
+    ch.onmessage = (e) => {
+      const { entity, action, data } = e.data || {};
+      if (!entity) return;
+
+      if (entity === 'sprint') {
+        if (action === 'created') {
+          hierarchyCache.data.sprints.push(data);
+          hierarchyCache.data.sprints.sort((a, b) => b.startDate.localeCompare(a.startDate));
+        } else if (action === 'updated') {
+          const i = hierarchyCache.data.sprints.findIndex(s => s.id === data.id);
+          if (i >= 0) hierarchyCache.data.sprints[i] = data;
+        }
+
+      } else if (entity === 'locationPeriod') {
+        if (action === 'created') {
+          hierarchyCache.data.locationPeriods.push(data);
+        } else if (action === 'updated') {
+          const i = hierarchyCache.data.locationPeriods.findIndex(p => p.id === data.id);
+          if (i >= 0) hierarchyCache.data.locationPeriods[i] = data;
+          else hierarchyCache.data.locationPeriods.push(data);
+        } else if (action === 'deleted') {
+          hierarchyCache.data.locationPeriods =
+            hierarchyCache.data.locationPeriods.filter(p => p.id !== data.id);
+        }
+
+      } else if (entity === 'dayTypeOverride') {
+        // keyed by date (C3)
+        if (action === 'upserted') {
+          const i = hierarchyCache.data.dayTypeOverrides.findIndex(o => o.date === data.date);
+          if (i >= 0) hierarchyCache.data.dayTypeOverrides[i] = data;
+          else hierarchyCache.data.dayTypeOverrides.push(data);
+        } else if (action === 'deleted') {
+          hierarchyCache.data.dayTypeOverrides =
+            hierarchyCache.data.dayTypeOverrides.filter(o => o.date !== data.date);
+        }
+      }
+    };
+  } catch (err) {
+    console.error('Failed to init capacity_planner channel:', err);
+  }
+}
+
+// ============================================================================
 // INITIALISE ON MODULE LOAD
 // ============================================================================
 
 // Start multi-tab sync infrastructure
 initBroadcastChannel();
 initStorageEvents();
+_initCapacityPlannerChannel();
 startTTLTimer();
 
 // Modules are deferred — this runs after HTML is parsed, before DOMContentLoaded.

@@ -50,7 +50,7 @@
 
         <nav class="nav-tabs">
             <button class="nav-tab active" data-tab="daily">Daily Log</button>
-            <button class="nav-tab" data-tab="calendar">Calendar</button>
+            <button class="nav-tab" data-tab="calendar">History</button>
             <button class="nav-tab" data-tab="portfolio">Portfolio</button>
             <button class="nav-tab" data-tab="analytics">Analytics</button>
             <button class="nav-tab" data-tab="backlog">Backlog</button>
@@ -133,8 +133,8 @@
             </div>
         </div>
 
-        <!-- Tab 2: Calendar Planning -->
-        <div id="calendar" class="tab-content panel-focused">
+        <!-- Tab 2: History (formerly Calendar Planning — now read-only, Phase 5) -->
+        <div id="calendar" class="tab-content panel-focused calendar-tab-readonly">
 
             <!-- Monthly Epic Selection (NEW) -->
             <div class="card" id="monthlyEpicSelectionCard">
@@ -480,7 +480,9 @@
     <script type="module" src="js/navigationState.js"></script>
     <script type="module" src="js/focusDrillDown.js"></script>
     <script type="module" src="js/sprintManager.js"></script>
+    <script type="module" src="js/locationManager.js"></script>
     <script type="module" src="js/backlogView.js"></script>
+    <script type="module" src="js/calendarView.js"></script>
     <script type="module" src="js/backlogDetailPanel.js"></script>
 </body>
 </html>

@@ -510,6 +510,9 @@ class CapacityManager {
       dailyLogs: [],
       monthlyPlans: [],
       focuses: [],
+      locationPeriods:  [],
+      dayTypeOverrides: [],
+      sprints:          null, // null = not loaded yet (C4 fix); [] = loaded but empty
     };
     this.timelineWeeks = 8;
     this.sidebarCollapsed = false;
@@ -551,10 +554,19 @@ class CapacityManager {
         this.loadSubFocusesForEpic();
       },
       sprint: () => {
-        if (window.backlogView) window.backlogView.render();
+        if (window.backlogView)  window.backlogView.render();
+        if (window.calendarView) window.calendarView.render();
       },
       travelSegment: () => {
         if (window.backlogView) window.backlogView.renderSprintCapacityHeaders();
+      },
+      locationPeriod: () => {
+        if (window.backlogView)  window.backlogView.renderSprintCapacityHeaders();
+        if (window.calendarView) window.calendarView.render();
+      },
+      dayTypeOverride: () => {
+        if (window.calendarView) window.calendarView.render();
+        if (window.backlogView)  window.backlogView.renderSprintCapacityHeaders();
       },
     };
     map[type]?.();
@@ -592,6 +604,9 @@ class CapacityManager {
       this.renderAll();
       this.refreshDailyView();
       this.initSidebar();
+      this._initCapacityPlannerChannel();
+      // Phase 5: calendar tab is read-only (history view)
+      document.getElementById('calendar')?.classList.add('calendar-tab-readonly');
     } catch (error) {
       console.error('Init failed:', error);
       this.showNotification('Failed to initialize: ' + error.message, 'error');
@@ -600,14 +615,62 @@ class CapacityManager {
 
   // Data Loading
   async loadAllData() {
-    this.data.calendar = await DB.getAll(DB.STORES.CALENDAR);
-    this.data.priorities = await DB.getAll(DB.STORES.PRIORITIES);
-    this.data.subFocuses = await DB.getAll(DB.STORES.SUB_FOCUSES);
-    this.data.epics = await DB.getAll(DB.STORES.EPICS);
-    this.data.stories = await DB.getAll(DB.STORES.STORIES);
-    this.data.dailyLogs = await DB.getAll(DB.STORES.DAILY_LOGS);
-    this.data.monthlyPlans = await DB.getAll(DB.STORES.MONTHLY_PLANS);
-    this.data.focuses = await DB.getAll(DB.STORES.FOCUSES);
+    this.data.calendar        = await DB.getAll(DB.STORES.CALENDAR);
+    this.data.priorities      = await DB.getAll(DB.STORES.PRIORITIES);
+    this.data.subFocuses      = await DB.getAll(DB.STORES.SUB_FOCUSES);
+    this.data.epics           = await DB.getAll(DB.STORES.EPICS);
+    this.data.stories         = await DB.getAll(DB.STORES.STORIES);
+    this.data.dailyLogs       = await DB.getAll(DB.STORES.DAILY_LOGS);
+    this.data.monthlyPlans    = await DB.getAll(DB.STORES.MONTHLY_PLANS);
+    this.data.focuses         = await DB.getAll(DB.STORES.FOCUSES);
+    this.data.sprints         = await DB.getAll(DB.STORES.SPRINTS);
+    this.data.locationPeriods  = await DB.getAll(DB.STORES.LOCATION_PERIODS);
+    this.data.dayTypeOverrides = await DB.getAll(DB.STORES.DAY_TYPE_OVERRIDES);
+  }
+
+  // ── capacity_planner BroadcastChannel (location periods + overrides) ──────
+
+  _initCapacityPlannerChannel() {
+    const ch = new BroadcastChannel('capacity_planner');
+    ch.onmessage = (e) => {
+      const { entity, action, data } = e.data || {};
+      if (!entity) return;
+
+      if (entity === 'locationPeriod') {
+        if (action === 'created') {
+          this.data.locationPeriods.push(data);
+        } else if (action === 'updated') {
+          const i = this.data.locationPeriods.findIndex(p => p.id === data.id);
+          if (i >= 0) this.data.locationPeriods[i] = data;
+          else this.data.locationPeriods.push(data);
+        } else if (action === 'deleted') {
+          this.data.locationPeriods = this.data.locationPeriods.filter(p => p.id !== data.id);
+        }
+        this.notifyDataChange('locationPeriod');
+
+      } else if (entity === 'dayTypeOverride') {
+        if (action === 'upserted') {
+          const i = this.data.dayTypeOverrides.findIndex(o => o.date === data.date);
+          if (i >= 0) this.data.dayTypeOverrides[i] = data;
+          else this.data.dayTypeOverrides.push(data);
+        } else if (action === 'deleted') {
+          this.data.dayTypeOverrides = this.data.dayTypeOverrides.filter(o => o.date !== data.date);
+        }
+        this.notifyDataChange('dayTypeOverride');
+
+      } else if (entity === 'sprint') {
+        if (action === 'created') {
+          if (!this.data.sprints) this.data.sprints = [];
+          this.data.sprints.push(data);
+        } else if (action === 'updated') {
+          if (this.data.sprints) {
+            const i = this.data.sprints.findIndex(s => s.id === data.id);
+            if (i >= 0) this.data.sprints[i] = data;
+          }
+        }
+        this.notifyDataChange('sprint');
+      }
+    };
   }
 
   // ── F-0 Focus helpers ─────────────────────────────────────────────────────

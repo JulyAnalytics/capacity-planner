@@ -13,6 +13,8 @@ const _TABLE_MAP = {
   focuses:         'focuses',
   sprints:         'sprints',
   travelSegments:  'travel_segments',
+  locationPeriods:  'location_periods',
+  dayTypeOverrides: 'day_type_overrides',
   metadata:        null  // stored in localStorage, not synced
 };
 
@@ -27,8 +29,10 @@ const DB = {
     METADATA:      'metadata',
     MONTHLY_PLANS:   'monthlyPlans',
     FOCUSES:         'focuses',
-    SPRINTS:         'sprints',
-    TRAVEL_SEGMENTS: 'travelSegments',
+    SPRINTS:           'sprints',
+    TRAVEL_SEGMENTS:   'travelSegments',
+    LOCATION_PERIODS:   'locationPeriods',
+    DAY_TYPE_OVERRIDES: 'dayTypeOverrides',
   },
 
   _cache: {
@@ -40,8 +44,10 @@ const DB = {
     dailyLogs:    null,
     monthlyPlans:   null,
     focuses:        null,
-    sprints:        null,
-    travelSegments: null,
+    sprints:          null,
+    travelSegments:   null,
+    locationPeriods:  null,
+    dayTypeOverrides: null,
   },
   _cacheReady: false,
 
@@ -64,8 +70,10 @@ const DB = {
       { store: 'dailyLogs',    table: 'daily_logs' },
       { store: 'monthlyPlans', table: 'monthly_plans' },
       { store: 'focuses',         table: 'focuses'          },
-      { store: 'sprints',         table: 'sprints'          },
-      { store: 'travelSegments',  table: 'travel_segments'  },
+      { store: 'sprints',          table: 'sprints'           },
+      { store: 'travelSegments',   table: 'travel_segments'   },
+      { store: 'locationPeriods',  table: 'location_periods'  },
+      { store: 'dayTypeOverrides', table: 'day_type_overrides' },
     ];
 
     const results = await Promise.all(

@@ -154,7 +154,11 @@ function _renderToolbar(focuses, allEpics) {
   const byFocusBtn = `<button class="bl-toggle-btn ${groupBy === 'focus' ? 'on' : ''}"
     onclick="window.backlogView._setGroupBy('focus')"
     aria-pressed="${groupBy === 'focus'}">By focus</button>
-  <span class="bl-toolbar-sep">|</span>`;
+  <span class="bl-toolbar-sep">|</span>
+  <button class="bl-toggle-btn ${groupBy === 'calendar' ? 'on' : ''}"
+    onclick="window.backlogView._setGroupBy('calendar')"
+    aria-pressed="${groupBy === 'calendar'}">Calendar</button>
+  <span class="bl-toolbar-sep bl-toolbar-sep--calendar ${groupBy === 'calendar' ? 'bl-hidden' : ''}">|</span>`;
 
   // Status chips (row 2)
   const chipDefs = [
@@ -730,6 +734,13 @@ export async function render() {
 
   // Build HTML
   const toolbarHtml = _renderToolbar(allFocuses.filter(f => f.status === 'active'), allEpics);
+
+  // Calendar view is rendered by calendarView.js
+  if (groupBy === 'calendar') {
+    root.innerHTML = `${toolbarHtml}<div id="bl-list"></div>`;
+    if (window.calendarView) window.calendarView.render();
+    return;
+  }
 
   let listHtml = '';
   if (groupBy === 'sprint') {

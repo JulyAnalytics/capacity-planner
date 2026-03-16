@@ -444,10 +444,7 @@ export function validateSprint(sprint) {
     return errors;
   }
 
-  const d = new Date(sprint.startDate);
-  if (d.getDay() !== 1) {
-    errors.push({ field: 'startDate', message: 'Sprint must start on a Monday' });
-  }
+  // Monday constraint REMOVED (S2 — any start date is valid).
 
   if (![1, 2].includes(sprint.durationWeeks)) {
     errors.push({ field: 'durationWeeks', message: 'Duration must be 1 or 2 weeks' });
