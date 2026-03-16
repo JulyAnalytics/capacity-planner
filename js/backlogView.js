@@ -78,6 +78,68 @@ function _formatDate(dateStr) {
   return dt.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
 }
 
+function _daysBetween(dateA, dateB) {
+  const [ya, ma, da] = dateA.split('-').map(Number);
+  const [yb, mb, db] = dateB.split('-').map(Number);
+  return Math.round((Date.UTC(yb, mb - 1, db) - Date.UTC(ya, ma - 1, da)) / 86400000);
+}
+
+function _renderCoverageBar(coveredDays, totalDays, sprintId) {
+  const pct = totalDays > 0 ? Math.round((coveredDays / totalDays) * 100) : 0;
+  const uncovered = totalDays - coveredDays;
+  return `
+    <button class="bl-coverage-bar-btn" onclick="event.stopPropagation(); window.backlogView._openSegmentBuilder('${sprintId}')">
+      <span class="bl-coverage-track">
+        <span class="bl-coverage-fill" style="width:${pct}%"></span>
+      </span>
+      <span class="bl-coverage-label">${uncovered > 0 ? `${uncovered} day${uncovered !== 1 ? 's' : ''} uncovered` : 'Add locations'}</span>
+    </button>
+  `;
+}
+
+async function _loadSprintCapacityHeaders() {
+  const { deriveSprintCapacity, detectGaps, deriveSprintMeta } = await import('./sprintCapacity.js');
+  const headers = document.querySelectorAll('.bl-sprint-hdr[data-sprint-id]');
+  const sprints = window.app?.data?.sprints || [];
+
+  for (const hdrEl of headers) {
+    const sprintId = hdrEl.dataset.sprintId;
+    const sprint = sprints.find(s => s.id === sprintId);
+    if (!sprint) continue;
+
+    const capacityEl = hdrEl.querySelector('.bl-sprint-capacity');
+    if (!capacityEl) continue;
+
+    const segments = await window.sprintManager?.getSegmentsForSprint(sprintId) || [];
+    const { endDate } = deriveSprintMeta(sprint.startDate, sprint.durationWeeks);
+
+    if (segments.length === 0) {
+      const sprintDays = _daysBetween(sprint.startDate, endDate) + 1;
+      capacityEl.innerHTML = _renderCoverageBar(0, sprintDays, sprintId);
+      capacityEl.classList.add('bl-sprint-capacity--uncovered');
+      continue;
+    }
+
+    const gaps = detectGaps(sprint, segments);
+    const cap = deriveSprintCapacity(segments);
+    const coveredDays = _daysBetween(sprint.startDate, endDate) + 1
+      - gaps.reduce((sum, g) => sum + _daysBetween(g.startDate, g.endDate) + 1, 0);
+    const totalDays = _daysBetween(sprint.startDate, endDate) + 1;
+
+    if (gaps.length > 0) {
+      capacityEl.innerHTML = _renderCoverageBar(coveredDays, totalDays, sprintId);
+    } else {
+      capacityEl.innerHTML = `
+        <span class="bl-cap-total">${cap.total.toFixed(1)} total</span>
+        <span class="bl-cap-sep">·</span>
+        <span class="bl-cap-priority">${cap.priority.toFixed(1)} priority</span>
+        ${cap.secondary1 > 0 ? `<span class="bl-cap-sep">·</span><span class="bl-cap-sec">${cap.secondary1.toFixed(1)} sec</span>` : ''}
+      `;
+      capacityEl.classList.remove('bl-sprint-capacity--uncovered');
+    }
+  }
+}
+
 function _getSectionIdForStory(story) {
   if (story.sprintId) return story.sprintId;
   return 'backlog-bucket';
@@ -310,10 +372,15 @@ function _renderSprintHeader(sprint, allStoriesInSprint, isExpanded) {
   const doneChip = doneCount > 0
     ? `<span class="bl-sprint-chip bl-sprint-chip--done">${doneCount}</span>` : '';
 
-  return `<div class="bl-sprint-hdr" onclick="window.backlogView._toggleSection('sprint', '${esc(sprint.id)}')">
+  return `<div class="bl-sprint-hdr" data-sprint-id="${esc(sprint.id)}" onclick="window.backlogView._toggleSection('sprint', '${esc(sprint.id)}')">
     <span class="bl-section-chevron${isExpanded ? '' : ' bl-collapsed'}">${isExpanded ? '▼' : '▶'}</span>
-    <span class="bl-sprint-name">${esc(sprint.id)}</span>
+    <button type="button" class="bl-sprint-name bl-name-link"
+      onclick="event.stopPropagation(); window.backlogDetailPanel?.openSprint?.('${esc(sprint.id)}')"
+      title="View sprint details">${esc(sprint.id)}</button>
     <span class="bl-sprint-dates">${startFmt}–${endFmt}</span>
+    <span class="bl-sprint-capacity" data-sprint-id="${esc(sprint.id)}">
+      <span class="bl-cap-loading">···</span>
+    </span>
     <span class="bl-sprint-status-badge" data-sprint-status="${esc(sprint.status)}">${esc(sprint.status)}</span>
     <span class="bl-section-count"><span class="bl-count-num">${total}</span> <span class="bl-count-label">total</span></span>
     ${todoChip}${activeChip}${doneChip}
@@ -755,6 +822,7 @@ export async function render() {
   `;
 
   _initAllDragHandlers();
+  _loadSprintCapacityHeaders();
 
   // Restore visual selection state after re-render
   if (openPanelId) {
@@ -768,7 +836,7 @@ export async function render() {
 }
 
 export function renderSprintCapacityHeaders() {
-  render();
+  _loadSprintCapacityHeaders();
 }
 
 // ── Patch helpers (in-place DOM updates) ──────────────────────────────────────
@@ -878,6 +946,12 @@ async function _handleDrop(e, targetSectionId) {
 
   try {
     await DB.put(DB.STORES.STORIES, story);
+    if (window.app?.data?.stories) {
+      const idx = window.app.data.stories.findIndex(s => s.id === story.id);
+      if (idx >= 0) {
+        window.app.data.stories[idx] = { ...window.app.data.stories[idx], sprintId: story.sprintId };
+      }
+    }
     patchStoryRow(storyId, { movedToSection: targetSectionId });
   } catch (err) {
     story.sprintId = prevSprintId;
@@ -1045,6 +1119,8 @@ window.backlogView = {
   },
   openCreateSprintModal,
   _submitCreateSprint,
+  _openSegmentBuilder: (sprintId) => window.backlogDetailPanel?.openSegmentBuilder(sprintId),
+  _openSprintDetail: (sprintId) => window.backlogDetailPanel?.openSprint?.(sprintId),
   get _historyTriggered() { return _historyTriggered; },
   set _historyTriggered(v) { _historyTriggered = v; },
   // Legacy compat

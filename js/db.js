@@ -174,7 +174,7 @@ const DB = {
       .from(table)
       .upsert(row, { onConflict: 'id' });
 
-    if (error) { console.error('put error', storeName, error); return; }
+    if (error) { console.error('put error', storeName, error); throw new Error(error.message); }
 
     // Update cache
     if (this._cache[storeName] !== null) {

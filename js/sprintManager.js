@@ -104,17 +104,9 @@ export async function getSegmentsForSprint(sprintId) {
 // ── Counter management ────────────────────────────────────────────────────────
 
 async function _incrementSprintCounter() {
-  const ch = new BroadcastChannel('sprint_counter');
-  ch.postMessage({ type: 'lock' });
-  await new Promise(r => setTimeout(r, 50));
-
-  const record = await DB.get(DB.STORES.METADATA, 'sprint_counter') || { key: 'sprint_counter', value: 0 };
-  const next   = record.value + 1;
-  await DB.put(DB.STORES.METADATA, { key: 'sprint_counter', value: next, updatedAt: new Date().toISOString() });
-
-  ch.postMessage({ type: 'release', value: next });
-  ch.close();
-  return next;
+  const all = await DB.getAll(DB.STORES.SPRINTS);
+  const maxNum = all.reduce((max, s) => Math.max(max, s.sprintNumber || 0), 0);
+  return maxNum + 1;
 }
 
 // ── BroadcastChannel helpers ──────────────────────────────────────────────────
