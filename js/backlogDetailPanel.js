@@ -22,6 +22,9 @@ let _segmentFormSprintId = null;
 let _segmentFormSegId    = null;
 let _segmentForm         = null;
 
+// Fields that must NOT trigger a panel re-render — re-rendering destroys focus
+const _SEG_TEXT_ONLY_FIELDS = new Set(['city', 'country']);
+
 // ── Story panel ───────────────────────────────────────────────────────────────
 
 export function open(storyId) {
@@ -941,7 +944,7 @@ function _renderSegmentForm() {
           <div class="bdp-dt-grid">
             ${['travel', 'buffer', 'stable', 'project', 'social'].map(type => `
               <div class="bdp-dt-counter">
-                <span class="bdp-dt-label">${_dayTypeDisplayName(type)}</span>
+                <span class="bdp-dt-label" title="${_dayTypeDisplayName(type)}">${_dayTypeShortName(type)}</span>
                 <div class="bdp-dt-controls">
                   <button class="bdp-dt-btn"
                     onclick="window.backlogDetailPanel._adjustSegDayType('${type}', -1)">−</button>
@@ -1001,9 +1004,19 @@ function _dayTypeDisplayName(type) {
   return { travel: 'Travel', buffer: 'Buffer', stable: 'Stable', project: 'Project', social: 'Social' }[type] || type;
 }
 
+function _dayTypeShortName(type) {
+  return { travel: 'T', buffer: 'B', stable: 'S', project: 'P', social: 'Sc' }[type] || type;
+}
+
 function _updateSegField(field, value) {
   if (!_segmentForm) return;
   _segmentForm[field] = value;
+
+  // Text-only fields: update state only, never re-render.
+  // Re-rendering destroys the focused input element on every keystroke.
+  if (_SEG_TEXT_ONLY_FIELDS.has(field)) return;
+
+  // Structural fields (locationType, departureDayOverride): full re-render needed
   _renderSegmentForm();
 }
 
