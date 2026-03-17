@@ -542,6 +542,7 @@ class CapacityManager {
         this.renderCapacityOverview();
         this.renderDailyStories();
         this.renderStoryMap();
+        if (window.backlogView) window.backlogView.renderSprintCapacityHeaders();
       },
       epic: () => {
         this.renderEpicsList();

@@ -569,6 +569,7 @@ function _openCreateSprint(clickedDate) {
   const monday = isoAddDays(base, diffToMon === 7 ? 0 : diffToMon);
   _sprintFormDate = monday;
   _sprintFormDuration = 1;
+  _sprintFormRanking = [];
   _renderDetailPanel();
   _openPanel();
 }
@@ -582,6 +583,7 @@ function _openSprintDetail(sprintId) {
 
 let _sprintFormDate     = '';
 let _sprintFormDuration = 1;
+let _sprintFormRanking  = []; // string[] — ordered focus names for new sprint
 
 function _openPanel() {
   const panel = _getDetailPanel();
@@ -611,6 +613,17 @@ function _renderDetailPanel() {
 
   if (_panelMode === 'sprint-create') {
     panel.innerHTML = _renderSprintCreatePanel();
+    setTimeout(() => {
+      _bindRankingDrag();
+      document.getElementById('cv-ranking-focus-select')?.addEventListener('change', (e) => {
+        const name = e.target.value;
+        if (!name) return;
+        if (!_sprintFormRanking.includes(name)) {
+          _sprintFormRanking = [..._sprintFormRanking, name];
+        }
+        _renderDetailPanel();
+      });
+    }, 0);
   } else if (_panelMode === 'period') {
     panel.innerHTML = _renderPeriodPanel();
     _bindPeriodPanelEvents();
@@ -620,6 +633,21 @@ function _renderDetailPanel() {
 // ── Sprint create panel ────────────────────────────────────────────────────────
 
 function _renderSprintCreatePanel() {
+  const allFocuses    = (window.app?.data?.focuses || []).filter(f => f.status === 'active');
+  const rankedSet     = new Set(_sprintFormRanking);
+  const availFocuses  = allFocuses.filter(f => !rankedSet.has(f.name));
+
+  const rankingItems = _sprintFormRanking.length > 0
+    ? _sprintFormRanking.map((name, i) =>
+        `<div class="cv-ranking-item" draggable="true" data-focus="${esc(name)}" data-idx="${i}">
+          <span class="cv-ranking-handle">⠿</span>
+          <span class="cv-ranking-num">${i + 1}</span>
+          <span class="cv-ranking-name">${esc(name)}</span>
+          <button class="cv-ranking-remove" onclick="window.calendarView._removeFromRanking('${esc(name)}')">×</button>
+        </div>`
+      ).join('')
+    : '<div class="cv-ranking-empty">No focuses ranked — sprint will have no intent signal.</div>';
+
   return `<div class="bdp-container-inner">
     <div class="bdp-header">
       <span class="bdp-title">New Sprint</span>
@@ -640,8 +668,20 @@ function _renderSprintCreatePanel() {
         </div>
       </div>
       <div class="cv-form-group">
-        <label class="cv-form-label">Goal (optional)</label>
+        <label class="cv-form-label">Goal <span class="cv-form-optional">optional</span></label>
         <input type="text" id="cv-sprint-goal" class="cv-form-input" placeholder="Sprint goal…">
+      </div>
+      <div class="cv-form-group">
+        <label class="cv-form-label">Focus ranking <span class="cv-form-optional">optional</span></label>
+        <p class="cv-form-hint">Drag to rank which focus areas you intend to invest in most this sprint.</p>
+        <div id="cv-ranking-list" class="cv-ranking-list">${rankingItems}</div>
+        ${availFocuses.length > 0 ? `
+        <div class="cv-ranking-add">
+          <select id="cv-ranking-focus-select" class="cv-form-select">
+            <option value="">+ Add focus…</option>
+            ${availFocuses.map(f => `<option value="${esc(f.name)}">${esc(f.name)}</option>`).join('')}
+          </select>
+        </div>` : ''}
       </div>
       <div id="cv-sprint-error" class="cv-form-error" style="display:none"></div>
       <div class="cv-form-actions">
@@ -650,6 +690,38 @@ function _renderSprintCreatePanel() {
       </div>
     </div>
   </div>`;
+}
+
+function _bindRankingDrag() {
+  const list = document.getElementById('cv-ranking-list');
+  if (!list) return;
+  let dragIdx = null;
+
+  list.querySelectorAll('.cv-ranking-item').forEach(item => {
+    item.addEventListener('dragstart', () => {
+      dragIdx = parseInt(item.dataset.idx);
+      item.classList.add('cv-ranking-dragging');
+    });
+    item.addEventListener('dragend', () => {
+      item.classList.remove('cv-ranking-dragging');
+    });
+    item.addEventListener('dragover', (e) => {
+      e.preventDefault();
+      const targetIdx = parseInt(item.dataset.idx);
+      if (dragIdx === null || dragIdx === targetIdx) return;
+      const newRanking = [..._sprintFormRanking];
+      const [moved] = newRanking.splice(dragIdx, 1);
+      newRanking.splice(targetIdx, 0, moved);
+      _sprintFormRanking = newRanking;
+      dragIdx = targetIdx;
+      _renderDetailPanel();
+    });
+  });
+}
+
+function _removeFromRanking(name) {
+  _sprintFormRanking = _sprintFormRanking.filter(n => n !== name);
+  _renderDetailPanel();
 }
 
 function _setSprintDuration(n) {
@@ -661,15 +733,17 @@ async function _saveNewSprint() {
   const startDate     = document.getElementById('cv-sprint-start')?.value;
   const goal          = document.getElementById('cv-sprint-goal')?.value || null;
   const durationWeeks = _sprintFormDuration;
+  const focusRanking  = _sprintFormRanking.length > 0 ? [..._sprintFormRanking] : null;
   const errEl         = document.getElementById('cv-sprint-error');
 
   try {
-    const sprint = await createSprint({ startDate, durationWeeks, goal });
+    const sprint = await createSprint({ startDate, durationWeeks, goal, focusRanking });
     // Update app data
     if (window.app?.data) {
       if (!window.app.data.sprints) window.app.data.sprints = [];
       window.app.data.sprints.push(sprint);
     }
+    _sprintFormRanking = [];
     _closePanel();
     render();
     if (window.app?.notifyDataChange) window.app.notifyDataChange('sprint');
@@ -1096,4 +1170,5 @@ window.calendarView = {
   _startDelete,
   _cancelDelete,
   _confirmDelete,
+  _removeFromRanking,
 };

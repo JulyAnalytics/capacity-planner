@@ -373,10 +373,90 @@ async function render() {
 
     // Re-sync selection UI after render
     updatePortfolioSelectionUI();
+
+    // Non-blocking: append sprint investment timeline
+    if (data.length > 0) {
+      const timelineContainer = document.createElement('div');
+      document.querySelector('.portfolio-view')?.appendChild(timelineContainer);
+      renderSprintInvestmentTimeline(timelineContainer);
+    }
   } catch (err) {
     console.error('Portfolio load failed:', err);
     root.innerHTML = renderError(err.message);
   }
+}
+
+async function renderSprintInvestmentTimeline(container) {
+  const { deriveMultiSprintAllocation } = await import('./sprintAllocation.js');
+
+  const [sprints, stories, focuses] = await Promise.all([
+    DB.getAll(DB.STORES.SPRINTS),
+    DB.getAll(DB.STORES.STORIES),
+    DB.getAll(DB.STORES.FOCUSES),
+  ]);
+
+  const doneSprints     = sprints.filter(s => s.status === 'done')
+    .sort((a, b) => b.startDate.localeCompare(a.startDate)).slice(0, 5).reverse();
+  const activeSprints   = sprints.filter(s => s.status === 'active');
+  const planningSprints = sprints.filter(s => s.status === 'planning')
+    .sort((a, b) => a.startDate.localeCompare(b.startDate)).slice(0, 3);
+
+  const displaySprints = [...doneSprints, ...activeSprints, ...planningSprints];
+  if (!displaySprints.length) return;
+
+  const allocationMap = deriveMultiSprintAllocation(displaySprints, stories, focuses);
+  const maxWeight = Math.max(...Object.values(allocationMap).map(v => v.totalWeight), 1);
+
+  const allFocusNames = new Set(
+    Object.values(allocationMap).flatMap(v => v.allocation.map(a => a.focusName))
+  );
+  const focusColorMap = Object.fromEntries(
+    focuses.filter(f => allFocusNames.has(f.name)).map(f => [f.name, f.color || '#888'])
+  );
+
+  const legendHtml = [...allFocusNames].map(name =>
+    `<span class="pf-legend-item">
+      <span class="pf-legend-dot" style="background:${esc(focusColorMap[name] || '#888')}"></span>
+      ${esc(name)}
+    </span>`
+  ).join('');
+
+  const cols = displaySprints.map(sprint => {
+    const { allocation, totalWeight } = allocationMap[sprint.id] || { allocation: [], totalWeight: 0 };
+    const heightPct = maxWeight > 0 ? (totalWeight / maxWeight) * 100 : 0;
+    const isEmpty   = totalWeight === 0;
+    const isActive  = sprint.status === 'active';
+    const isPlan    = sprint.status === 'planning';
+
+    const segs = allocation.map(a => {
+      const segPct = totalWeight > 0 ? (a.weight / totalWeight) * 100 : 0;
+      return `<div class="pf-tl-seg" style="height:${segPct.toFixed(1)}%;background:${esc(a.color)};opacity:${isPlan ? '.7' : '1'}"
+        title="${esc(a.focusName)}: ${a.weight.toFixed(1)} blk"></div>`;
+    }).join('');
+
+    const statusClass = isActive ? 'pf-tl-col--active' : isPlan ? 'pf-tl-col--plan' : '';
+
+    return `<div class="pf-tl-col ${statusClass}">
+      <div class="pf-tl-bar-wrap" style="height:120px;display:flex;flex-direction:column-reverse;align-items:stretch">
+        <div class="pf-tl-bar" style="height:${heightPct.toFixed(1)}%;border:${isPlan ? '1px dashed var(--border-strong)' : '1px solid var(--border)'};border-radius:3px;overflow:hidden;display:flex;flex-direction:column-reverse">
+          ${isEmpty ? '<div style="height:100%;background:var(--bg-light)"></div>' : segs}
+        </div>
+      </div>
+      <div class="pf-tl-lbl ${isActive ? 'pf-tl-lbl--active' : ''}">${esc(sprint.id.replace(/^\d{4}-/, ''))}</div>
+      <div class="pf-tl-sub">${totalWeight > 0 ? totalWeight.toFixed(1) + ' blk' : '—'}</div>
+    </div>`;
+  }).join('');
+
+  container.innerHTML = `
+    <div class="pf-timeline-section">
+      <div class="pf-timeline-header">
+        <span class="pf-timeline-title">Sprint investment</span>
+        <span class="pf-timeline-legend">${legendHtml}</span>
+      </div>
+      <div class="pf-timeline-cols">${cols}</div>
+      <div class="pf-timeline-note">Solid = done/active · Dashed = planning · Heights proportional to total weight</div>
+    </div>
+  `;
 }
 
 // ============================================================================

@@ -529,6 +529,17 @@ export async function saveField(storyId, field, value) {
   const parsed = field === 'fibonacciSize' ? (parseInt(value) || null) : value;
   story[field] = parsed;
 
+  // Re-derive focus from new epic when epicId changes
+  if (field === 'epicId') {
+    const newEpic = window.app?.data?.epics?.find(e => e.id === value);
+    if (newEpic) {
+      const focus = window.app?.data?.focuses?.find(f => f.id === newEpic.focusId);
+      story.focus = focus?.name || '';
+    } else {
+      story.focus = '';
+    }
+  }
+
   try {
     await DB.put(DB.STORES.STORIES, story);
     if (window.backlogView) window.backlogView.patchStoryRow(storyId);
@@ -655,6 +666,7 @@ async function _renderSegmentBuilder(sprint, segments) {
   const gaps = detectGaps(sprint, segments);
   const cap  = deriveSprintCapacity(segments);
   const hasGaps = gaps.length > 0;
+  const allocHtml = await _renderAllocationSection(sprint, cap);
 
   const panel = container();
   panel.innerHTML = `
@@ -700,6 +712,8 @@ async function _renderSegmentBuilder(sprint, segments) {
         </div>
       ` : ''}
 
+      ${allocHtml}
+
       <div class="bdp-body">
         <div class="bdp-section-title">Locations</div>
         ${segments.length === 0
@@ -731,6 +745,224 @@ async function _renderSegmentBuilder(sprint, segments) {
 
     </div>
   `;
+}
+
+async function _renderAllocationSection(sprint, cap) {
+  const { deriveFocusAllocation, deriveTierCheck, compareRankingToAllocation } = await import('./sprintAllocation.js');
+
+  const stories    = (window.app?.data?.stories || []).filter(s => s.sprintId === sprint.id);
+  const allFocuses = window.app?.data?.focuses || [];
+
+  if (!stories.length) return '';
+
+  const allocation  = deriveFocusAllocation(stories, allFocuses);
+  const tierCheck   = deriveTierCheck(stories, cap);
+
+  // Focus allocation bars
+  const allocBars = allocation.map(a => {
+    const pct = Math.min(a.pct, 100);
+    return `<div class="bdp-alloc-row">
+      <span class="bdp-alloc-lbl">${esc(a.focusName)}</span>
+      <div class="bdp-alloc-track">
+        <div class="bdp-alloc-fill" style="width:${pct}%;background:${esc(a.color)}"></div>
+      </div>
+      <span class="bdp-alloc-val">${a.weight.toFixed(1)} blk</span>
+      <span class="bdp-alloc-pct">${a.pct}%</span>
+    </div>`;
+  }).join('');
+
+  // Tier check rows
+  const tierRows = tierCheck.tiers
+    .filter(t => t.available > 0 || t.allocated > 0)
+    .map(t => {
+      const statusClass = t.ok ? 'bdp-tier-ok' : 'bdp-tier-over';
+      const statusIcon  = t.ok ? '✓' : '⚠';
+      return `<div class="bdp-tier-row">
+        <span class="bdp-tier-lbl">${esc(t.label)}</span>
+        <span class="bdp-tier-alloc">${t.allocated.toFixed(1)}</span>
+        <span class="bdp-tier-sep">/</span>
+        <span class="bdp-tier-avail">${t.available.toFixed(1)} blk</span>
+        <span class="bdp-tier-status ${statusClass}">${statusIcon}</span>
+      </div>`;
+    }).join('');
+
+  const unassignedRow = tierCheck.unassignedWeight > 0
+    ? `<div class="bdp-tier-row bdp-tier-row--warn">
+        <span class="bdp-tier-lbl">Unassigned</span>
+        <span class="bdp-tier-alloc">${tierCheck.unassignedWeight.toFixed(1)} blk</span>
+        <span class="bdp-tier-sep"></span>
+        <span class="bdp-tier-avail">no tier set</span>
+        <span class="bdp-tier-status bdp-tier-warn">—</span>
+       </div>`
+    : '';
+
+  // Intent vs actual comparison (Phase 2)
+  const hasRanking = sprint?.focusRanking?.length > 0;
+  let comparisonHtml = '';
+  if (hasRanking) {
+    const comparison = compareRankingToAllocation(sprint.focusRanking, allocation);
+    const STATUS_ICON  = { aligned: '✓', 'over-indexed': '↑', 'under-indexed': '↓', unranked: '—', missing: '○' };
+    const STATUS_CLASS = { aligned: 'bdp-cmp-ok', 'over-indexed': 'bdp-cmp-over', 'under-indexed': 'bdp-cmp-under', unranked: 'bdp-cmp-warn', missing: 'bdp-cmp-miss' };
+    const STATUS_TITLE = {
+      aligned:         'Aligned with intent',
+      'over-indexed':  'Higher allocation than intended',
+      'under-indexed': 'Lower allocation than intended',
+      unranked:        'Not in ranking — unexpected investment',
+      missing:         'In ranking but no stories assigned yet',
+    };
+    const rows = comparison.map(c => {
+      const rankLabel   = c.intendedRank ? `#${c.intendedRank}` : '—';
+      const actualLabel = c.actualRank   ? `#${c.actualRank}`   : '—';
+      return `<div class="bdp-cmp-row">
+        <span class="bdp-cmp-icon ${STATUS_CLASS[c.status] || ''}" title="${esc(STATUS_TITLE[c.status] || '')}">${STATUS_ICON[c.status] || '?'}</span>
+        <span class="bdp-cmp-name">${esc(c.focusName)}</span>
+        <span class="bdp-cmp-intended">${rankLabel}</span>
+        <span class="bdp-cmp-arrow">→</span>
+        <span class="bdp-cmp-actual">${actualLabel}</span>
+        <span class="bdp-cmp-weight">${c.weight > 0 ? c.weight.toFixed(1) + ' blk' : '—'}</span>
+      </div>`;
+    }).join('');
+    comparisonHtml = `
+      <div class="bdp-sec-title" style="margin-top:10px">
+        Intent vs actual
+        <button class="bdp-edit-ranking-btn"
+          onclick="window.backlogDetailPanel._editRanking('${esc(sprint.id)}')">
+          Edit
+        </button>
+      </div>
+      <div class="bdp-cmp-rows">${rows}</div>
+    `;
+  } else {
+    comparisonHtml = `
+      <div class="bdp-ranking-empty">
+        <button class="bdp-set-ranking-btn"
+          onclick="window.backlogDetailPanel._editRanking('${esc(sprint.id)}')">
+          + Set focus ranking
+        </button>
+      </div>
+    `;
+  }
+
+  return `<div class="bdp-alloc-section">
+    <div class="bdp-sec-title">Focus allocation</div>
+    <div class="bdp-alloc-bars">${allocBars}</div>
+    <div class="bdp-sec-title" style="margin-top:10px">Tier check</div>
+    <div class="bdp-tier-rows">${tierRows}${unassignedRow}</div>
+    ${tierCheck.unassignedWeight > 0
+      ? `<p class="bdp-alloc-hint">Set <em>Priority</em> on stories to enable tier capacity checking.</p>`
+      : ''}
+    ${comparisonHtml}
+  </div>`;
+}
+
+async function _editRanking(sprintId) {
+  const sprint = (window.app?.data?.sprints || []).find(s => s.id === sprintId);
+  if (!sprint) return;
+
+  const allFocuses = (window.app?.data?.focuses || []).filter(f => f.status === 'active');
+  let editRanking  = [...(sprint.focusRanking || [])];
+
+  const renderEditPanel = () => {
+    const ranked = new Set(editRanking);
+    const body   = container();
+    body.innerHTML = `
+      <div class="bdp-container-inner">
+        <div class="bdp-header">
+          <div class="bdp-header-top">
+            <span class="bdp-title">Focus ranking</span>
+            <button class="bdp-close" onclick="window.backlogDetailPanel.openSegmentBuilder('${esc(sprintId)}')">×</button>
+          </div>
+          <div class="bdp-sprint-meta">${esc(sprintId)}</div>
+        </div>
+        <div class="bdp-body">
+          <p class="bdp-form-hint">Drag to reorder. This is your planning intent — not a commitment.</p>
+          <div id="bdp-ranking-list" class="cv-ranking-list">
+            ${editRanking.map((name, i) => `
+              <div class="cv-ranking-item" draggable="true" data-focus="${esc(name)}" data-idx="${i}">
+                <span class="cv-ranking-handle">⠿</span>
+                <span class="cv-ranking-num">${i + 1}</span>
+                <span class="cv-ranking-name">${esc(name)}</span>
+                <button class="cv-ranking-remove" onclick="window._bdpRankingEdit.remove('${esc(name)}')">×</button>
+              </div>`).join('')}
+          </div>
+          <select id="bdp-ranking-add" class="bdp-form-input" style="margin-top:6px">
+            <option value="">+ Add focus</option>
+            ${allFocuses.filter(f => !ranked.has(f.name)).map(f =>
+              `<option value="${esc(f.name)}">${esc(f.name)}</option>`
+            ).join('')}
+          </select>
+          <div class="bdp-form-actions" style="margin-top:12px">
+            <button class="bdp-save-btn" onclick="window._bdpRankingEdit.save()">Save ranking</button>
+            <button class="bdp-cancel-btn" onclick="window._bdpRankingEdit.cancel()">Cancel</button>
+            ${editRanking.length > 0 ? `<button class="bdp-danger-btn" onclick="window._bdpRankingEdit.clear()">Clear ranking</button>` : ''}
+          </div>
+        </div>
+      </div>
+    `;
+
+    // Drag-to-reorder
+    const listEl = body.querySelector('#bdp-ranking-list');
+    if (listEl) _bindBdpRankingDrag(listEl, editRanking, () => {
+      editRanking = window._bdpRankingCurrent;
+      renderEditPanel();
+    });
+
+    body.querySelector('#bdp-ranking-add')?.addEventListener('change', (e) => {
+      const name = e.target.value;
+      if (name && !editRanking.includes(name)) {
+        editRanking = [...editRanking, name];
+        renderEditPanel();
+      }
+    });
+  };
+
+  window._bdpRankingCurrent = [...editRanking];
+  window._bdpRankingEdit = {
+    remove: (name) => {
+      editRanking = editRanking.filter(n => n !== name);
+      renderEditPanel();
+    },
+    save: async () => {
+      const newRanking = editRanking.length > 0 ? editRanking : null;
+      await window.sprintManager.updateSprint(sprintId, { focusRanking: newRanking });
+      const i = window.app?.data?.sprints?.findIndex(s => s.id === sprintId);
+      if (i >= 0) window.app.data.sprints[i].focusRanking = newRanking;
+      await openSegmentBuilder(sprintId);
+    },
+    clear: () => {
+      editRanking = [];
+      renderEditPanel();
+    },
+    cancel: async () => { await openSegmentBuilder(sprintId); },
+  };
+
+  renderEditPanel();
+}
+
+function _bindBdpRankingDrag(listEl, ranking, onChange) {
+  let dragIdx = null;
+  window._bdpRankingCurrent = [...ranking];
+
+  listEl.querySelectorAll('.cv-ranking-item').forEach(item => {
+    item.addEventListener('dragstart', () => {
+      dragIdx = parseInt(item.dataset.idx);
+      item.classList.add('cv-ranking-dragging');
+    });
+    item.addEventListener('dragend', () => {
+      item.classList.remove('cv-ranking-dragging');
+    });
+    item.addEventListener('dragover', (e) => {
+      e.preventDefault();
+      const targetIdx = parseInt(item.dataset.idx);
+      if (dragIdx === null || dragIdx === targetIdx) return;
+      const newRanking = [...window._bdpRankingCurrent];
+      const [moved] = newRanking.splice(dragIdx, 1);
+      newRanking.splice(targetIdx, 0, moved);
+      window._bdpRankingCurrent = newRanking;
+      dragIdx = targetIdx;
+      onChange();
+    });
+  });
 }
 
 function _renderTimelineBar(sprint, segments, endDate) {
@@ -1174,6 +1406,7 @@ window.backlogDetailPanel = {
   _cancelSegmentForm,
   _activateSprint,
   _completeSprint,
+  _editRanking,
 };
 
 export default { open, openStory: open, openEpic, openFocus, openSubFocus, openSprint, openSegmentBuilder, close, isOpen, saveField, saveEpicField, saveFocusField, saveSubFocusField, refreshIfShowing };

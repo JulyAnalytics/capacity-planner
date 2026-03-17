@@ -13,7 +13,7 @@ import { detectGaps, deriveSprintMeta } from './sprintCapacity.js';
  * Create a new sprint. Handles counter increment + ID generation.
  * Returns the saved sprint or throws.
  */
-export async function createSprint({ startDate, durationWeeks, goal = null }) {
+export async function createSprint({ startDate, durationWeeks, goal = null, focusRanking = null }) {
   const draft = { startDate, durationWeeks, status: 'planning', goal };
   const errors = validateSprint(draft);
   if (errors.length) throw new ValidationError(errors[0].message, errors[0].field);
@@ -27,9 +27,10 @@ export async function createSprint({ startDate, durationWeeks, goal = null }) {
     sprintNumber,
     startDate,
     durationWeeks,
-    status:    'planning',
-    goal:      goal || null,
-    createdAt: new Date().toISOString(),
+    status:       'planning',
+    goal:         goal || null,
+    focusRanking: focusRanking && focusRanking.length > 0 ? focusRanking : null,
+    createdAt:    new Date().toISOString(),
   };
 
   await DB.put(DB.STORES.SPRINTS, sprint);

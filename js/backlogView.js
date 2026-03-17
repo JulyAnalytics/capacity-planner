@@ -99,8 +99,10 @@ function _renderCoverageBar(coveredDays, totalDays, sprintId) {
 
 async function _loadSprintCapacityHeaders() {
   const { deriveSprintCapacity, detectGaps, deriveSprintMeta } = await import('./sprintCapacity.js');
+  const { deriveFocusAllocation, deriveTierCheck } = await import('./sprintAllocation.js');
   const headers = document.querySelectorAll('.bl-sprint-hdr[data-sprint-id]');
   const sprints = window.app?.data?.sprints || [];
+  const allFocuses = window.app?.data?.focuses || [];
 
   for (const hdrEl of headers) {
     const sprintId = hdrEl.dataset.sprintId;
@@ -137,7 +139,33 @@ async function _loadSprintCapacityHeaders() {
       `;
       capacityEl.classList.remove('bl-sprint-capacity--uncovered');
     }
+
+    // Patch allocation strip
+    const allocEl = hdrEl.querySelector('.bl-sprint-alloc');
+    if (allocEl) {
+      const sprintStories = (window.app?.data?.stories || [])
+        .filter(s => s.sprintId === sprintId && s.status !== 'abandoned');
+      const allocation = deriveFocusAllocation(sprintStories, allFocuses);
+      const tierCheck  = deriveTierCheck(sprintStories, cap);
+      allocEl.innerHTML = _renderAllocDots(allocation) + _renderTierStatus(tierCheck);
+    }
   }
+}
+
+function _renderAllocDots(allocation) {
+  if (!allocation.length) return '';
+  const dots = allocation.slice(0, 5).map(a =>
+    `<span class="bl-alloc-dot" style="background:${esc(a.color)}"
+      title="${esc(a.focusName)}: ${a.weight.toFixed(1)} blk (${a.pct}%)"></span>`
+  ).join('');
+  return `<span class="bl-alloc-dots">${dots}</span>`;
+}
+
+function _renderTierStatus(tierCheck) {
+  const overTiers = tierCheck.tiers.filter(t => !t.ok && t.available > 0);
+  if (overTiers.length === 0) return '';
+  const label = overTiers.map(t => t.label).join(', ');
+  return `<span class="bl-tier-warn" title="${esc(label)} over budget">⚠ ${overTiers.length} tier${overTiers.length > 1 ? 's' : ''} over</span>`;
 }
 
 function _getSectionIdForStory(story) {
@@ -380,6 +408,9 @@ function _renderSprintHeader(sprint, allStoriesInSprint, isExpanded) {
     <span class="bl-sprint-dates">${startFmt}–${endFmt}</span>
     <span class="bl-sprint-capacity" data-sprint-id="${esc(sprint.id)}">
       <span class="bl-cap-loading">···</span>
+    </span>
+    <span class="bl-sprint-alloc" data-sprint-id="${esc(sprint.id)}">
+      <span class="bl-alloc-loading"></span>
     </span>
     <span class="bl-sprint-status-badge" data-sprint-status="${esc(sprint.status)}">${esc(sprint.status)}</span>
     <span class="bl-section-count"><span class="bl-count-num">${total}</span> <span class="bl-count-label">total</span></span>
