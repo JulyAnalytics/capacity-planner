@@ -98,14 +98,54 @@
   --warning: #f5a623;
   --warning-bg: #fff9e6;
   --error: #e85555;
-  --info: #4a90d9;
-  --info-bg: #f1f4f8;
+  --danger: #e85555;
+  /* Info state — distinct from --primary (CTA = salmon); info = status blue */
+  --info: #1d4ed8;
+  --info-bg: #dbeafe;
   --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.04);
   --shadow-md: 0 2px 8px rgba(0, 0, 0, 0.06);
   --shadow-lg: 0 0 40px rgba(0, 0, 0, 0.05);
   --radius: 8px;
   --radius-sm: 4px;
   --radius-lg: 12px;
+
+  /* Sprint identity */
+  --sprint-bg:         #eef2ff;
+  --sprint-border:     #6366f1;
+  --sprint-text:       #3730a3;
+  --sprint-text-muted: #6366f1;
+
+  /* Location bands */
+  --loc-intl-bg:     #ccfbf1;
+  --loc-intl-border: #0f766e;
+  --loc-intl-text:   #0f766e;
+  --loc-dom-bg:      #f1f5f9;
+  --loc-dom-border:  #94a3b8;
+  --loc-dom-text:    #475569;
+
+  /* Day type badge colors — Travel uses orange (movement), Amber reserved for warnings */
+  --dt-travel-bg:   #ffedd5;
+  --dt-travel-text: #9a3412;
+  --dt-buffer-bg:   #f1f5f9;
+  --dt-buffer-text: #475569;
+  --dt-stable-bg:   #eff6ff;
+  --dt-stable-text: #1e40af;
+  --dt-project-bg:  #faf5ff;
+  --dt-project-text: #5b21b6;
+  --dt-social-bg:   #f0fdf4;
+  --dt-social-text: #166534;
+
+  /* Uncovered / gap — amber intentional for "warning" */
+  --uncov-dot:        #f59e0b;
+  --uncov-gap-bg:     #fffbeb;
+  --uncov-gap-border: #fcd34d;
+
+  /* Spacing — 8-point grid */
+  --space-xs: 4px;
+  --space-sm: 8px;
+  --space-md: 12px;
+  --space-lg: 16px;
+  --space-xl: 24px;
 }
 
 *, *::before, *::after {

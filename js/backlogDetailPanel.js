@@ -669,46 +669,59 @@ async function _renderSegmentBuilder(sprint, segments) {
   const allocHtml = await _renderAllocationSection(sprint, cap);
 
   const panel = container();
+  const uncovDays = gaps.reduce((n, g) => n + _daysBetween(g.startDate, g.endDate) + 1, 0);
+
   panel.innerHTML = `
     <div class="bdp-container-inner">
 
       <div class="bdp-header">
         <div class="bdp-header-top">
-          <span class="bdp-title">${esc(sprint.id)}</span>
+          <div>
+            <div class="bdp-title bdp-title--sprint">${esc(sprint.id)}</div>
+            <div class="bdp-sprint-meta">
+              ${_formatDate(sprint.startDate)} – ${_formatDate(endDate)}
+              · ${sprint.durationWeeks === 1 ? '1 week' : '2 weeks'}
+              ${sprint.goal ? `· "${esc(sprint.goal)}"` : ''}
+            </div>
+          </div>
           <button class="bdp-close" onclick="window.backlogDetailPanel.close()">×</button>
-        </div>
-        <div class="bdp-sprint-meta">
-          ${_formatDate(sprint.startDate)} – ${_formatDate(endDate)}
-          · ${sprint.durationWeeks === 1 ? '1 week' : '2 weeks'}
-          ${sprint.goal ? `<div class="bdp-sprint-goal">"${esc(sprint.goal)}"</div>` : ''}
-        </div>
-        <div class="bdp-capacity-summary ${hasGaps ? 'bdp-capacity-summary--warn' : ''}">
-          ${hasGaps
-            ? `<span class="bdp-cap-warn">⚠ ${gaps.reduce((n, g) => n + _daysBetween(g.startDate, g.endDate) + 1, 0)} days uncovered</span>`
-            : `<span class="bdp-cap-ok">✓ Fully covered</span>`
-          }
-          ${cap.total > 0
-            ? `<span class="bdp-cap-numbers">${cap.total.toFixed(1)} total · ${cap.priority.toFixed(1)} priority</span>`
-            : ''
-          }
         </div>
       </div>
 
-      <div class="bdp-timeline">
-        ${_renderTimelineBar(sprint, segments, endDate)}
+      <div class="p-tl-section">
+        <div class="p-tl-label">Timeline</div>
+        <div class="p-tl-row${sprint.status === 'done' ? ' p-tl-row--done' : ''}">
+          ${_renderTimelineBar(sprint, segments, endDate)}
+        </div>
       </div>
 
       ${hasGaps ? `
-        <div class="bdp-gap-prompt">
-          ${gaps.map(g => `
-            <div class="bdp-gap-item">
-              <span class="bdp-gap-dates">${_formatDate(g.startDate)} – ${_formatDate(g.endDate)}</span>
-              <button class="bdp-gap-fill-btn"
-                onclick="window.backlogDetailPanel._openSegmentForm('${esc(sprint.id)}', '${g.startDate}', '${g.endDate}')">
-                Fill gap
-              </button>
-            </div>
-          `).join('')}
+        ${gaps.map(g => `
+          <div class="p-gap-strip">
+            <span class="p-gap-text">⚠ Gap: ${_formatDate(g.startDate)} – ${_formatDate(g.endDate)}</span>
+            <button class="p-gap-btn"
+              onclick="window.backlogDetailPanel._openSegmentForm('${esc(sprint.id)}', '${g.startDate}', '${g.endDate}')">
+              Fill gap
+            </button>
+          </div>
+        `).join('')}
+      ` : ''}
+
+      ${cap.total > 0 ? `
+        <div class="p-cap-section">
+          <div class="p-cap-item">
+            <span class="p-cap-lbl">Total</span>
+            <span class="p-cap-val">${cap.total.toFixed(1)}</span>
+          </div>
+          <div class="p-cap-item">
+            <span class="p-cap-lbl">Priority</span>
+            <span class="p-cap-val">${cap.priority.toFixed(1)}</span>
+          </div>
+          ${cap.secondary1 > 0 ? `
+          <div class="p-cap-item">
+            <span class="p-cap-lbl">Secondary</span>
+            <span class="p-cap-val">${cap.secondary1.toFixed(1)}</span>
+          </div>` : ''}
         </div>
       ` : ''}
 
@@ -717,7 +730,7 @@ async function _renderSegmentBuilder(sprint, segments) {
       <div class="bdp-body">
         <div class="bdp-section-title">Locations</div>
         ${segments.length === 0
-          ? '<div class="bdp-empty">No locations added yet. Add your first location stay below.</div>'
+          ? '<div class="bdp-empty">No locations added yet.</div>'
           : segments.map(seg => _renderSegmentRow(seg, sprint)).join('')
         }
         <button class="bdp-add-segment-btn"
@@ -728,14 +741,14 @@ async function _renderSegmentBuilder(sprint, segments) {
 
       <div class="bdp-sprint-actions">
         ${sprint.status === 'planning'
-          ? `<button class="bdp-action-btn bdp-action-btn--primary"
+          ? `<button class="p-btn-primary"
                onclick="window.backlogDetailPanel._activateSprint('${esc(sprint.id)}')">
                Mark active
              </button>`
           : ''
         }
         ${sprint.status === 'active'
-          ? `<button class="bdp-action-btn"
+          ? `<button class="p-btn-secondary"
                onclick="window.backlogDetailPanel._completeSprint('${esc(sprint.id)}')">
                Complete sprint
              </button>`

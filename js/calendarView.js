@@ -187,21 +187,27 @@ function _renderMonthGrid(periods, overrides, sprints, stories) {
 function _renderWeekRow(week, currentMonth, dayMap, periodMap, sprintMeta, overrideByDate, storyCountByDate, today, periods, overrides, sprints, stories) {
   const cells = week.map(ds => _renderDayCell(ds, currentMonth, dayMap, periodMap, overrideByDate, storyCountByDate, today)).join('');
 
-  // Sprint bars overlapping this week
-  const sprintBars = sprintMeta
+  // One cal-sprint-row per overlapping sprint, ordered by start date; spacer if none
+  const overlappingSprints = sprintMeta
     .filter(sm => sm.endDate >= week[0] && sm.startDate <= week[6])
-    .map(sm => _renderSprintBar(sm, week, periods, overrides, stories))
-    .join('');
+    .sort((a, b) => a.startDate < b.startDate ? -1 : 1);
 
-  // Location period bands overlapping this week
-  const periodBands = _renderPeriodBands(week, periodMap, periods);
+  const sprintRows = overlappingSprints.length > 0
+    ? overlappingSprints.map(sm =>
+        `<div class="cal-sprint-row">${_renderSprintBar(sm, week, periods, overrides, stories)}</div>`
+      ).join('')
+    : '<div class="cal-sprint-spacer"></div>';
+
+  // Location band row, or spacer if none
+  const periodBandsHtml = _renderPeriodBands(week, periodMap, periods);
+  const locRow = periodBandsHtml
+    ? `<div class="cal-loc-row">${periodBandsHtml}</div>`
+    : '<div class="cal-loc-spacer"></div>';
 
   return `<div class="cv-week-row">
+    ${sprintRows}
+    ${locRow}
     <div class="cv-week-cells">${cells}</div>
-    <div class="cv-week-overlays">
-      ${periodBands}
-      ${sprintBars}
-    </div>
   </div>`;
 }
 
@@ -215,9 +221,9 @@ function _renderDayCell(ds, currentMonth, dayMap, periodMap, overrideByDate, sto
 
   const classes = [
     'cv-day-cell',
-    info.source === 'uncovered' ? 'cv-day--uncovered' : `cv-day--${info.dayType}`,
-    isOtherMonth ? 'cv-day--other-month' : '',
-    isToday      ? 'cv-day--today'       : '',
+    info.source === 'uncovered' ? 'cv-day-cell--uncov' : '',
+    isOtherMonth ? 'cv-day-cell--other-month' : '',
+    isToday      ? 'cv-day--today'            : '',
   ].filter(Boolean).join(' ');
 
   // Get period for this date
@@ -285,35 +291,54 @@ function _renderSprintBar(sm, week, periods, overrides, allStories) {
   const colStart = startIdx + 1;
   const colSpan  = endIdx - startIdx + 1;
 
+  const sprintLabel = sprint.id || 'Sprint';
+  const endDateFull = isoAddDays(sprint.startDate, sprint.durationWeeks * 7 - 1);
+  const dateRange   = `${_formatDate(sprint.startDate)}–${_formatDate(endDateFull)}`;
+  const durationLabel = sprint.durationWeeks === 1 ? '1 week' : `${sprint.durationWeeks} weeks`;
+
+  // Determine if primary (first week) or continuation
+  const isPrimary = startDate >= week[0]; // sprint starts in this week
+
+  const noRoundLeft  = startDate < week[0];
+  const noRoundRight = endDate   > week[6];
+  let roundClass = '';
+  if (noRoundLeft && noRoundRight) roundClass = 'cal-sprint-bar--no-round-both';
+  else if (noRoundLeft)            roundClass = 'cal-sprint-bar--no-round-left';
+  else if (noRoundRight)           roundClass = 'cal-sprint-bar--no-round-right';
+
+  if (!isPrimary) {
+    // Continuation segment — shows ID and arrow only
+    return `<div class="cal-sprint-bar cal-sprint-bar--cont ${roundClass}"
+      style="grid-column: ${colStart} / span ${colSpan};"
+      onclick="window.calendarView._openSprintDetail('${esc(sprint.id)}')"
+      title="${esc(sprintLabel)}: ${dateRange}">
+      <span class="cal-bar-cont-arrow">→</span>
+      <span class="cal-bar-id">${esc(sprintLabel)}</span>
+    </div>`;
+  }
+
+  // Primary segment — full content
   const cap = deriveSprintCapacity(sprint, periods, overrides);
-  const uncovered = detectUncoveredDays(sprint.startDate, isoAddDays(sprint.startDate, sprint.durationWeeks * 7 - 1), periods);
+  const uncovered = detectUncoveredDays(sprint.startDate, endDateFull, periods);
   const hasGap = uncovered.length > 0;
 
   const allocated = (allStories || [])
     .filter(s => s.sprintId === sprint.id)
     .reduce((sum, s) => sum + (s.weight || 0), 0);
-  const totalStr    = cap.total.toFixed(1);
-  const allocStr    = allocated.toFixed(1);
-  const isOver      = allocated > cap.total;
+  const totalStr = cap.total.toFixed(1);
+  const allocStr = allocated.toFixed(1);
+  const isOver   = allocated > cap.total;
 
-  const statusClass = `cv-sprint-bar--${sprint.status}`;
-  const gapClass    = hasGap ? 'cv-sprint-bar--gap' : '';
-
-  const sprintLabel = sprint.id || 'Sprint';
-  const dateRange   = `${_formatDate(sprint.startDate)}–${_formatDate(isoAddDays(sprint.startDate, sprint.durationWeeks * 7 - 1))}`;
-  const noRoundLeft  = startDate < week[0] ? 'cv-sprint-bar--no-round-left' : '';
-  const noRoundRight = endDate   > week[6] ? 'cv-sprint-bar--no-round-right' : '';
-
-  return `<div class="cv-sprint-bar ${statusClass} ${gapClass} ${noRoundLeft} ${noRoundRight}"
+  return `<div class="cal-sprint-bar cal-sprint-bar--primary ${roundClass}"
     style="grid-column: ${colStart} / span ${colSpan};"
     onclick="window.calendarView._openSprintDetail('${esc(sprint.id)}')"
     title="${esc(sprintLabel)}: ${dateRange}">
-    <span class="cv-sprint-icon">&#9654;</span>
-    <span class="cv-sprint-id">${esc(sprintLabel)}</span>
-    <span class="cv-sprint-dates">${esc(dateRange)}</span>
-    <span class="cv-sprint-cap${isOver ? ' cv-sprint-cap--over' : ''}">${allocStr}/${totalStr} blocks</span>
-    <span class="cv-sprint-status">${sprint.status}</span>
-    ${hasGap ? '<span class="cv-sprint-gap-warn" title="Uncovered days">&#9888;</span>' : ''}
+    <span class="cal-bar-chevron">&#9654;</span>
+    <span class="cal-bar-id">${esc(sprintLabel)}</span>
+    <span class="cal-bar-dates">${esc(dateRange)} · ${durationLabel}</span>
+    <span class="cal-bar-cap${isOver ? ' cal-bar-cap--over' : ''}">${allocStr}/${totalStr} blk</span>
+    <span class="cal-bar-status">${sprint.status}</span>
+    ${hasGap ? `<span class="cal-bar-warn">&#9888; ${uncovered.length} day${uncovered.length !== 1 ? 's' : ''} uncovered</span>` : ''}
   </div>`;
 }
 
@@ -336,16 +361,31 @@ function _renderPeriodBands(week, periodMap, periods) {
     const colStart = startIdx + 1;
     const colSpan  = endIdx - startIdx + 1;
 
-    const typeClass  = p.locationType === 'international' ? 'cv-period-band--intl' : 'cv-period-band--domestic';
-    const noRoundLeft  = p.startDate < week[0] ? 'cv-period-band--no-round-left' : '';
-    const noRoundRight = p.endDate   > week[6] ? 'cv-period-band--no-round-right' : '';
+    const typeClass = p.locationType === 'international' ? 'cal-loc-band--intl' : 'cal-loc-band--dom';
 
-    return `<div class="cv-period-band ${typeClass} ${noRoundLeft} ${noRoundRight}"
+    const noRoundLeft  = p.startDate < week[0];
+    const noRoundRight = p.endDate   > week[6];
+    let roundClass = '';
+    if (noRoundLeft && noRoundRight) roundClass = 'cal-loc-band--no-round-both';
+    else if (noRoundLeft)            roundClass = 'cal-loc-band--no-round-left';
+    else if (noRoundRight)           roundClass = 'cal-loc-band--no-round-right';
+
+    // Label logic per spec
+    const isContinuation = p.startDate < week[0]; // started before this week
+    const remainingDays  = daysBetween(week[6], p.endDate); // days left after this week
+    let labelText = '';
+    if (!isContinuation) {
+      labelText = `\u{1F4CD} ${esc(p.city || p.country || '')}`;
+    } else if (colSpan > 2) {
+      labelText = `→ ${remainingDays}d`;
+    }
+
+    const titleText = `${p.city || ''}${p.city && p.country ? ', ' : ''}${p.country || ''}`;
+
+    return `<div class="cal-loc-band ${typeClass} ${roundClass}"
       style="grid-column: ${colStart} / span ${colSpan};"
       onclick="window.calendarView._openPeriodPanel('${esc(p.id)}')"
-      title="${esc(p.city || '')}${p.city && p.country ? ', ' : ''}${esc(p.country || '')}">
-      <span class="cv-period-band-label">${esc(p.city || p.country || '')}</span>
-    </div>`;
+      title="${esc(titleText)}">${labelText}</div>`;
   }).join('');
 }
 
@@ -376,26 +416,31 @@ function _renderWeekGrid(periods, overrides, sprints, stories) {
   const currentMonth = parseInt(start.split('-')[1], 10);
   const cells = allDates.map(ds => _renderWeekViewCell(ds, dayMap, periodMap, overrideByDate, storyCountByDate, today)).join('');
 
-  const sprintBars = sprintMeta
-    .filter(sm => sm.endDate >= start && sm.startDate <= end)
-    .map(sm => _renderSprintBar(sm, allDates, periods, overrides, stories))
-    .join('');
-  const periodBands = _renderPeriodBands(allDates, periodMap, periods);
-
   const dayHeaders = allDates.map(ds => {
     const [y, m, d] = ds.split('-').map(Number);
     const label = new Date(Date.UTC(y, m - 1, d)).toLocaleString('en-US', { weekday: 'short' });
     return `<div class="cv-day-header">${label}<br><span class="cv-day-header-date">${d}</span></div>`;
   }).join('');
 
+  const overlappingSprints = sprintMeta
+    .filter(sm => sm.endDate >= start && sm.startDate <= end)
+    .sort((a, b) => a.startDate < b.startDate ? -1 : 1);
+  const sprintRows = overlappingSprints.length > 0
+    ? overlappingSprints.map(sm =>
+        `<div class="cal-sprint-row">${_renderSprintBar(sm, allDates, periods, overrides, stories)}</div>`
+      ).join('')
+    : '<div class="cal-sprint-spacer"></div>';
+  const periodBandsHtml = _renderPeriodBands(allDates, periodMap, periods);
+  const locRow = periodBandsHtml
+    ? `<div class="cal-loc-row">${periodBandsHtml}</div>`
+    : '<div class="cal-loc-spacer"></div>';
+
   return `<div class="cv-grid cv-grid--week">
     <div class="cv-day-headers">${dayHeaders}</div>
     <div class="cv-week-row">
+      ${sprintRows}
+      ${locRow}
       <div class="cv-week-cells cv-week-cells--tall">${cells}</div>
-      <div class="cv-week-overlays">
-        ${periodBands}
-        ${sprintBars}
-      </div>
     </div>
   </div>`;
 }
@@ -409,7 +454,7 @@ function _renderWeekViewCell(ds, dayMap, periodMap, overrideByDate, storyCountBy
   const classes = [
     'cv-day-cell',
     'cv-day-cell--week',
-    info.source === 'uncovered' ? 'cv-day--uncovered' : `cv-day--${info.dayType}`,
+    info.source === 'uncovered' ? 'cv-day-cell--uncov' : '',
     isToday ? 'cv-day--today' : '',
   ].filter(Boolean).join(' ');
 

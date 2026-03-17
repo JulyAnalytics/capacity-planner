@@ -84,21 +84,9 @@ function _daysBetween(dateA, dateB) {
   return Math.round((Date.UTC(yb, mb - 1, db) - Date.UTC(ya, ma - 1, da)) / 86400000);
 }
 
-function _renderCoverageBar(coveredDays, totalDays, sprintId) {
-  const pct = totalDays > 0 ? Math.round((coveredDays / totalDays) * 100) : 0;
-  const uncovered = totalDays - coveredDays;
-  return `
-    <button class="bl-coverage-bar-btn" onclick="event.stopPropagation(); window.backlogView._openSegmentBuilder('${sprintId}')">
-      <span class="bl-coverage-track">
-        <span class="bl-coverage-fill" style="width:${pct}%"></span>
-      </span>
-      <span class="bl-coverage-label">${uncovered > 0 ? `${uncovered} day${uncovered !== 1 ? 's' : ''} uncovered` : 'Add locations'}</span>
-    </button>
-  `;
-}
 
 async function _loadSprintCapacityHeaders() {
-  const { deriveSprintCapacity, detectGaps, deriveSprintMeta } = await import('./sprintCapacity.js');
+  const { deriveSprintCapacity, deriveSprintMeta } = await import('./sprintCapacity.js');
   const { deriveFocusAllocation, deriveTierCheck } = await import('./sprintAllocation.js');
   const headers = document.querySelectorAll('.bl-sprint-hdr[data-sprint-id]');
   const sprints = window.app?.data?.sprints || [];
@@ -109,46 +97,61 @@ async function _loadSprintCapacityHeaders() {
     const sprint = sprints.find(s => s.id === sprintId);
     if (!sprint) continue;
 
-    const capacityEl = hdrEl.querySelector('.bl-sprint-capacity');
-    if (!capacityEl) continue;
+    const tier2El = hdrEl.querySelector('.bl-sprint-tier-2');
+    if (!tier2El) continue;
 
     const segments = await window.sprintManager?.getSegmentsForSprint(sprintId) || [];
     const { endDate } = deriveSprintMeta(sprint.startDate, sprint.durationWeeks);
+    const sprintDays = _daysBetween(sprint.startDate, endDate) + 1;
+
+    // Allocation dots (Phase 1)
+    const sprintStories = (window.app?.data?.stories || [])
+      .filter(s => s.sprintId === sprintId && s.status !== 'abandoned');
 
     if (segments.length === 0) {
-      const sprintDays = _daysBetween(sprint.startDate, endDate) + 1;
-      capacityEl.innerHTML = _renderCoverageBar(0, sprintDays, sprintId);
-      capacityEl.classList.add('bl-sprint-capacity--uncovered');
+      tier2El.innerHTML = `
+        <div class="bl-cov-track-wrap">
+          <div class="bl-cov-rail">
+            <div class="bl-cov-seg bl-cov-seg--uncov" style="width:100%"></div>
+          </div>
+          <span class="bl-cov-warn">${sprintDays} day${sprintDays !== 1 ? 's' : ''} uncovered</span>
+        </div>
+      `;
       continue;
     }
 
-    const gaps = detectGaps(sprint, segments);
-    const cap = deriveSprintCapacity(segments);
-    const coveredDays = _daysBetween(sprint.startDate, endDate) + 1
-      - gaps.reduce((sum, g) => sum + _daysBetween(g.startDate, g.endDate) + 1, 0);
-    const totalDays = _daysBetween(sprint.startDate, endDate) + 1;
+    const cap  = deriveSprintCapacity(segments);
 
-    if (gaps.length > 0) {
-      capacityEl.innerHTML = _renderCoverageBar(coveredDays, totalDays, sprintId);
-    } else {
-      capacityEl.innerHTML = `
-        <span class="bl-cap-total">${cap.total.toFixed(1)} total</span>
-        <span class="bl-cap-sep">·</span>
-        <span class="bl-cap-priority">${cap.priority.toFixed(1)} priority</span>
-        ${cap.secondary1 > 0 ? `<span class="bl-cap-sep">·</span><span class="bl-cap-sec">${cap.secondary1.toFixed(1)} sec</span>` : ''}
-      `;
-      capacityEl.classList.remove('bl-sprint-capacity--uncovered');
+    let domDays = 0;
+    let intlDays = 0;
+    for (const seg of segments) {
+      const segDays = _daysBetween(seg.startDate, seg.endDate) + 1;
+      if (seg.locationType === 'international') intlDays += segDays;
+      else domDays += segDays;
     }
+    const uncovDays = Math.max(0, sprintDays - domDays - intlDays);
+    const domPct  = Math.round((domDays  / sprintDays) * 100);
+    const intlPct = Math.round((intlDays / sprintDays) * 100);
+    const uncPct  = 100 - domPct - intlPct;
 
-    // Patch allocation strip
-    const allocEl = hdrEl.querySelector('.bl-sprint-alloc');
-    if (allocEl) {
-      const sprintStories = (window.app?.data?.stories || [])
-        .filter(s => s.sprintId === sprintId && s.status !== 'abandoned');
-      const allocation = deriveFocusAllocation(sprintStories, allFocuses);
-      const tierCheck  = deriveTierCheck(sprintStories, cap);
-      allocEl.innerHTML = _renderAllocDots(allocation) + _renderTierStatus(tierCheck);
-    }
+    const allocation = deriveFocusAllocation(sprintStories, allFocuses);
+    const tierCheck  = deriveTierCheck(sprintStories, cap);
+    const allocHtml  = _renderAllocDots(allocation) + _renderTierStatus(tierCheck);
+
+    tier2El.innerHTML = `
+      <div class="bl-cov-track-wrap">
+        <div class="bl-cov-rail">
+          ${domPct  > 0 ? `<div class="bl-cov-seg bl-cov-seg--dom"  style="width:${domPct}%"></div>`  : ''}
+          ${intlPct > 0 ? `<div class="bl-cov-seg bl-cov-seg--intl" style="width:${intlPct}%"></div>` : ''}
+          ${uncPct  > 0 ? `<div class="bl-cov-seg bl-cov-seg--uncov" style="width:${uncPct}%"></div>` : ''}
+        </div>
+        ${uncovDays > 0 ? `<span class="bl-cov-warn">${uncovDays} day${uncovDays !== 1 ? 's' : ''} uncovered</span>` : ''}
+      </div>
+      <span class="bl-cap-sep">·</span>
+      <span class="bl-sprint-cap-total">${cap.total.toFixed(1)} total</span>
+      <span class="bl-sprint-cap-priority">· ${cap.priority.toFixed(1)} priority</span>
+      ${allocHtml ? `<span class="bl-cap-sep">·</span><span class="bl-sprint-alloc">${allocHtml}</span>` : ''}
+    `;
   }
 }
 
@@ -386,37 +389,37 @@ function _renderSprintHeader(sprint, allStoriesInSprint, isExpanded) {
   const { endDate } = deriveSprintMeta(sprint.startDate, sprint.durationWeeks);
   const startFmt = _formatDate(sprint.startDate);
   const endFmt = _formatDate(endDate);
-  const total = allStoriesInSprint.length;
-
   // Count chips (unfiltered)
   const todoCount = allStoriesInSprint.filter(s => s.status === 'backlog').length;
   const activeCount = allStoriesInSprint.filter(s => s.status === 'active').length;
   const doneCount = allStoriesInSprint.filter(s => s.status === 'completed').length;
 
   const todoChip = todoCount > 0
-    ? `<span class="bl-sprint-chip bl-sprint-chip--todo">${todoCount}</span>` : '';
+    ? `<span class="bl-sprint-chip bl-sprint-chip--todo">${todoCount} todo</span>` : '';
   const activeChip = activeCount > 0
-    ? `<span class="bl-sprint-chip bl-sprint-chip--active">${activeCount}</span>` : '';
+    ? `<span class="bl-sprint-chip bl-sprint-chip--active">${activeCount} active</span>` : '';
   const doneChip = doneCount > 0
-    ? `<span class="bl-sprint-chip bl-sprint-chip--done">${doneCount}</span>` : '';
+    ? `<span class="bl-sprint-chip bl-sprint-chip--done">${doneCount} done</span>` : '';
 
   return `<div class="bl-sprint-hdr" data-sprint-id="${esc(sprint.id)}" onclick="window.backlogView._toggleSection('sprint', '${esc(sprint.id)}')">
-    <span class="bl-section-chevron${isExpanded ? '' : ' bl-collapsed'}">${isExpanded ? '▼' : '▶'}</span>
-    <button type="button" class="bl-sprint-name bl-name-link"
-      onclick="event.stopPropagation(); window.backlogDetailPanel?.openSprint?.('${esc(sprint.id)}')"
-      title="View sprint details">${esc(sprint.id)}</button>
-    <span class="bl-sprint-dates">${startFmt}–${endFmt}</span>
-    <span class="bl-sprint-capacity" data-sprint-id="${esc(sprint.id)}">
+    <div class="bl-sprint-tier-1">
+      <span class="bl-section-chevron${isExpanded ? '' : ' bl-collapsed'}">${isExpanded ? '▼' : '▶'}</span>
+      <button type="button" class="bl-sprint-name bl-name-link"
+        onclick="event.stopPropagation(); window.backlogDetailPanel?.openSprint?.('${esc(sprint.id)}')"
+        title="View sprint details">${esc(sprint.id)}</button>
+      <span class="bl-sprint-dates">${startFmt}–${endFmt}</span>
+      <span class="bl-sprint-status-badge" data-sprint-status="${esc(sprint.status)}">${esc(sprint.status)}</span>
+      ${todoChip}${activeChip}${doneChip}
+      <span class="bl-hdr-spacer"></span>
+      <button type="button" class="bl-add-btn"
+        onclick="event.stopPropagation(); window.openCreationModal?.({type:'story', sprintId:'${esc(sprint.id)}'})">+ Story</button>
+    </div>
+    <div class="bl-sprint-tier-2" data-sprint-id="${esc(sprint.id)}">
+      <span class="bl-sprint-alloc" data-sprint-id="${esc(sprint.id)}">
+        <span class="bl-alloc-loading"></span>
+      </span>
       <span class="bl-cap-loading">···</span>
-    </span>
-    <span class="bl-sprint-alloc" data-sprint-id="${esc(sprint.id)}">
-      <span class="bl-alloc-loading"></span>
-    </span>
-    <span class="bl-sprint-status-badge" data-sprint-status="${esc(sprint.status)}">${esc(sprint.status)}</span>
-    <span class="bl-section-count"><span class="bl-count-num">${total}</span> <span class="bl-count-label">total</span></span>
-    ${todoChip}${activeChip}${doneChip}
-    <button type="button" class="bl-add-btn"
-      onclick="event.stopPropagation(); window.openCreationModal?.({type:'story', sprintId:'${esc(sprint.id)}'})">+ Story</button>
+    </div>
   </div>`;
 }
 
