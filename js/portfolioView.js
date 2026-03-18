@@ -360,7 +360,7 @@ document.addEventListener('change', (e) => {
 // MAIN RENDER
 // ============================================================================
 
-async function render() {
+async function _renderPortfolioView() {
   const root = document.getElementById('portfolio-root');
   if (!root) return;
 
@@ -464,7 +464,7 @@ async function renderSprintInvestmentTimeline(container) {
 // ============================================================================
 
 window.portfolioView = {
-  render,
+  render: _renderPortfolioView,
   toggleFocus:     toggleFocusSelection,
   clearSelection:  clearPortfolioSelection,
   exportSelected,

@@ -88,6 +88,9 @@ const DB = {
 
     stores.forEach(({ store }, i) => {
       const { data, error } = results[i];
+      if (error) {
+        console.error(`[DB.preloadAll] Failed to load "${store}":`, error.message || error);
+      }
       if (!error && data) {
         this._cache[store] = data.map(row => row.data);
       } else {

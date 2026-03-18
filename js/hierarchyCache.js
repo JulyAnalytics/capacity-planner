@@ -106,7 +106,14 @@ function startTTLTimer() {
 }
 
 /**
- * Handle invalidation message from another tab
+ * Handle invalidation message from another tab.
+ *
+ * Feedback-loop audit (Phase 4.1):
+ *   Receiving a message here calls refreshHierarchyCache() (DB reads only) and
+ *   optionally re-renders an open modal.  It does NOT call invalidateCache() and
+ *   does NOT post to broadcastChannel.  The capacity_planner channel handler
+ *   (_initCapacityPlannerChannel) also only mutates local cache arrays — no
+ *   re-broadcast.  There is no feedback loop between tabs. ✓
  */
 async function handleInvalidationMessage(message) {
   // Handle sprint/travelSegment broadcast messages from sprintManager.js

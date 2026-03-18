@@ -616,7 +616,7 @@ function renderDrillDown(focusName, focusId, focusColor, subFocuses, epics, stor
 
 let _lastFocusName = null;
 
-async function render(focusName) {
+async function _focusDrillDownMain(focusName) {
   const root = document.getElementById('portfolio-root');
   if (!root) return;
 
@@ -675,7 +675,7 @@ document.addEventListener('click', (e) => {
 // EXPORTS
 // ============================================================================
 
-window.focusDrillDown = { render };
+window.focusDrillDown = { render: _focusDrillDownMain };
 
 // Public selection API — called from inline onclick handlers
 window.ddSelection = {

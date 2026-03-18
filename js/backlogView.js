@@ -8,7 +8,7 @@ import { deriveSprintMeta } from './sprintCapacity.js';
 
 // ── State ─────────────────────────────────────────────────────────────────────
 
-let groupBy = 'sprint'; // 'sprint' | 'focus'
+let _blGroupBy = 'sprint'; // 'sprint' | 'focus'
 let activeFocus = null; // focus.id | null (null = All)
 let activeStatuses = new Set(['all']); // 'all' is sentinel
 let openPanelType = null; // 'story' | 'epic' | 'focus' | 'subFocus' | null
@@ -244,14 +244,14 @@ function _renderToolbar(focuses, allEpics) {
   }
 
   // Group-by toggle — row 1 left (before focus pills)
-  const byFocusBtn = `<button class="bl-toggle-btn ${groupBy === 'focus' ? 'on' : ''}"
+  const byFocusBtn = `<button class="bl-toggle-btn ${_blGroupBy === 'focus' ? 'on' : ''}"
     onclick="window.backlogView._setGroupBy('focus')"
-    aria-pressed="${groupBy === 'focus'}">By focus</button>
+    aria-pressed="${_blGroupBy === 'focus'}">By focus</button>
   <span class="bl-toolbar-sep">|</span>
-  <button class="bl-toggle-btn ${groupBy === 'calendar' ? 'on' : ''}"
+  <button class="bl-toggle-btn ${_blGroupBy === 'calendar' ? 'on' : ''}"
     onclick="window.backlogView._setGroupBy('calendar')"
-    aria-pressed="${groupBy === 'calendar'}">Calendar</button>
-  <span class="bl-toolbar-sep bl-toolbar-sep--calendar ${groupBy === 'calendar' ? 'bl-hidden' : ''}">|</span>`;
+    aria-pressed="${_blGroupBy === 'calendar'}">Calendar</button>
+  <span class="bl-toolbar-sep bl-toolbar-sep--calendar ${_blGroupBy === 'calendar' ? 'bl-hidden' : ''}">|</span>`;
 
   // Status chips (row 2)
   const chipDefs = [
@@ -267,9 +267,9 @@ function _renderToolbar(focuses, allEpics) {
   });
 
   // Group-by toggle — row 2 left (before status chips)
-  const bySprintBtn = `<button class="bl-toggle-btn ${groupBy === 'sprint' ? 'on' : ''}"
+  const bySprintBtn = `<button class="bl-toggle-btn ${_blGroupBy === 'sprint' ? 'on' : ''}"
     onclick="window.backlogView._setGroupBy('sprint')"
-    aria-pressed="${groupBy === 'sprint'}">By sprint</button>
+    aria-pressed="${_blGroupBy === 'sprint'}">By sprint</button>
   <span class="bl-toolbar-sep">|</span>`;
 
   // New Sprint button (row 2, flush right)
@@ -524,7 +524,7 @@ export function openStoryPanel(storyId) {
   openPanelType = 'story';
   openPanelId = storyId;
   if (!_historyTriggered) {
-    history.pushState({ view: 'backlog', panelType: 'story', panelId: storyId }, '', _currentUrl());
+    history.pushState({ view: 'backlog', panelType: 'story', panelId: storyId }, '', _currentUrl()); // guarded: only fires when !_historyTriggered (prevents double-push on popstate)
   }
   _applySelectedRow();
   window.backlogDetailPanel?.openStory(storyId);
@@ -537,7 +537,7 @@ export function openEpicPanel(epicId) {
   openPanelType = 'epic';
   openPanelId = epicId;
   if (!_historyTriggered) {
-    history.pushState({ view: 'backlog', panelType: 'epic', panelId: epicId }, '', _currentUrl());
+    history.pushState({ view: 'backlog', panelType: 'epic', panelId: epicId }, '', _currentUrl()); // guarded: only fires when !_historyTriggered
   }
   _applySelectedRow();
   window.backlogDetailPanel?.openEpic(epicId);
@@ -550,7 +550,7 @@ export function openFocusPanel(focusId) {
   openPanelType = 'focus';
   openPanelId = focusId;
   if (!_historyTriggered) {
-    history.pushState({ view: 'backlog', panelType: 'focus', panelId: focusId }, '', _currentUrl());
+    history.pushState({ view: 'backlog', panelType: 'focus', panelId: focusId }, '', _currentUrl()); // guarded: only fires when !_historyTriggered
   }
   _applySelectedRow();
   window.backlogDetailPanel?.openFocus(focusId);
@@ -563,7 +563,7 @@ export function openSubFocusPanel(sfId) {
   openPanelType = 'subFocus';
   openPanelId = sfId;
   if (!_historyTriggered) {
-    history.pushState({ view: 'backlog', panelType: 'subFocus', panelId: sfId }, '', _currentUrl());
+    history.pushState({ view: 'backlog', panelType: 'subFocus', panelId: sfId }, '', _currentUrl()); // guarded: only fires when !_historyTriggered
   }
   _applySelectedRow();
   window.backlogDetailPanel?.openSubFocus(sfId);
@@ -573,7 +573,7 @@ export function closePanel() {
   openPanelType = null;
   openPanelId = null;
   if (!_historyTriggered) {
-    history.pushState({ view: 'backlog', panelType: null, panelId: null }, '', _currentUrl());
+    history.pushState({ view: 'backlog', panelType: null, panelId: null }, '', _currentUrl()); // guarded: only fires when !_historyTriggered
   }
   _applySelectedRow();
   window.backlogDetailPanel?.close();
@@ -599,8 +599,8 @@ function _onStoryRowClick(storyId, _event) {
 
 function _setGroupBy(mode) {
   closePanel();
-  groupBy = mode;
-  render();
+  _blGroupBy = mode;
+  _renderBacklogView();
 }
 
 function _setActiveFocus(focusId) {
@@ -609,7 +609,7 @@ function _setActiveFocus(focusId) {
   if (activeFocus) params.set('focus', activeFocus);
   else params.delete('focus');
   history.replaceState(null, '', `${window.location.pathname}${params.toString() ? '?' + params : ''}`);
-  render();
+  _renderBacklogView();
 }
 
 function _setStatus(key) {
@@ -624,7 +624,7 @@ function _setStatus(key) {
       activeStatuses.add(key);
     }
   }
-  render();
+  _renderBacklogView();
 }
 
 function _clearEpicFilter() {
@@ -632,20 +632,20 @@ function _clearEpicFilter() {
   const params = new URLSearchParams(window.location.search);
   params.delete('epic');
   history.replaceState(null, '', `${window.location.pathname}${params.toString() ? '?' + params : ''}`);
-  render();
+  _renderBacklogView();
 }
 
 function _onFocusDotClick(focusId) {
-  groupBy = 'focus';
+  _blGroupBy = 'focus';
   activeFocus = focusId;
   const params = new URLSearchParams(window.location.search);
   params.set('focus', focusId);
   history.replaceState(null, '', `${window.location.pathname}?${params}`);
-  render();
+  _renderBacklogView();
 }
 
 function _onSprintTagClick(sprintId) {
-  groupBy = 'sprint';
+  _blGroupBy = 'sprint';
   // Collapse all, expand only this one
   // Reset all sprints to collapsed
   Object.keys(collapseState.sprints).forEach(k => { collapseState.sprints[k] = false; });
@@ -655,7 +655,7 @@ function _onSprintTagClick(sprintId) {
   const params = new URLSearchParams(window.location.search);
   params.delete('focus');
   history.replaceState(null, '', `${window.location.pathname}${params.toString() ? '?' + params : ''}`);
-  render().then(() => {
+  _renderBacklogView().then(() => {
     const hdr = document.querySelector(`[data-section-id="${sprintId}"] .bl-sprint-hdr`);
     hdr?.scrollIntoView({ behavior: 'smooth', block: 'start' });
   });
@@ -817,7 +817,7 @@ function _renderByFocusMode(allFocuses, allSubFocuses, allEpics, _allStories, fi
 
 // ── Main render ───────────────────────────────────────────────────────────────
 
-export async function render() {
+export async function _renderBacklogView() {
   const root = document.getElementById('backlog-root');
   if (!root) return;
 
@@ -837,14 +837,14 @@ export async function render() {
   const toolbarHtml = _renderToolbar(allFocuses.filter(f => f.status === 'active'), allEpics);
 
   // Calendar view is rendered by calendarView.js
-  if (groupBy === 'calendar') {
+  if (_blGroupBy === 'calendar') {
     root.innerHTML = `${toolbarHtml}<div id="bl-list"></div>`;
     if (window.calendarView) window.calendarView.render();
     return;
   }
 
   let listHtml = '';
-  if (groupBy === 'sprint') {
+  if (_blGroupBy === 'sprint') {
     listHtml = await _renderBySprintMode(allSprints, allStories, filteredStories, allEpics, allFocuses, allSubFocuses);
   } else {
     listHtml = _renderByFocusMode(allFocuses, allSubFocuses, allEpics, allStories, filteredStories);
@@ -898,7 +898,7 @@ export function patchStoryRow(storyId, { movedToSection } = {}) {
     const targetSectionBody = document.querySelector(`[data-section-id="${movedToSection}"] .bl-section-body`);
     if (!targetSectionBody) {
       // Case B: target section not in DOM → full re-render
-      render();
+      _renderBacklogView();
       return;
     }
     const isHidden = targetSectionBody.classList.contains('bl-hidden');
@@ -1114,7 +1114,7 @@ export async function _submitCreateSprint() {
   try {
     await window.sprintManager.createSprint({ startDate, durationWeeks, goal });
     document.getElementById('create-sprint-overlay')?.remove();
-    render();
+    _renderBacklogView();
   } catch (err) {
     if (errEl) { errEl.textContent = err.message; errEl.style.display = ''; }
   }
@@ -1127,7 +1127,7 @@ window._backlogEpicFilter = () => epicFilter;
 // ── Global export ─────────────────────────────────────────────────────────────
 
 window.backlogView = {
-  render,
+  render: _renderBacklogView,
   renderSprintCapacityHeaders,
   patchStoryRow,
   patchEpicTag,
@@ -1149,7 +1149,7 @@ window.backlogView = {
     const params = new URLSearchParams(window.location.search);
     params.set('epic', id);
     history.replaceState(null, '', `${window.location.pathname}?${params}`);
-    render();
+    _renderBacklogView();
   },
   openCreateSprintModal,
   _submitCreateSprint,

@@ -1052,7 +1052,8 @@ button.bl-focus-name {
 }
 
 .cv-grid--month {
-  min-width: 700px;
+  min-width: 560px;
+  overflow-x: auto;
 }
 
 .cv-day-headers {
@@ -1104,10 +1105,11 @@ button.bl-focus-name {
 .cv-week-cells {
   display: grid;
   grid-template-columns: repeat(7, minmax(0, 1fr));
+  grid-auto-rows: minmax(80px, auto);
 }
 
-.cv-week-cells--tall .cv-day-cell {
-  min-height: 160px;
+.cv-week-cells--tall {
+  grid-auto-rows: minmax(160px, auto);
 }
 
 /* ── Day cell ───────────────────────────────────────────────────────────────── */
@@ -1217,6 +1219,10 @@ button.bl-focus-name {
   padding: 1px 5px;
   align-self: flex-start;
   margin-top: auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 100%;
 }
 
 /* Ghost actions — single action per cell, context-aware */
@@ -1303,13 +1309,6 @@ button.bl-focus-name {
 .cal-loc-band--no-round-both  { border-radius: 0; border-left: none; }
 
 /* ── Sprint bars ────────────────────────────────────────────────────────────── */
-
-.cv-grid--month {
-  display: grid;
-  grid-template-columns: repeat(7, minmax(0, 1fr));
-  overflow-x: auto;
-  min-width: 560px;
-}
 
 .cal-sprint-bar {
   height: 22px;

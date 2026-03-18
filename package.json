@@ -1,0 +1,12 @@
+{
+  "name": "capacity-planner",
+  "private": true,
+  "scripts": {
+    "build": "node build.js"
+  },
+  "devDependencies": {
+    "terser": "^5",
+    "cssnano": "^7",
+    "postcss": "^8"
+  }
+}

@@ -99,14 +99,18 @@ window.authSubmit = async function authSubmit() {
 function _resetCache() {
   if (!window.DB) return;
   window.DB._cache = {
-    calendar:     null,
-    priorities:   null,
-    subFocuses:   null,
-    epics:        null,
-    stories:      null,
-    dailyLogs:    null,
-    monthlyPlans: null,
-    focuses:      null,
+    calendar:         null,
+    priorities:       null,
+    subFocuses:       null,
+    epics:            null,
+    stories:          null,
+    dailyLogs:        null,
+    monthlyPlans:     null,
+    focuses:          null,
+    sprints:          null,
+    travelSegments:   null,
+    locationPeriods:  null,
+    dayTypeOverrides: null,
   };
   window.DB._cacheReady = false;
 }
@@ -140,5 +144,5 @@ window.migrateFromIDB = async function migrateFromIDB() {
 
   btn.textContent = `Done (${result.total} records)`;
   alert(`Migration complete!\n${summary || 'No records found.'}\n\nThe page will reload to show your data.`);
-  location.reload();
+  location.reload(); // guarded: only fires after successful migrateFromIDB() + user-confirmed alert
 };

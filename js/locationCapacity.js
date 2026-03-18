@@ -141,7 +141,7 @@ export function deriveCapacityForDateRange(startDate, endDate, periods, override
   return { ...acc, uncoveredDays, dayMap };
 }
 
-export function deriveSprintCapacity(sprint, periods, overrides) {
+export function deriveSprintCapacityFromPeriods(sprint, periods, overrides) {
   const endDate = addDays(sprint.startDate, sprint.durationWeeks * 7 - 1);
   return deriveCapacityForDateRange(sprint.startDate, endDate, periods, overrides);
 }

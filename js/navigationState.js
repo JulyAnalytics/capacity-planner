@@ -60,7 +60,7 @@ function _handleBacklogPopstate(state) {
  */
 function drillDown(focusName) {
   scrollPositions['portfolio'] = window.scrollY;
-  history.pushState({ view: 'focus', focusName }, '', window.location.href);
+  history.pushState({ view: 'focus', focusName }, '', window.location.href); // guarded: only called from drillDown(), triggered by explicit user navigation action
   _renderFocusDrillDown(focusName);
 }
 

@@ -6,7 +6,7 @@
 
 import {
   isoAddDays, isoDateRange, daysBetween,
-  buildDayMap, deriveSprintCapacity, detectUncoveredDays,
+  buildDayMap, deriveSprintCapacityFromPeriods, detectUncoveredDays,
   deriveSprintMeta,
 } from './locationCapacity.js';
 import {
@@ -242,19 +242,21 @@ function _renderDayCell(ds, currentMonth, dayMap, periodMap, overrideByDate, sto
     : '';
 
   const storyBadge = storyCount > 0
-    ? `<div class="cv-story-count">${storyCount} stor${storyCount === 1 ? 'y' : 'ies'}</div>`
+    ? `<div class="cv-story-count" title="${storyCount} stor${storyCount === 1 ? 'y' : 'ies'}">${storyCount} ◆</div>`
     : '';
 
   const isUncovered = info.source === 'uncovered';
   const inSprint    = _dateInAnySprint(ds);
 
-  const ghostSprint = !inSprint
-    ? `<button class="cv-ghost-sprint" onclick="window.calendarView._openCreateSprint('${ds}')" title="Create sprint starting here">+ Sprint</button>`
-    : '';
-
-  const ghostLocation = isUncovered
-    ? `<button class="cv-ghost-location" onclick="event.stopPropagation(); window.calendarView._openNewPeriodFromDate('${ds}')" title="Add location period">+ Location</button>`
-    : '';
+  const ghostAction = (inSprint && isUncovered)
+    ? `<button class="cv-ghost-location"
+         onclick="event.stopPropagation(); window.calendarView._openNewPeriodFromDate('${ds}')"
+         title="Add location period">+ Location</button>`
+    : (!inSprint)
+      ? `<button class="cv-ghost-sprint"
+           onclick="window.calendarView._openCreateSprint('${ds}')"
+           title="Create sprint starting here">+ Sprint</button>`
+      : '';
 
   return `<div class="${classes}" data-date="${ds}" onclick="window.calendarView._onCellClick('${ds}')">
     <div class="cv-day-top">
@@ -264,8 +266,7 @@ function _renderDayCell(ds, currentMonth, dayMap, periodMap, overrideByDate, sto
     ${locationLabel}
     ${dayTypeBadge}
     ${storyBadge}
-    ${ghostSprint}
-    ${ghostLocation}
+    ${ghostAction}
   </div>`;
 }
 
@@ -318,7 +319,7 @@ function _renderSprintBar(sm, week, periods, overrides, allStories) {
   }
 
   // Primary segment — full content
-  const cap = deriveSprintCapacity(sprint, periods, overrides);
+  const cap = deriveSprintCapacityFromPeriods(sprint, periods, overrides);
   const uncovered = detectUncoveredDays(sprint.startDate, endDateFull, periods);
   const hasGap = uncovered.length > 0;
 
@@ -336,7 +337,9 @@ function _renderSprintBar(sm, week, periods, overrides, allStories) {
     <span class="cal-bar-chevron">&#9654;</span>
     <span class="cal-bar-id">${esc(sprintLabel)}</span>
     <span class="cal-bar-dates">${esc(dateRange)} · ${durationLabel}</span>
-    <span class="cal-bar-cap${isOver ? ' cal-bar-cap--over' : ''}">${allocStr}/${totalStr} blk</span>
+    ${cap.total > 0
+      ? `<span class="cal-bar-cap${isOver ? ' cal-bar-cap--over' : ''}">${allocStr}/${totalStr} blk</span>`
+      : `<span class="cal-bar-cap" style="color:var(--text-muted);font-style:italic">no locations set</span>`}
     <span class="cal-bar-status">${sprint.status}</span>
     ${hasGap ? `<span class="cal-bar-warn">&#9888; ${uncovered.length} day${uncovered.length !== 1 ? 's' : ''} uncovered</span>` : ''}
   </div>`;
@@ -475,7 +478,7 @@ function _renderWeekViewCell(ds, dayMap, periodMap, overrideByDate, storyCountBy
     : '';
 
   const storyBadge = storyCount > 0
-    ? `<div class="cv-story-count">${storyCount} stor${storyCount === 1 ? 'y' : 'ies'}</div>`
+    ? `<div class="cv-story-count" title="${storyCount} stor${storyCount === 1 ? 'y' : 'ies'}">${storyCount} ◆</div>`
     : '';
 
   return `<div class="${classes}" data-date="${ds}" onclick="window.calendarView._onCellClick('${ds}')">
@@ -987,8 +990,8 @@ function _renderAffectedSprintsSection(f) {
 
   const rows = affected.map(s => {
     const end     = isoAddDays(s.startDate, s.durationWeeks * 7 - 1);
-    const capOld  = _editingPeriodId ? deriveSprintCapacity(s, periods, allOverrides) : null;
-    const capNew  = deriveSprintCapacity(s, previewPeriods, allOverrides);
+    const capOld  = _editingPeriodId ? deriveSprintCapacityFromPeriods(s, periods, allOverrides) : null;
+    const capNew  = deriveSprintCapacityFromPeriods(s, previewPeriods, allOverrides);
     const beforeRow = capOld
       ? `<div class="cv-affected-before">Before: ${capOld.total.toFixed(1)} total · ${capOld.priority.toFixed(1)} priority</div>`
       : '';
@@ -1125,6 +1128,7 @@ function _overrideDate(ds) {
 function _clearOverride(ds) {
   clearDayTypeOverride(ds).then(() => {
     if (window.app?.data) {
+      if (!Array.isArray(window.app.data.dayTypeOverrides)) window.app.data.dayTypeOverrides = [];
       window.app.data.dayTypeOverrides = window.app.data.dayTypeOverrides.filter(o => o.date !== ds);
     }
     render({ previewPeriod: _periodForm ? { ..._periodForm, id: _editingPeriodId || '_preview_' } : undefined });
@@ -1141,13 +1145,17 @@ async function _savePeriod() {
     if (_editingPeriodId) {
       const { period } = await updateLocationPeriod(_editingPeriodId, f);
       if (window.app?.data) {
+        if (!Array.isArray(window.app.data.locationPeriods)) window.app.data.locationPeriods = [];
         const i = window.app.data.locationPeriods.findIndex(p => p.id === period.id);
         if (i >= 0) window.app.data.locationPeriods[i] = period;
         else window.app.data.locationPeriods.push(period);
       }
     } else {
       const { period } = await createLocationPeriod(f);
-      if (window.app?.data) window.app.data.locationPeriods.push(period);
+      if (window.app?.data) {
+        if (!Array.isArray(window.app.data.locationPeriods)) window.app.data.locationPeriods = [];
+        window.app.data.locationPeriods.push(period);
+      }
     }
     _closePanel();
     render();

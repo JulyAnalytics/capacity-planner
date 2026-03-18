@@ -4,7 +4,19 @@
       "Bash(ls:*)",
       "Bash(wc:*)",
       "Bash(node:*)",
-      "Bash(\"/Users/jun/Library/CloudStorage/OneDrive-Personal/Tools/capacity-planner/css/styles.css\":*)"
+      "Bash(\"/Users/jun/Library/CloudStorage/OneDrive-Personal/Tools/capacity-planner/css/styles.css\":*)",
+      "Bash(npm install:*)",
+      "Bash(/opt/homebrew/bin/node --version)",
+      "Bash(/usr/local/bin/node --version)",
+      "Read(//opt/homebrew/bin/**)",
+      "Read(//Users/jun/.nvm/versions/**)",
+      "Read(//usr/local/**)",
+      "Bash(echo $PATH)",
+      "Bash(npm run:*)",
+      "Bash(grep -n \"window\\\\.backlogView\\\\s*=\" js/*.js)",
+      "Bash(grep -rn \"^function isoAddDays\\\\|^function buildDayMap\\\\|^function isoDateRange\\\\|^const isoAddDays\\\\|^const buildDayMap\" js/*.js)",
+      "Bash(grep -rn \"function isoAddDays\\\\|function buildDayMap\\\\|function isoDateRange\" js/*.js)",
+      "Bash(node -e \":*)"
     ]
   }
 }

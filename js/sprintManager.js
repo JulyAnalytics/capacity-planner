@@ -16,7 +16,7 @@ import { detectGaps, deriveSprintMeta } from './sprintCapacity.js';
 export async function createSprint({ startDate, durationWeeks, goal = null, focusRanking = null }) {
   const draft = { startDate, durationWeeks, status: 'planning', goal };
   const errors = validateSprint(draft);
-  if (errors.length) throw new ValidationError(errors[0].message, errors[0].field);
+  if (errors.length) throw new _SprintValidationError(errors[0].message, errors[0].field);
 
   const sprintNumber = await _incrementSprintCounter();
   const { isoYear }  = deriveSprintMeta(startDate, durationWeeks);
@@ -43,7 +43,7 @@ export async function updateSprint(id, fields) {
   if (!existing) throw new Error(`Sprint ${id} not found`);
   const updated = { ...existing, ...fields };
   const errors  = validateSprint(updated);
-  if (errors.length) throw new ValidationError(errors[0].message, errors[0].field);
+  if (errors.length) throw new _SprintValidationError(errors[0].message, errors[0].field);
   await DB.put(DB.STORES.SPRINTS, updated);
   _broadcastSprintChange('updated', updated);
   return updated;
@@ -60,7 +60,7 @@ export async function createSegment(segData) {
   if (!sprint) throw new Error('Sprint not found');
 
   const errors = validateTravelSegment(segData, sprint);
-  if (errors.length) throw new ValidationError(errors[0].message, errors[0].field);
+  if (errors.length) throw new _SprintValidationError(errors[0].message, errors[0].field);
 
   const seg = {
     departureDayOverride: null,
@@ -82,7 +82,7 @@ export async function updateSegment(id, fields) {
   const sprint  = await DB.get(DB.STORES.SPRINTS, existing.sprintId);
   const updated = { ...existing, ...fields };
   const errors  = validateTravelSegment(updated, sprint);
-  if (errors.length) throw new ValidationError(errors[0].message, errors[0].field);
+  if (errors.length) throw new _SprintValidationError(errors[0].message, errors[0].field);
   await DB.put(DB.STORES.TRAVEL_SEGMENTS, updated);
   _broadcastSegmentChange('updated', updated);
   const allSegs = await getSegmentsForSprint(updated.sprintId);
@@ -126,7 +126,7 @@ function _broadcastSegmentChange(action, segment) {
 
 // ── Error class ───────────────────────────────────────────────────────────────
 
-class ValidationError extends Error {
+class _SprintValidationError extends Error {
   constructor(message, field) {
     super(message);
     this.name  = 'ValidationError';
