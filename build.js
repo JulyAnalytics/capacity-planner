@@ -44,6 +44,7 @@ const CSS_FILES = [
   'css/styles.css',
   'css/portfolio.css',
   'css/backlog.css',
+  'css/storyMapV2.css',
 ];
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────

@@ -543,6 +543,7 @@ class CapacityManager {
         this.renderDailyStories();
         this.renderStoryMap();
         if (window.backlogView) window.backlogView.renderSprintCapacityHeaders();
+        if (window.backlogView?._currentGroupBy?.() === 'storymap') window.backlogView.render();
       },
       epic: () => {
         this.renderEpicsList();
@@ -550,6 +551,7 @@ class CapacityManager {
         this.populateEpicDropdown();
         this.renderStoryMap();
         this.renderDailyStories();
+        if (window.backlogView?._currentGroupBy?.() === 'storymap') window.backlogView.render();
       },
       subFocus: () => {
         this.renderSubFocusList();

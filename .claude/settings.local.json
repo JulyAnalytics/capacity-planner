@@ -16,7 +16,10 @@
       "Bash(grep -n \"window\\\\.backlogView\\\\s*=\" js/*.js)",
       "Bash(grep -rn \"^function isoAddDays\\\\|^function buildDayMap\\\\|^function isoDateRange\\\\|^const isoAddDays\\\\|^const buildDayMap\" js/*.js)",
       "Bash(grep -rn \"function isoAddDays\\\\|function buildDayMap\\\\|function isoDateRange\" js/*.js)",
-      "Bash(node -e \":*)"
+      "Bash(node -e \":*)",
+      "Bash(python3 -m json.tool)",
+      "Bash(echo \"EXIT: $?\")",
+      "Bash(grep -rn 'onclick=.*\\\\${' /Users/jun/Library/CloudStorage/OneDrive-Personal/Tools/capacity-planner/js/backlogView.js)"
     ]
   }
 }
