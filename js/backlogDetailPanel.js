@@ -4,6 +4,9 @@
  */
 
 import DB from './db.js';
+import { esc } from './utils.js';
+import { daysBetween } from './locationCapacity.js';
+import { invalidateCache } from './hierarchyCache.js';
 import { deriveSprintCapacity, detectGaps, deriveSprintMeta } from './sprintCapacity.js';
 
 const container = () => document.getElementById('backlog-detail-panel');
@@ -34,7 +37,7 @@ export function open(storyId) {
   container().classList.add('bdp-open');
   container().setAttribute('aria-hidden', 'false');
   root()?.classList.add('bdp-active');
-  _attachSwipeToClose();
+  _attachPanelSwipeToClose();
 }
 
 export const openStory = open;
@@ -46,7 +49,7 @@ export async function openEpic(epicId) {
   container().classList.add('bdp-open');
   container().setAttribute('aria-hidden', 'false');
   root()?.classList.add('bdp-active');
-  _attachSwipeToClose();
+  _attachPanelSwipeToClose();
 }
 
 export async function openFocus(focusId) {
@@ -58,7 +61,7 @@ export async function openFocus(focusId) {
   container().classList.add('bdp-open');
   container().setAttribute('aria-hidden', 'false');
   root()?.classList.add('bdp-active');
-  _attachSwipeToClose();
+  _attachPanelSwipeToClose();
 }
 
 export async function openSubFocus(sfId) {
@@ -70,7 +73,7 @@ export async function openSubFocus(sfId) {
   container().classList.add('bdp-open');
   container().setAttribute('aria-hidden', 'false');
   root()?.classList.add('bdp-active');
-  _attachSwipeToClose();
+  _attachPanelSwipeToClose();
 }
 
 export function close() {
@@ -124,7 +127,7 @@ async function _render(storyId) {
              aria-label="Story title" />
 
       <div class="bdp-status-row">
-        ${_renderStatusBadge(story.status, storyId)}
+        ${_renderStatusSelect(story.status, storyId)}
       </div>
 
       <div class="bdp-description-group">
@@ -145,7 +148,14 @@ async function _render(storyId) {
   `;
 }
 
-function _renderStatusBadge(status, storyId) {
+// DECISION: Renamed from _renderStatusBadge to _renderStatusSelect (R08, 2026-04-25).
+// backlogView.js exports a separate read-only _renderStatusBadge(status) (1 arg,
+// returns a <span>). The IIFE bundle's last-wins meant this 2-arg interactive
+// <select> shadowed the read-only span, so backlogView's call site was rendering
+// a <select> with storyId === undefined and an onchange handler that wrote to
+// saveField('undefined', 'status', ...). This rename keeps the two surfaces
+// distinct: the badge is a display element, the select is an editor.
+function _renderStatusSelect(status, storyId) {
   const statuses = ['backlog', 'active', 'completed', 'blocked', 'abandoned'];
   return `<select class="bdp-status-select" data-status="${esc(status)}"
     onchange="window.backlogDetailPanel.saveField('${esc(storyId)}', 'status', this.value)">
@@ -474,6 +484,9 @@ export async function saveFocusField(focusId, field, value) {
   focus[field] = value;
   try {
     await DB.put(DB.STORES.FOCUSES, focus);
+    window.app.data.focuses = await DB.getAll(DB.STORES.FOCUSES);
+    await invalidateCache('focus');
+    window.app?.notifyDataChange('focus');
     window.backlogView?.render();
   } catch (err) {
     focus[field] = prev;
@@ -489,6 +502,9 @@ export async function saveSubFocusField(sfId, field, value) {
   sf[field] = value;
   try {
     await DB.put(DB.STORES.SUB_FOCUSES, sf);
+    window.app.data.subFocuses = await DB.getAll(DB.STORES.SUB_FOCUSES);
+    await invalidateCache('subFocus');
+    window.app?.notifyDataChange('subFocus');
     window.backlogView?.render();
   } catch (err) {
     sf[field] = prev;
@@ -548,7 +564,7 @@ export async function saveField(storyId, field, value) {
     const fresh = await DB.get(DB.STORES.STORIES, storyId);
     if (fresh) {
       const idx = window.app?.data?.stories?.findIndex(s => s.id === storyId);
-      if (idx >= 0) window.app.data.stories[idx] = fresh;
+      if (idx >= 0) window.app.data.stories[idx] = fresh; // Intentional: error-recovery — restores story from DB after failed write
     }
     _render(storyId);
     if (window.showToastWithActions) window.showToastWithActions('Save failed', 'error', { duration: 3000 });
@@ -562,6 +578,9 @@ export async function saveEpicField(epicId, field, value) {
   epic[field] = value;
   try {
     await DB.put(DB.STORES.EPICS, epic);
+    window.app.data.epics = await DB.getAll(DB.STORES.EPICS);
+    await invalidateCache('epic');
+    window.app?.notifyDataChange('epic');
     if (field === 'name' || field === 'fg') {
       window.backlogView?.patchEpicTag(epicId);
     }
@@ -590,15 +609,25 @@ function _toggleEpicFilter(epicId) {
   }
 }
 
-// ── Create sprint modal (delegated) ──────────────────────────────────────────
-
-export function openCreateSprintModal() {
-  window.backlogView?.openCreateSprintModal?.();
-}
+// DECISION: openCreateSprintModal removed from this module (R08, 2026-04-25).
+// A delegating stub used to live here. In the IIFE bundle, function-declaration
+// hoisting made the stub shadow backlogView.js's real implementation across the
+// whole bundle, so window.backlogView.openCreateSprintModal pointed at the stub
+// itself — clicking "+ New Sprint" recursed until stack overflow. The only
+// caller of this module's stub was its own export object; no external module
+// referenced backlogDetailPanel.openCreateSprintModal. Callers continue to use
+// window.backlogView.openCreateSprintModal() directly.
 
 // ── Mobile swipe-to-close ─────────────────────────────────────────────────────
 
-function _attachSwipeToClose() {
+// DECISION: Renamed from _attachSwipeToClose to _attachPanelSwipeToClose
+// (R08, 2026-04-25). mobileOptimizations.js exports a different
+// _attachSwipeToClose(modal) for generic modal swipe handling. The IIFE bundle
+// let this 0-arg panel-specific version shadow it, so generic modals lost
+// swipe-to-close on mobile (mobileOptimizations called the panel version with
+// an unused modal arg, which then queried the wrong DOM via container()).
+// The two helpers serve different surfaces; this rename preserves both.
+function _attachPanelSwipeToClose() {
   const el = container();
   el.removeEventListener('touchstart', _onTouchStart);
   el.removeEventListener('touchend',   _onTouchEnd);
@@ -620,18 +649,14 @@ function _onTouchEnd(e) {
 
 // ── Sprint / Segment local helpers ────────────────────────────────────────────
 
-function _formatDate(dateStr) {
+function _fmtPanelDate(dateStr) {
   if (!dateStr) return '';
   const [y, m, d] = dateStr.split('-').map(Number);
   const dt = new Date(y, m - 1, d);
   return dt.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
 }
 
-function _daysBetween(dateA, dateB) {
-  const [ya, ma, da] = dateA.split('-').map(Number);
-  const [yb, mb, db] = dateB.split('-').map(Number);
-  return Math.round((Date.UTC(yb, mb - 1, db) - Date.UTC(ya, ma - 1, da)) / 86400000);
-}
+// daysBetween imported from locationCapacity.js — single source (R08, 2026-04-25).
 
 function _isoAddDays(dateStr, n) {
   const [y, m, d] = dateStr.split('-').map(Number);
@@ -669,7 +694,7 @@ async function _renderSegmentBuilder(sprint, segments) {
   const allocHtml = await _renderAllocationSection(sprint, cap);
 
   const panel = container();
-  const uncovDays = gaps.reduce((n, g) => n + _daysBetween(g.startDate, g.endDate) + 1, 0);
+  const uncovDays = gaps.reduce((n, g) => n + daysBetween(g.startDate, g.endDate) + 1, 0);
 
   panel.innerHTML = `
     <div class="bdp-container-inner">
@@ -679,7 +704,7 @@ async function _renderSegmentBuilder(sprint, segments) {
           <div>
             <div class="bdp-title bdp-title--sprint">${esc(sprint.id)}</div>
             <div class="bdp-sprint-meta">
-              ${_formatDate(sprint.startDate)} – ${_formatDate(endDate)}
+              ${_fmtPanelDate(sprint.startDate)} – ${_fmtPanelDate(endDate)}
               · ${sprint.durationWeeks === 1 ? '1 week' : '2 weeks'}
               ${sprint.goal ? `· "${esc(sprint.goal)}"` : ''}
             </div>
@@ -698,7 +723,7 @@ async function _renderSegmentBuilder(sprint, segments) {
       ${hasGaps ? `
         ${gaps.map(g => `
           <div class="p-gap-strip">
-            <span class="p-gap-text">⚠ Gap: ${_formatDate(g.startDate)} – ${_formatDate(g.endDate)}</span>
+            <span class="p-gap-text">⚠ Gap: ${_fmtPanelDate(g.startDate)} – ${_fmtPanelDate(g.endDate)}</span>
             <button class="p-gap-btn"
               onclick="window.backlogDetailPanel._openSegmentForm('${esc(sprint.id)}', '${g.startDate}', '${g.endDate}')">
               Fill gap
@@ -754,6 +779,13 @@ async function _renderSegmentBuilder(sprint, segments) {
              </button>`
           : ''
         }
+        ${sprint.status === 'done'
+          ? `<button class="p-btn-secondary"
+               onclick="window.backlogDetailPanel._reopenSprint('${esc(sprint.id)}')">
+               Reopen sprint
+             </button>`
+          : ''
+        }
       </div>
 
     </div>
@@ -784,10 +816,12 @@ async function _renderAllocationSection(sprint, cap) {
     </div>`;
   }).join('');
 
-  // Tier check rows
+  // Tier check rows — pct is clamped because deriveTierCheck uses 999 as a
+  // sentinel for over-capacity (avail=0, alloc>0).
   const tierRows = tierCheck.tiers
     .filter(t => t.available > 0 || t.allocated > 0)
     .map(t => {
+      const pct = Math.min(t.pct, 100);
       const statusClass = t.ok ? 'bdp-tier-ok' : 'bdp-tier-over';
       const statusIcon  = t.ok ? '✓' : '⚠';
       return `<div class="bdp-tier-row">
@@ -938,8 +972,8 @@ async function _editRanking(sprintId) {
     save: async () => {
       const newRanking = editRanking.length > 0 ? editRanking : null;
       await window.sprintManager.updateSprint(sprintId, { focusRanking: newRanking });
-      const i = window.app?.data?.sprints?.findIndex(s => s.id === sprintId);
-      if (i >= 0) window.app.data.sprints[i].focusRanking = newRanking;
+      window.app.data.sprints = await DB.getAll(DB.STORES.SPRINTS);
+      window.app?.notifyDataChange('sprint');
       await openSegmentBuilder(sprintId);
     },
     clear: () => {
@@ -1023,7 +1057,7 @@ function _getMainDayTypeClass(seg) {
 
 function _renderSegmentRow(seg, sprint) {
   const cap = deriveSprintCapacity([seg]);
-  const durationDays = _daysBetween(seg.startDate, seg.endDate) + 1;
+  const durationDays = daysBetween(seg.startDate, seg.endDate) + 1;
   const locType = seg.locationType === 'international' ? 'intl' : 'dom';
 
   return `
@@ -1033,7 +1067,7 @@ function _renderSegmentRow(seg, sprint) {
         <span class="bdp-seg-city">${esc(seg.city || '')}${seg.city && seg.country ? ', ' : ''}${esc(seg.country || '')}</span>
       </div>
       <div class="bdp-seg-mid">
-        <span class="bdp-seg-dates">${_formatDate(seg.startDate)} – ${_formatDate(seg.endDate)}</span>
+        <span class="bdp-seg-dates">${_fmtPanelDate(seg.startDate)} – ${_fmtPanelDate(seg.endDate)}</span>
         <span class="bdp-seg-days">${durationDays}d</span>
       </div>
       <div class="bdp-seg-right">
@@ -1091,7 +1125,7 @@ async function _openSegmentForm(sprintId, prefillStart = null, prefillEnd = null
     const sprint = (window.app?.data?.sprints || []).find(s => s.id === sprintId);
     const defaultStart = prefillStart || sprint?.startDate || new Date().toISOString().slice(0, 10);
     const defaultEnd   = prefillEnd   || defaultStart;
-    const days = _daysBetween(defaultStart, defaultEnd) + 1;
+    const days = daysBetween(defaultStart, defaultEnd) + 1;
     _segmentForm = {
       startDate:            defaultStart,
       endDate:              defaultEnd,
@@ -1114,7 +1148,7 @@ function _renderSegmentForm() {
     : sprint?.startDate;
 
   const durationDays = (f.startDate && f.endDate && f.endDate >= f.startDate)
-    ? _daysBetween(f.startDate, f.endDate) + 1
+    ? daysBetween(f.startDate, f.endDate) + 1
     : 0;
   const typeSum = Object.values(f.dayTypes).reduce((a, b) => a + b, 0);
   const sumOk   = typeSum === durationDays;
@@ -1270,7 +1304,7 @@ function _updateSegDateField(field, value) {
   _segmentForm[field] = value;
   if (_segmentForm.startDate && _segmentForm.endDate &&
       _segmentForm.endDate >= _segmentForm.startDate) {
-    const newDur = _daysBetween(_segmentForm.startDate, _segmentForm.endDate) + 1;
+    const newDur = daysBetween(_segmentForm.startDate, _segmentForm.endDate) + 1;
     const curSum = Object.values(_segmentForm.dayTypes).reduce((a, b) => a + b, 0);
     const diff   = newDur - curSum;
     if (diff !== 0) {
@@ -1293,7 +1327,7 @@ function _adjustSegDayType(type, delta) {
   _segmentForm.dayTypes[type] = Math.max(0, (_segmentForm.dayTypes[type] || 0) + delta);
   const el = document.getElementById(`bdp-seg-dt-${type}`);
   if (el) el.textContent = String(_segmentForm.dayTypes[type]);
-  const durationDays = _daysBetween(_segmentForm.startDate, _segmentForm.endDate) + 1;
+  const durationDays = daysBetween(_segmentForm.startDate, _segmentForm.endDate) + 1;
   const typeSum = Object.values(_segmentForm.dayTypes).reduce((a, b) => a + b, 0);
   const sumEl = document.querySelector('.bdp-sum-indicator');
   if (sumEl) {
@@ -1352,9 +1386,8 @@ function _cancelSegmentForm() {
 
 async function _activateSprint(sprintId) {
   await window.sprintManager.updateSprint(sprintId, { status: 'active' });
-  if (window.app?.data?.sprints) {
-    const i = window.app.data.sprints.findIndex(s => s.id === sprintId);
-    if (i >= 0) window.app.data.sprints[i].status = 'active';
+  if (window.app) {
+    window.app.data.sprints = await DB.getAll(DB.STORES.SPRINTS);
   }
   await openSegmentBuilder(sprintId);
   if (window.app?.notifyDataChange) window.app.notifyDataChange('sprint');
@@ -1362,22 +1395,25 @@ async function _activateSprint(sprintId) {
 
 async function _completeSprint(sprintId) {
   await window.sprintManager.completeSprint(sprintId);
-  if (window.app?.data?.sprints) {
-    const i = window.app.data.sprints.findIndex(s => s.id === sprintId);
-    if (i >= 0) {
-      window.app.data.sprints[i].status      = 'done';
-      window.app.data.sprints[i].completedAt = new Date().toISOString();
-    }
+  if (window.app) {
+    window.app.data.sprints = await DB.getAll(DB.STORES.SPRINTS);
   }
   close();
   if (window.app?.notifyDataChange) window.app.notifyDataChange('sprint');
 }
 
+async function _reopenSprint(sprintId) {
+  await window.sprintManager.updateSprint(sprintId, { status: 'active' });
+  if (window.app) {
+    window.app.data.sprints = await DB.getAll(DB.STORES.SPRINTS);
+  }
+  openSprint(sprintId);
+  if (window.app?.notifyDataChange) window.app.notifyDataChange('sprint');
+}
+
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-function esc(s) {
-  return String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
-}
+// esc imported from utils.js — single source (R08, 2026-04-25).
 
 function _statusLabel(s) {
   return { backlog: 'Backlog', active: 'In Progress', completed: 'Done', abandoned: 'Abandoned', blocked: 'Blocked' }[s] || s;
@@ -1406,7 +1442,6 @@ window.backlogDetailPanel = {
   saveFocusField,
   saveSubFocusField,
   refreshIfShowing,
-  openCreateSprintModal,
   _toggleEpicFilter,
   _archiveFocus,
   _deleteSubFocus,
@@ -1419,6 +1454,7 @@ window.backlogDetailPanel = {
   _cancelSegmentForm,
   _activateSprint,
   _completeSprint,
+  _reopenSprint,
   _editRanking,
 };
 

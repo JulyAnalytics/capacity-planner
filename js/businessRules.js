@@ -1,4 +1,5 @@
 import { deriveSprintMeta } from './sprintCapacity.js';
+import { daysBetween } from './locationCapacity.js';
 
 /**
  * Business Rules & Validation
@@ -52,57 +53,71 @@ export const VALID_FOCUSES = [
 ];
 
 // ============================================================================
-// STATUS TRANSITION VALIDATION
+// STATUS TRANSITION VALIDATION (WHITELIST)
 // ============================================================================
 
+// Allowed transitions per status per entity type.
+// Any transition not listed here is rejected by default.
+// Each status is a key; the value is the list of statuses it can transition TO.
+// Same-status transitions are always allowed (handled before map lookup).
+
+const STORY_TRANSITIONS = {
+  backlog:   ['active', 'completed', 'abandoned', 'blocked'],
+  active:    ['backlog', 'completed', 'abandoned', 'blocked'],
+  completed: ['active', 'blocked', 'abandoned'],
+  // ^ completed→backlog blocked: cannot reopen a completed story directly.
+  //   Use "abandoned" first or create a new story.
+  abandoned: ['backlog', 'completed', 'blocked'],
+  // ^ abandoned→active blocked: must go through backlog first to re-triage.
+  blocked:   ['backlog', 'active', 'completed', 'abandoned'],
+  // REVIEW: blocked→completed — skipping active may bypass estimation checks.
+  // REVIEW: completed→active — should reactivation require a re-estimate?
+  // REVIEW: completed→blocked — semantically unlikely; consider if this is a
+  //   data-cleanup edge case or should be rejected.
+};
+
+const EPIC_TRANSITIONS = {
+  planning:  ['active', 'completed', 'archived'],
+  active:    ['planning', 'completed', 'archived'],
+  completed: ['active', 'archived'],
+  // ^ completed→planning blocked: cannot reopen a completed epic as planning.
+  //   Use "active" or archiving workflows instead.
+  archived:  ['planning', 'active', 'completed'],
+  // REVIEW: archived→planning — resurrecting archived epics may need intent
+  //   flagging (e.g., a "reactivated" marker). Currently allowed.
+};
+
+const TRANSITION_MAP = {
+  story: STORY_TRANSITIONS,
+  epic:  EPIC_TRANSITIONS,
+};
+
 /**
- * Check if status transition is allowed
- * Engineering Review: Concern #8 - Shared between in-app and import
+ * Check if status transition is allowed via whitelist.
+ * Engineering Review: Concern #8 - Shared between in-app and import.
+ *
+ * Any transition not in the whitelist is rejected. Same-status is always OK.
  */
 export function canTransitionStatus(fromStatus, toStatus, entityType = 'story') {
   const validStatuses = VALID_STATUSES[entityType];
 
-  // Check both statuses are valid
   if (!validStatuses.includes(fromStatus) || !validStatuses.includes(toStatus)) {
     return { allowed: false, reason: 'Invalid status value' };
   }
 
-  // Same status is always ok
   if (fromStatus === toStatus) {
     return { allowed: true };
   }
 
-  // Story-specific rules
-  if (entityType === 'story') {
-    // Can't go back to backlog from completed
-    if (fromStatus === 'completed' && toStatus === 'backlog') {
-      return {
-        allowed: false,
-        reason: 'Cannot move completed story back to backlog. Use "abandoned" or create new story.'
-      };
-    }
-
-    // Can't go from abandoned to active (must go through backlog)
-    if (fromStatus === 'abandoned' && toStatus === 'active') {
-      return {
-        allowed: false,
-        reason: 'Cannot activate abandoned story directly. Move to backlog first.'
-      };
-    }
+  const transitions = TRANSITION_MAP[entityType];
+  if (!transitions || !transitions[fromStatus]) {
+    return { allowed: false, reason: `No transition map for ${entityType}:${fromStatus}` };
   }
 
-  // Epic-specific rules
-  if (entityType === 'epic') {
-    // Can't go back to planning from completed
-    if (fromStatus === 'completed' && toStatus === 'planning') {
-      return {
-        allowed: false,
-        reason: 'Cannot move completed epic back to planning. Use "active" or create new epic.'
-      };
-    }
+  if (!transitions[fromStatus].includes(toStatus)) {
+    return { allowed: false, reason: `Transition ${fromStatus} → ${toStatus} not allowed` };
   }
 
-  // All other transitions allowed
   return { allowed: true };
 }
 
@@ -110,11 +125,25 @@ export function canTransitionStatus(fromStatus, toStatus, entityType = 'story') 
 // STORY VALIDATION
 // ============================================================================
 
+// DECISION: epicId is required on all story records.
+// Rationale: A story without an epic has no place in the hierarchy;
+//            the optional treatment in the import pipeline was a bug, not a feature.
+// Consequence: Import pipeline rejects story objects missing epicId.
+//              Modal creation continues to require it (no change).
+//              DB constraint: NOT NULL added — see migration below.
+// Date: 2026-04-14 | Author: [initials]
+// Revisit if: a product workflow for epicless stories is explicitly introduced.
+
 /**
- * Validate a story record
- * Returns array of validation errors (empty = valid)
+ * Validates a story object against domain rules.
+ *
+ * Does NOT validate relational integrity (e.g. whether epicId references
+ * a real epic). That is enforced at the DB boundary.
+ *
+ * @param {Object} story - The story object to validate.
+ * @returns {{ valid: boolean, errors: Array<{ field: string, message: string }> }}
  */
-export function validateStory(story, context = {}) {
+export function validateStory(story) {
   const errors = [];
 
   // Required fields
@@ -122,10 +151,8 @@ export function validateStory(story, context = {}) {
     errors.push({ field: 'name', message: 'Story name is required' });
   }
 
-  // epicId is optional (stories can be unassigned)
-
-  if (!story.focus) {
-    errors.push({ field: 'focus', message: 'Focus is required' });
+  if (!story.epicId) {
+    errors.push({ field: 'epicId', message: 'Epic is required' });
   }
 
   // Status validation
@@ -144,7 +171,12 @@ export function validateStory(story, context = {}) {
     });
   }
 
-  // Focus validation
+  // Focus validation — enum check only, not required.
+  // DECISION: focus is derived from the story's epic (see creationModal.js getFormData,
+  // backlogDetailPanel.js saveField). It is never user-entered independently.
+  // Requiring it would reject stories in transit between epicId assignment and
+  // focus derivation. If focus is present it must be a valid value.
+  // Date: 2026-04-14 | Author: [initials]
   if (story.focus && !VALID_FOCUSES.some(f => normalizedEquals(f, story.focus))) {
     errors.push({
       field: 'focus',
@@ -178,28 +210,7 @@ export function validateStory(story, context = {}) {
     });
   }
 
-  // Foreign key validation (if context provides lookup data)
-  if (context.epics) {
-    const epicExists = context.epics.some(e => e.id === story.epicId);
-    if (!epicExists) {
-      errors.push({
-        field: 'epicId',
-        message: `Epic with ID '${story.epicId}' does not exist`
-      });
-    }
-  }
-
-  if (story.unblockedBy && context.stories) {
-    const unblockerExists = context.stories.some(s => s.id === story.unblockedBy);
-    if (!unblockerExists) {
-      errors.push({
-        field: 'unblockedBy',
-        message: `Story with ID '${story.unblockedBy}' does not exist`
-      });
-    }
-  }
-
-  return errors;
+  return { valid: errors.length === 0, errors };
 }
 
 // ============================================================================
@@ -340,11 +351,11 @@ export function validateStories(stories, context = {}) {
   const invalid = [];
 
   stories.forEach(story => {
-    const errors = validateStory(story, context);
-    if (errors.length === 0) {
+    const result = validateStory(story);
+    if (result.valid) {
       valid.push(story);
     } else {
-      invalid.push({ story, errors });
+      invalid.push({ story, errors: result.errors });
     }
   });
 
@@ -408,9 +419,10 @@ export function validateTravelSegment(seg, sprint) {
   }
   if (seg.endDate < seg.startDate) {
     errors.push({ field: 'endDate', message: 'End date must be on or after start date' });
+    return errors;
   }
 
-  const segmentDays = _daysBetween(seg.startDate, seg.endDate) + 1;
+  const segmentDays = daysBetween(seg.startDate, seg.endDate) + 1;
   const dayTypeSum  = Object.values(seg.dayTypes).reduce((a, b) => a + b, 0);
   if (dayTypeSum !== segmentDays) {
     errors.push({
@@ -432,31 +444,10 @@ export function validateTravelSegment(seg, sprint) {
   return errors;
 }
 
-/**
- * Validate a Sprint record.
- * Returns array of validation errors (empty = valid).
- */
-export function validateSprint(sprint) {
-  const errors = [];
+// DECISION: validateSprint moved to locationCapacity.js (R08, 2026-04-25).
+// The two definitions were behaviourally identical; the IIFE bundle's
+// last-definition-wins rule meant locationCapacity.js's copy was the one
+// active in production. Consolidated there; sprintManager.js imports it
+// from locationCapacity.js. Do not re-add a definition here.
 
-  if (!sprint.startDate) {
-    errors.push({ field: 'startDate', message: 'Start date is required' });
-    return errors;
-  }
-
-  // Monday constraint REMOVED (S2 — any start date is valid).
-
-  if (![1, 2].includes(sprint.durationWeeks)) {
-    errors.push({ field: 'durationWeeks', message: 'Duration must be 1 or 2 weeks' });
-  }
-
-  if (!['planning', 'active', 'done'].includes(sprint.status)) {
-    errors.push({ field: 'status', message: 'Invalid sprint status' });
-  }
-
-  return errors;
-}
-
-function _daysBetween(dateA, dateB) {
-  return Math.round((new Date(dateB) - new Date(dateA)) / 86400000);
-}
+// _daysBetween replaced by daysBetween imported from locationCapacity.js (R08, 2026-04-25).

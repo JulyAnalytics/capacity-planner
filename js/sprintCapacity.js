@@ -4,6 +4,7 @@
  */
 
 import { DAY_CAPACITY } from './constants.js';
+import { addDaysUTC } from './locationCapacity.js';
 
 /**
  * Derive total sprint capacity from an array of TravelSegments.
@@ -53,8 +54,7 @@ export function applyDepartureDayRule(seg) {
  */
 export function deriveSprintMeta(startDate, durationWeeks) {
   const start = new Date(startDate);
-  const end   = new Date(start);
-  end.setDate(end.getDate() + durationWeeks * 7 - 1);
+  const end   = addDaysUTC(start, durationWeeks * 7 - 1);
 
   return {
     endDate:      end.toISOString().slice(0, 10),
@@ -78,7 +78,7 @@ export function detectGaps(sprint, segments) {
     const segEnd = new Date(seg.endDate);
     while (d <= segEnd) {
       covered.add(d.toISOString().slice(0, 10));
-      d.setDate(d.getDate() + 1);
+      d = addDaysUTC(d, 1);
     }
   }
   const gaps = [];
@@ -97,7 +97,7 @@ export function detectGaps(sprint, segments) {
         gapStart = null;
       }
     }
-    d.setDate(d.getDate() + 1);
+    d = addDaysUTC(d, 1);
   }
   if (gapStart) gaps.push({ startDate: gapStart, endDate });
   return gaps;
@@ -123,7 +123,7 @@ function getMonthsSpanned(start, end) {
   let d = new Date(start);
   while (d <= end) {
     months.add(String(d.getMonth() + 1).padStart(2, '0'));
-    d.setDate(d.getDate() + 1);
+    d = addDaysUTC(d, 1);
   }
   return [...months];
 }

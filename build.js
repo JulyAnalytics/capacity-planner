@@ -128,6 +128,76 @@ function removeExportDefaultObjects(code) {
   return out.join('');
 }
 
+/**
+ * Pre-existing top-level duplicates accepted at the moment R08 introduced the
+ * duplicate guard. New duplicates outside this list fail the build. Each entry
+ * is technical debt and should be consolidated in its own task; remove from
+ * this list as it is fixed. The list MUST shrink, never grow.
+ *
+ * DECISION (R08, 2026-04-25): Strict-everything-now would block the build on
+ * 15 unrelated collisions. Allowlisting keeps the regression net for new code
+ * tight without holding R08 hostage to a 15-way refactor.
+ */
+// Intentionally empty post-R08 (2026-04-25). All historical bundle-level
+// duplicate top-level declarations have been consolidated to single sources.
+// New duplicates fail the build. Add a name here only with explicit
+// justification — and only as a temporary measure pending consolidation.
+const KNOWN_DUPLICATE_DECLS = new Set([]);
+
+/**
+ * Scan the concatenated bundle for duplicate top-level declarations.
+ *
+ * Matches only declarations at column 0 — anything indented is, by IIFE-bundle
+ * convention, inside a function/object body and therefore not a top-level name.
+ * Patterns covered:
+ *   function name(...)           — function declaration
+ *   async function name(...)     — async function declaration
+ *   const name = function...     — function-expression bound to a const/let/var
+ *   class name ...               — class declaration
+ *
+ * Throws on the first build run where a non-allowlisted duplicate appears,
+ * listing every offender in one pass so a developer can fix them all without
+ * rebuilding repeatedly.
+ */
+function assertNoDuplicateTopLevelDecls(bundle) {
+  const patterns = [
+    /^function\s+([A-Za-z_$][\w$]*)\s*\(/gm,
+    /^async\s+function\s+([A-Za-z_$][\w$]*)\s*\(/gm,
+    /^(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=\s*(?:async\s+)?function\b/gm,
+    /^class\s+([A-Za-z_$][\w$]*)\b/gm,
+  ];
+  const seen = new Set();
+  const dupes = new Set();
+  for (const re of patterns) {
+    let m;
+    while ((m = re.exec(bundle)) !== null) {
+      const name = m[1];
+      if (seen.has(name)) dupes.add(name);
+      else seen.add(name);
+    }
+  }
+
+  const newDupes = [...dupes].filter(n => !KNOWN_DUPLICATE_DECLS.has(n));
+  if (newDupes.length) {
+    throw new Error(
+      `Duplicate top-level declaration(s) in bundle: ${newDupes.join(', ')}. ` +
+      `IIFE concatenation lets later definitions silently shadow earlier ones — ` +
+      `consolidate to a single source file. If this is genuinely intended ` +
+      `legacy debt, add to KNOWN_DUPLICATE_DECLS in build.js with justification.`
+    );
+  }
+
+  // Surface allowlisted entries that no longer collide — they should be removed
+  // from the allowlist so the net stays tight.
+  const stale = [...KNOWN_DUPLICATE_DECLS].filter(n => !dupes.has(n));
+  if (stale.length) {
+    console.warn(
+      `  ⚠️  build.js KNOWN_DUPLICATE_DECLS contains names that no longer ` +
+      `collide: ${stale.join(', ')}. Remove them from the allowlist.`
+    );
+  }
+}
+
 // ─── Build JS ────────────────────────────────────────────────────────────────
 
 async function buildJS() {
@@ -148,6 +218,13 @@ async function buildJS() {
   if (leftoverImports.length) {
     throw new Error(`${leftoverImports.length} import statement(s) remain after stripping — check stripModuleSyntax`);
   }
+
+  // R08: Fail loudly on any duplicate top-level function/const/let/var declaration
+  // across the concatenated bundle. The IIFE wrapper used to silently let
+  // last-definition-win (e.g. validateSprint, deriveSprintMeta). Catch it here.
+  // We only scan declarations at the start of a line (no leading whitespace) so
+  // local declarations inside function bodies are ignored.
+  assertNoDuplicateTopLevelDecls(combined);
 
   const result = await minify(combined, {
     compress: true,

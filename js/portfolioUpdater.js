@@ -18,10 +18,16 @@ async function updatePortfolioAfterCreate(entity) {
   const type = detectEntityType(entity);
   if (!type) return;
 
-  // Push entity into app's in-memory data so re-renders reflect it immediately
-  const storeKey = { focus: 'focuses', story: 'stories', epic: 'epics', subFocus: 'subFocuses' }[type];
-  if (storeKey && !app.data[storeKey].find(e => e.id === entity.id)) {
-    app.data[storeKey].push(entity);
+  // Reload the affected data slice from DB (standard post-write pattern)
+  const storeMap  = { focus: DB.STORES.FOCUSES, story: DB.STORES.STORIES,
+                      epic: DB.STORES.EPICS, subFocus: DB.STORES.SUB_FOCUSES };
+  const storeKey  = { focus: 'focuses', story: 'stories', epic: 'epics', subFocus: 'subFocuses' }[type];
+  const storeName = storeMap[type];
+  if (storeKey && storeName) {
+    app.data[storeKey] = await DB.getAll(storeName);
+    if (['focus', 'epic', 'subFocus'].includes(type)) {
+      await window.invalidateCache(type);
+    }
   }
 
   // Re-render and highlight based on what's currently visible
@@ -45,8 +51,8 @@ async function updatePortfolioAfterCreate(entity) {
     }
   }
 
-  // Always call notifyDataChange so daily tab stays in sync (B-1)
-  if (app.notifyDataChange && (type === 'story' || type === 'epic' || type === 'subFocus')) {
+  // Always call notifyDataChange so all tabs stay in sync (B-1)
+  if (app.notifyDataChange) {
     app.notifyDataChange(type);
   }
 }

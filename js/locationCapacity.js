@@ -33,6 +33,14 @@ export function daysBetween(dateA, dateB) {
 // Convenience alias
 export const addDays = isoAddDays;
 
+/**
+ * Add n days to a Date object, returning a new Date.
+ * Uses pure UTC milliseconds — avoids DST/timezone drift.
+ */
+export function addDaysUTC(date, n) {
+  return new Date(date.getTime() + n * 86400000);
+}
+
 // ── buildDayMap ────────────────────────────────────────────────────────────────
 // Three-pass algorithm (B2 fix). Returns { [isoDate]: { dayType, source } }
 // Sources: 'override' | 'transit' | 'period' | 'period-error' | 'uncovered'
@@ -41,9 +49,16 @@ export function buildDayMap(startDate, endDate, periods, overrides) {
   // Index overrides by date — O(1) lookup
   const overrideMap = Object.fromEntries(overrides.map(o => [o.date, o.dayType]));
 
+  // DECISION: Transit days shared between two location periods are owned by
+  // the later-starting period. This ensures deterministic output regardless
+  // of DB iteration order. Revisit if business rules require split-day
+  // attribution.
+  // Date: 2026-05-02 | Author: JA
+  const sorted = [...periods].sort((a, b) => a.startDate.localeCompare(b.startDate));
+
   // Index periods by date
   const periodsByDate = {};
-  for (const p of periods) {
+  for (const p of sorted) {
     for (const ds of isoDateRange(p.startDate, p.endDate)) {
       if (!periodsByDate[ds]) periodsByDate[ds] = [];
       periodsByDate[ds].push(p);
@@ -65,7 +80,7 @@ export function buildDayMap(startDate, endDate, periods, overrides) {
   }
 
   // Pass 2: distribute period day types (B2 fix)
-  _distributePeriodDayTypes(result, periods, overrideMap);
+  _distributePeriodDayTypes(result, sorted, overrideMap);
 
   // Pass 3: assert — surface any unresolved period days as recoverable errors
   for (const [ds, v] of Object.entries(result)) {
@@ -151,9 +166,19 @@ export function detectUncoveredDays(startDate, endDate, periods) {
   return Object.keys(dayMap).filter(ds => dayMap[ds].source === 'uncovered');
 }
 
-// ── deriveSprintMeta ───────────────────────────────────────────────────────────
+// ── deriveSprintDateRange ──────────────────────────────────────────────────────
+// DECISION: Renamed from deriveSprintMeta to deriveSprintDateRange (R02).
+// sprintCapacity.js exports a different deriveSprintMeta(startDate, durationWeeks).
+// The IIFE bundle's last-definition-wins (build.js non-strict IIFE, sprintCapacity.js
+// at position 21 vs locationCapacity.js at position 8) meant sprintCapacity.js's version
+// silently overwrote this one, breaking calendarView.js in production.
+// This function takes a sprint object; sprintCapacity.js's takes two primitives.
+// Do not rename back or create another top-level deriveSprintMeta in any module.
+// NOTE: This class of bug has no build-time detection until R18 (ES module migration)
+// ships. The rename is the fix; the architectural gap remains until then.
+// Date: 2026-04-14 | Author: JA
 
-export function deriveSprintMeta(sprint) {
+export function deriveSprintDateRange(sprint) {
   const endDate = addDays(sprint.startDate, sprint.durationWeeks * 7 - 1);
   const [y, m] = sprint.startDate.split('-').map(Number);
   return {
@@ -208,6 +233,15 @@ export function validateLocationPeriod(period, existingPeriods = []) {
   return errors;
 }
 
+// DECISION: Single authoritative definition of validateSprint (R08, 2026-04-25).
+// A behaviourally identical duplicate previously lived in businessRules.js.
+// In the IIFE bundle (build.js), locationCapacity.js (position 8) loaded after
+// businessRules.js (position 5), so this version was the one actually running
+// in production. The duplicate has been removed; sprintManager.js now imports
+// validateSprint from this module. If sprint validation rules change, change
+// them here only. A duplicate-name guard in build.js will fail the build if
+// any future module re-introduces a top-level validateSprint declaration.
+// Date: 2026-04-25 | Author: JA
 export function validateSprint(sprint) {
   // Monday constraint REMOVED (S2). Any start date is valid.
   const errors = [];

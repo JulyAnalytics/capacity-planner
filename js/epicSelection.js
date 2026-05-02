@@ -4,6 +4,7 @@
  */
 
 import DB from './db.js';
+import { esc } from './utils.js';
 
 // ============================================================================
 // STATE
@@ -118,12 +119,12 @@ function createEpicCard(epic, priority) {
 
   card.innerHTML = `
     <div class="es-epic-card-header">
-      <span class="es-epic-card-title">${escapeHtml(epic.name)}</span>
+      <span class="es-epic-card-title">${esc(epic.name)}</span>
       <button class="es-epic-card-remove" onclick="window.epicSelection.removeEpicFromLane('${epic.id}')" title="Remove from month">&times;</button>
     </div>
     <div class="es-epic-card-meta">
-      <span>${escapeHtml(window.app?.getFocusName(epic.focusId) || '')}</span>
-      ${epic.vision ? `<br><em>${escapeHtml(epic.vision)}</em>` : ''}
+      <span>${esc(window.app?.getFocusName(epic.focusId) || '')}</span>
+      ${epic.vision ? `<br><em>${esc(epic.vision)}</em>` : ''}
     </div>
     <div class="es-epic-card-actions">
       <select class="es-priority-selector" onchange="window.epicSelection.changeEpicPriority('${epic.id}', this.value); this.value=''">
@@ -193,8 +194,8 @@ function createAvailableEpicItem(epic) {
 
   item.innerHTML = `
     <div class="es-available-info">
-      <div class="es-available-name">${escapeHtml(epic.name)}</div>
-      <div class="es-available-meta">${escapeHtml(window.app?.getFocusName(epic.focusId) || '')} &bull; ${epic.status}</div>
+      <div class="es-available-name">${esc(epic.name)}</div>
+      <div class="es-available-meta">${esc(window.app?.getFocusName(epic.focusId) || '')} &bull; ${epic.status}</div>
     </div>
     <div class="es-available-actions">
       <button class="btn-primary btn-sm" onclick="window.epicSelection.showEpicSelector('primary', '${epic.id}')">+ Add</button>
@@ -231,8 +232,8 @@ async function showEpicSelector(priorityLevel, preSelectId) {
       <div class="es-selector-list" id="epic-selector-list">
         ${available.map(epic => `
           <div class="es-selector-item" onclick="window.epicSelection.selectEpic('${epic.id}', '${priorityLevel}')">
-            <div class="es-available-name">${escapeHtml(epic.name)}</div>
-            <div class="es-available-meta">${escapeHtml(window.app?.getFocusName(epic.focusId) || '')} &bull; ${epic.status}</div>
+            <div class="es-available-name">${esc(epic.name)}</div>
+            <div class="es-available-meta">${esc(window.app?.getFocusName(epic.focusId) || '')} &bull; ${epic.status}</div>
           </div>
         `).join('')}
       </div>
@@ -303,9 +304,7 @@ function toggleAvailableEpics() {
 // HELPERS
 // ============================================================================
 
-function escapeHtml(str) {
-  return String(str || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
-}
+// Local escapeHtml replaced by esc imported from utils.js (R08, 2026-04-25).
 
 // ============================================================================
 // EXPORTS

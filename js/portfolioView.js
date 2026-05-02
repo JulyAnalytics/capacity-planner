@@ -6,6 +6,7 @@
  */
 
 import DB from './db.js';
+import { esc } from './utils.js';
 
 // ============================================================================
 // PORTFOLIO SELECTION STATE — Phase 7
@@ -140,16 +141,15 @@ async function loadPortfolioData() {
 // RENDER HELPERS
 // ============================================================================
 
-function esc(str) {
-  if (!str) return '';
-  return String(str)
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;');
-}
+// esc imported from utils.js — single source (R08, 2026-04-25).
 
-function renderSubFocusCard(sf) {
+// DECISION: Renamed from renderSubFocusCard to _renderPortfolioSubFocusCard
+// (R08, 2026-04-25). focusDrillDown.js defines a different renderSubFocusCard
+// that emits .dd-subfocus-* markup; the IIFE bundle let it shadow this version,
+// so portfolio sub-focus tiles rendered with drill-down classes and lost their
+// portfolio styling. The two surfaces emit genuinely different markup, so the
+// fix is a rename, not a consolidation.
+function _renderPortfolioSubFocusCard(sf) {
   const icon = sf.icon || '📁';
   const iconStyle = sf.color
     ? `background: ${sf.color}22; border: 1px solid ${sf.color}55;`
@@ -169,7 +169,7 @@ function renderFocusSection(focus) {
   const { id, name, color, subFocuses, stats } = focus;
 
   const cards = subFocuses.length > 0
-    ? subFocuses.map(renderSubFocusCard).join('')
+    ? subFocuses.map(_renderPortfolioSubFocusCard).join('')
     : '<p class="empty-message">No sub-focuses yet</p>';
 
   const activeLabel = stats.activeEpics > 0

@@ -1,0 +1,4 @@
+.env
+tests/.auth/
+node_modules/
+dist/

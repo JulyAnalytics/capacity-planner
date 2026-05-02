@@ -802,7 +802,14 @@ function enableForm() {
 // TOAST NOTIFICATIONS
 // ============================================================================
 
-function showToast(message, type = 'info') {
+// DECISION: Renamed from showToast to showCreationModalToast (R08, 2026-04-25).
+// utils.js exports a different showToast (bottom-right, .toast styles). The
+// IIFE bundle let this one shadow it, breaking bulkEdit.js's imports and
+// silently dropping the duration parameter. This toast is a different UX
+// surface — top-center stacked container scoped to the creation modal — so
+// the rename preserves it as a distinct local helper. Do not name any other
+// function showToast in this file.
+function showCreationModalToast(message, type = 'info') {
   let container = document.getElementById('cm-toast-container');
   if (!container) {
     container = document.createElement('div');
@@ -867,8 +874,8 @@ function maybeShowShortcutHints() {
 
   if (count >= 3 && !shown) {
     setTimeout(() => {
-      showToast('💡 Tip: Press Cmd+K to quickly open this modal', 'info');
-      setTimeout(() => showToast('💡 Tip: Press Cmd+Enter for rapid-fire creation', 'info'), 3500);
+      showCreationModalToast('💡 Tip: Press Cmd+K to quickly open this modal', 'info');
+      setTimeout(() => showCreationModalToast('💡 Tip: Press Cmd+Enter for rapid-fire creation', 'info'), 3500);
       localStorage.setItem('cm_hintsShown', 'true');
     }, 1000);
   }
@@ -893,6 +900,5 @@ function escapeAttr(str) {
 window.openCreationModal  = openCreationModal;
 window.closeCreationModal = closeCreationModal;
 window.isModalOpen        = isModalOpen;
-// Exposed for hierarchyCache.js multi-tab sync (Phase 4)
-window.showToast  = showToast;
+// window.showToast is exposed by utils.js (the canonical toast); see R08.
 window.renderForm = renderForm;

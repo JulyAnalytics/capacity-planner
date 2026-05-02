@@ -4,10 +4,10 @@
  * Renders inside #bl-list (managed by backlogView.js when groupBy==='calendar').
  */
 
+import { esc } from './utils.js';
 import {
   isoAddDays, isoDateRange, daysBetween,
   buildDayMap, deriveSprintCapacityFromPeriods, detectUncoveredDays,
-  deriveSprintMeta,
 } from './locationCapacity.js';
 import {
   createLocationPeriod, updateLocationPeriod, deleteLocationPeriod,
@@ -33,9 +33,7 @@ function _defaultMode() {
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
 
-function esc(s) {
-  return String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
-}
+// esc imported from utils.js — single source (R08, 2026-04-25).
 
 function _data() {
   return window.app?.data || { locationPeriods: [], dayTypeOverrides: [], sprints: [], stories: [] };
@@ -105,7 +103,7 @@ function _renderModeBar() {
   const monthName = new Date(year, month - 1, 1).toLocaleString('en-US', { month: 'long', year: 'numeric' });
 
   const { start: wStart } = _weekRange(_anchorDate);
-  const weekLabel = _formatDate(wStart);
+  const weekLabel = _fmtCalDate(wStart);
 
   const label = _viewMode === 'month' ? monthName : `Week of ${weekLabel}`;
 
@@ -294,7 +292,7 @@ function _renderSprintBar(sm, week, periods, overrides, allStories) {
 
   const sprintLabel = sprint.id || 'Sprint';
   const endDateFull = isoAddDays(sprint.startDate, sprint.durationWeeks * 7 - 1);
-  const dateRange   = `${_formatDate(sprint.startDate)}–${_formatDate(endDateFull)}`;
+  const dateRange   = `${_fmtCalDate(sprint.startDate)}–${_fmtCalDate(endDateFull)}`;
   const durationLabel = sprint.durationWeeks === 1 ? '1 week' : `${sprint.durationWeeks} weeks`;
 
   // Determine if primary (first week) or continuation
@@ -514,10 +512,19 @@ function _dayTypeLabel(type) {
   return { travel: 'Travel', buffer: 'Buffer', stable: 'Stable', project: 'Project', social: 'Social' }[type] || type;
 }
 
-function _formatDate(ds) {
+// DECISION: Renamed from _formatDate to _fmtCalDate (R08, 2026-04-25) and
+// switched from UTC to local-time construction. The previous Date.UTC formula
+// shifted the displayed day backward by one for west-of-UTC viewers (e.g. PST
+// users saw "Apr 24" for a sprint stored as "2026-04-25"). YYYY-MM-DD strings
+// represent calendar dates, not instants — using local-midnight ensures the
+// display matches the date the user typed regardless of their timezone.
+// backlogView and backlogDetailPanel each have their own _fmtBacklogDate /
+// _fmtPanelDate using the same local-time formula; do not collapse without
+// extracting to a shared util.
+function _fmtCalDate(ds) {
   if (!ds) return '';
   const [y, m, d] = ds.split('-').map(Number);
-  return new Date(Date.UTC(y, m - 1, d)).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+  return new Date(y, m - 1, d).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
 }
 
 // ── Navigation ─────────────────────────────────────────────────────────────────
@@ -651,6 +658,7 @@ function _closePanel() {
   _periodForm = null;
   _deleteConfirmPending = false;
   clearTimeout(_deleteConfirmTimer);
+  _deleteConfirmTimer = null;
 }
 
 // ── Detail panel HTML ──────────────────────────────────────────────────────────
@@ -961,7 +969,7 @@ function _renderOverridesSection(f) {
 
   const rows = overrides.map(o => `
     <div class="cv-override-row">
-      <span class="cv-override-date">${_formatDate(o.date)}</span>
+      <span class="cv-override-date">${_fmtCalDate(o.date)}</span>
       <span class="cv-override-type cv-dt-badge--${o.dayType}">${_dayTypeLabel(o.dayType)}</span>
       ${o.note ? `<span class="cv-override-note-text">(${esc(o.note)})</span>` : ''}
       <button class="cv-override-del" onclick="window.calendarView._clearOverride('${o.date}')" title="Remove override">×</button>
@@ -997,7 +1005,7 @@ function _renderAffectedSprintsSection(f) {
       : '';
     return `<div class="cv-affected-sprint">
       <div class="cv-affected-id">${esc(s.id)}</div>
-      <div class="cv-affected-dates">${_formatDate(s.startDate)}–${_formatDate(end)}</div>
+      <div class="cv-affected-dates">${_fmtCalDate(s.startDate)}–${_fmtCalDate(end)}</div>
       ${beforeRow}
       <div class="cv-affected-after">${capOld ? 'After: ' : ''}${capNew.total.toFixed(1)} total · ${capNew.priority.toFixed(1)} priority</div>
     </div>`;

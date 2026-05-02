@@ -9,8 +9,10 @@ const _supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON
 // Replace library reference with the client instance for use in db.js
 window.supabase = _supabaseClient;
 
-// initAuth returns a Promise that resolves only once a user session is active.
-// DB.init() awaits this before any DB operations run.
+// initAuth() is safe to call multiple times (idempotent) — the AbortController
+// pattern ensures calling it N times results in exactly 1 active keydown listener.
+let _authAbortController = null;
+
 window.initAuth = function initAuth() {
   return new Promise(async (resolve) => {
     let resolved = false;
@@ -46,12 +48,14 @@ window.initAuth = function initAuth() {
       }
     });
 
-    // Allow Enter key to submit
+    // Allow Enter key to submit — clean up previous listener before re-adding
+    if (_authAbortController) _authAbortController.abort();
+    _authAbortController = new AbortController();
     document.addEventListener('keydown', (e) => {
       if (e.key === 'Enter' && document.getElementById('auth-overlay').style.display !== 'none') {
         authSubmit();
       }
-    });
+    }, { signal: _authAbortController.signal });
   });
 };
 

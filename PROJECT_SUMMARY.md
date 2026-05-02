@@ -66,11 +66,12 @@ A comprehensive web-based application for managing priorities, planning capacity
 
 | Day Type | Total | Priority | Secondary 1 | Secondary 2 | Floor |
 |----------|-------|----------|-------------|-------------|-------|
-| Floor    | 0.25  | 0        | 0           | 0           | 0.25  |
-| Buffer   | 0.5   | 0        | 1           | 0           | 0     |
-| Stable   | 0.5   | 1        | 1           | 1           | 0     |
-| Project  | 0.5   | 2        | 1           | 0           | 0     |
+| Travel   | 0.25  | 0        | 0           | 0           | 0.25  |
+| Buffer   | 1.5   | 0        | 1           | 0           | 0.5   |
+| Stable   | 3.5   | 1        | 1           | 1           | 0.5   |
+| Project  | 3.5   | 2        | 1           | 0           | 0.5   |
 | Social   | 0.5   | 0        | 0           | 0           | 0.5   |
+<!-- Source of truth: constants.js DAY_CAPACITY -->
 
 **Calculation Logic:**
 - Total capacity = Sum of (day count × capacity per day)

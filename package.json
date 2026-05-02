@@ -5,8 +5,10 @@
     "build": "node build.js"
   },
   "devDependencies": {
-    "terser": "^5",
+    "@playwright/test": "^1.59.1",
     "cssnano": "^7",
-    "postcss": "^8"
+    "dotenv": "^17.4.2",
+    "postcss": "^8",
+    "terser": "^5"
   }
 }

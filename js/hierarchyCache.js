@@ -11,6 +11,8 @@
  */
 
 import DB from './db.js';
+import { CHANNEL_HIERARCHY_SYNC, CHANNEL_CAPACITY_PLANNER } from './constants.js';
+import { validateExternalInput } from './barricade.js';
 
 // ============================================================================
 // STATE
@@ -52,11 +54,16 @@ function initBroadcastChannel() {
   }
 
   try {
-    broadcastChannel = new BroadcastChannel('hierarchy-cache-sync');
+    broadcastChannel = new BroadcastChannel(CHANNEL_HIERARCHY_SYNC);
 
     broadcastChannel.onmessage = (event) => {
       console.log('📡 Broadcast received:', event.data);
-      handleInvalidationMessage(event.data);
+      const result = validateExternalInput('channel:hierarchy-cache-sync', event.data);
+      if (!result.valid) {
+        console.warn('Malformed hierarchy-cache-sync message:', result.errors);
+        return; // discard silently
+      }
+      handleInvalidationMessage(event.data); // existing handler — unchanged
     };
 
     broadcastChannel.onerror = (error) => {
@@ -79,6 +86,11 @@ function initStorageEvents() {
     console.log('📦 Storage event received');
     try {
       const data = JSON.parse(e.newValue);
+      const result = validateExternalInput('local:hierarchy-cache-invalidated', data);
+      if (!result.valid) {
+        console.warn('Corrupt localStorage key "hierarchy-cache-invalidated":', result.errors);
+        return;
+      }
       handleInvalidationMessage(data);
     } catch (error) {
       console.error('Failed to parse storage event:', error);
@@ -294,9 +306,15 @@ function getEpicById(epicId) {
 function _initCapacityPlannerChannel() {
   if (typeof BroadcastChannel === 'undefined') return;
   try {
-    const ch = new BroadcastChannel('capacity_planner');
+    const ch = new BroadcastChannel(CHANNEL_CAPACITY_PLANNER);
     ch.onmessage = (e) => {
-      const { entity, action, data } = e.data || {};
+      const result = validateExternalInput('channel:capacity_planner', e.data);
+      if (!result.valid) {
+        console.warn('Malformed capacity_planner message:', result.errors);
+        return; // discard silently
+      }
+      // e.data is trusted past this point — the barricade confirmed entity and action are present strings.
+      const { entity, action, data } = e.data;
       if (!entity) return;
 
       if (entity === 'sprint') {
@@ -357,6 +375,15 @@ window.addEventListener('beforeunload', () => {
 
 // Expose for use by creationModal.js sprint dropdown
 window.hierarchyCache = hierarchyCache;
+// DECISION: window.invalidateCache added by R04 — was not pre-existing.
+// The R04 spec prescribed window.invalidateCache() for portfolioUpdater.js (a globals
+// file with no ES module imports). The spec's pre-flight stated this was "confirmed at
+// hierarchyCache.js:386" — but line 386 is a named ES module export, not a window
+// assignment. This line was added to satisfy the spec's own design requirement.
+// The R04 constraint "hierarchyCache.js — zero changes" was written assuming this
+// exposure already existed. This is the only R04 change to this file.
+// Date: 2026-04-16
+window.invalidateCache = invalidateCache;
 
 // ============================================================================
 // EXPORTS

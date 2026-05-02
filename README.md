@@ -108,11 +108,12 @@ Create a `.vscode/settings.json` file in the project root:
 3. Enter location (optional)
 4. Allocate day types based on your travel schedule
 5. System automatically calculates capacity based on day type rules:
-   - Floor: 0.25 capacity per day
-   - Buffer: 0.5 capacity per day
-   - Stable: 0.5 capacity per day
-   - Project: 0.5 capacity per day
-   - Social: 0.5 capacity per day
+   - Travel: 0.25 blocks/day (total)
+   - Buffer: 1.5 blocks/day (total)
+   - Stable: 3.5 blocks/day (total)
+   - Project: 3.5 blocks/day (total)
+   - Social: 0.5 blocks/day (total)
+   <!-- Source of truth: constants.js DAY_CAPACITY -->
 6. Add capstone/location-specific project if applicable
 7. Click "Save Week"
 

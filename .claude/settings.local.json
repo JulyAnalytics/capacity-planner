@@ -19,7 +19,27 @@
       "Bash(node -e \":*)",
       "Bash(python3 -m json.tool)",
       "Bash(echo \"EXIT: $?\")",
-      "Bash(grep -rn 'onclick=.*\\\\${' /Users/jun/Library/CloudStorage/OneDrive-Personal/Tools/capacity-planner/js/backlogView.js)"
+      "Bash(grep -rn 'onclick=.*\\\\${' /Users/jun/Library/CloudStorage/OneDrive-Personal/Tools/capacity-planner/js/backlogView.js)",
+      "Bash(grep -r \"entityType.*\\\\`.*s\\\\`\" --include=\"*.js\" .)",
+      "Bash(grep -n \"entityType.*+.*'s'\\\\|entityType.*\\\\`.*s\\\\`\" /Users/jun/Library/CloudStorage/OneDrive-Personal/Tools/capacity-planner/capacity-planner/js/constants.js /Users/jun/Library/CloudStorage/OneDrive-Personal/Tools/capacity-planner/capacity-planner/js/errorHandler.js)",
+      "Bash(grep -n \"localStorage\\\\|sessionStorage\\\\|BroadcastChannel\\\\|onmessage\" /Users/jun/Library/CloudStorage/OneDrive-Personal/Tools/capacity-planner/js/*.js)",
+      "Bash(grep -n \"validateExternalInput\\\\|barricade\" /Users/jun/Library/CloudStorage/OneDrive-Personal/Tools/capacity-planner/js/*.js)",
+      "Bash(grep -rn \"export.*validateExternalInput\\\\|export function validateExternalInput\" /Users/jun/Library/CloudStorage/OneDrive-Personal/Tools/capacity-planner/js/*.js)",
+      "Bash(grep -n \"validateExternalInput\\(\" /Users/jun/Library/CloudStorage/OneDrive-Personal/Tools/capacity-planner/js/*.js)",
+      "Bash(awk 'NR==1482,/^}/' js/backlogView.js)",
+      "Bash(awk 'NR==605,/^}/' js/backlogDetailPanel.js)",
+      "Bash(sed -n '79,90p' js/backlogView.js)",
+      "Bash(sed -n '435,445p' js/businessRules.js)",
+      "Bash(sed -n '638,648p' js/backlogDetailPanel.js)",
+      "Bash(awk '/^const JS_FILES = \\\\[/,/^\\\\];/' js/../build.js)",
+      "Bash(git -C /Users/jun/Library/CloudStorage/OneDrive-Personal/Tools/capacity-planner log --all --oneline --name-status)",
+      "Bash(grep -E \"^capacity-planner$|^trading\")",
+      "Bash(npx playwright *)",
+      "Bash(git ls-tree *)",
+      "Bash(npx dotenv *)",
+      "Bash(python3 -c \"import json,sys; d=json.load\\(sys.stdin\\); origins=d.get\\('origins',[]\\); print\\('origins count:', len\\(origins\\)\\); [print\\('  origin:', o['origin'], 'localStorage keys:', len\\(o.get\\('localStorage',[]\\)\\)\\) for o in origins]\")",
+      "Bash(python3 -c \"import json,sys; d=json.load\\(sys.stdin\\); ls=d['origins'][0]['localStorage']; [print\\(k['name'][:60]\\) for k in ls]\")",
+      "Bash(awk -F: '{print $1}')"
     ]
   }
 }

@@ -14,6 +14,10 @@
 
 import DB from './db.js';
 import { invalidateCache } from './hierarchyCache.js';
+import { validateExternalInput } from './barricade.js';
+
+// Fallback default for corrupt modal-form-state — null means "do not restore"
+const DEFAULT_FORM_STATE = null;
 
 // ============================================================================
 // ERROR STATE
@@ -347,7 +351,17 @@ function restoreFormState() {
     const saved = sessionStorage.getItem('modal-form-state');
     if (!saved) return false;
 
-    const state = JSON.parse(saved);
+    const parsed = JSON.parse(saved);
+
+    // Barricade gate — validate structure before applying to DOM
+    const result = validateExternalInput('local:modal-form-state', parsed);
+    if (!result.valid) {
+      console.warn('Corrupt sessionStorage key "modal-form-state":', result.errors);
+      sessionStorage.removeItem('modal-form-state');
+      return DEFAULT_FORM_STATE !== null; // false — do not restore
+    }
+
+    const state = parsed;
     if (Date.now() - state.timestamp > 5 * 60 * 1000) {
       sessionStorage.removeItem('modal-form-state');
       return false;
@@ -361,7 +375,7 @@ function restoreFormState() {
     sessionStorage.removeItem('modal-form-state');
     console.log('✓ Form state restored');
 
-    // Notify user via window.showToast (set up by creationModal.js)
+    // Notify user via window.showToast (canonical utility from utils.js, see R08).
     if (typeof window.showToast === 'function') {
       window.showToast('Form recovered from last session', 'info');
     }
@@ -404,5 +418,6 @@ export {
   showToastWithActions,
   saveFormState,
   restoreFormState,
-  clearFormState
+  clearFormState,
+  formatFieldName
 };
