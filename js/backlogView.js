@@ -4,6 +4,8 @@
  */
 
 import DB from './db.js';
+import { esc } from './utils.js';
+import { daysBetween } from './locationCapacity.js';
 import { deriveSprintMeta } from './sprintCapacity.js';
 
 // ── State ─────────────────────────────────────────────────────────────────────
@@ -62,15 +64,16 @@ _loadCollapseState();
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-function esc(s) {
-  return String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
-}
+// esc imported from utils.js — single source (R08, 2026-04-25).
 
-function isMobileDevice() {
-  return window.matchMedia('(max-width: 767px)').matches;
-}
+// DECISION: Removed local isMobileDevice (R08, 2026-04-25). mobileOptimizations.js
+// exports the canonical implementation (UA-regex OR small viewport), which
+// correctly catches real touch devices held in landscape >767px. The previous
+// matchMedia-only version here treated those as desktop and incorrectly enabled
+// focus-dot click handlers for touch users. In the IIFE bundle, references to
+// the bare identifier resolve to mobileOptimizations.js's version (single source).
 
-function _formatDate(dateStr) {
+function _fmtBacklogDate(dateStr) {
   if (!dateStr) return '';
   // dateStr is YYYY-MM-DD; treat as UTC to avoid day-shift
   const [y, m, d] = dateStr.split('-').map(Number);
@@ -78,12 +81,7 @@ function _formatDate(dateStr) {
   return dt.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
 }
 
-function _daysBetween(dateA, dateB) {
-  const [ya, ma, da] = dateA.split('-').map(Number);
-  const [yb, mb, db] = dateB.split('-').map(Number);
-  return Math.round((Date.UTC(yb, mb - 1, db) - Date.UTC(ya, ma - 1, da)) / 86400000);
-}
-
+// daysBetween imported from locationCapacity.js — single source (R08, 2026-04-25).
 
 async function _loadSprintCapacityHeaders() {
   const { deriveSprintCapacity, deriveSprintMeta } = await import('./sprintCapacity.js');
@@ -102,7 +100,7 @@ async function _loadSprintCapacityHeaders() {
 
     const segments = await window.sprintManager?.getSegmentsForSprint(sprintId) || [];
     const { endDate } = deriveSprintMeta(sprint.startDate, sprint.durationWeeks);
-    const sprintDays = _daysBetween(sprint.startDate, endDate) + 1;
+    const sprintDays = daysBetween(sprint.startDate, endDate) + 1;
 
     // Allocation dots (Phase 1)
     const sprintStories = (window.app?.data?.stories || [])
@@ -125,7 +123,7 @@ async function _loadSprintCapacityHeaders() {
     let domDays = 0;
     let intlDays = 0;
     for (const seg of segments) {
-      const segDays = _daysBetween(seg.startDate, seg.endDate) + 1;
+      const segDays = daysBetween(seg.startDate, seg.endDate) + 1;
       if (seg.locationType === 'international') intlDays += segDays;
       else domDays += segDays;
     }
@@ -169,6 +167,11 @@ function _renderTierStatus(tierCheck) {
   if (overTiers.length === 0) return '';
   const label = overTiers.map(t => t.label).join(', ');
   return `<span class="bl-tier-warn" title="${esc(label)} over budget">⚠ ${overTiers.length} tier${overTiers.length > 1 ? 's' : ''} over</span>`;
+}
+
+function _sprintDisplayName(sprintId) {
+  const sprint = (window.app?.data?.sprints || []).find(s => s.id === sprintId);
+  return sprint ? `S${sprint.sprintNumber || '?'}` : sprintId;
 }
 
 function _getSectionIdForStory(story) {
@@ -365,7 +368,7 @@ function _renderStoryRow(story, mode, allData) {
       : '';
     sprintTag = `<button class="bl-sprint-tag" type="button" tabindex="0"
       ${mobile ? 'style="pointer-events:none"' : ''}
-      onclick="${clickHandler}">${esc(story.sprintId)}</button>`;
+      onclick="${clickHandler}">${esc(_sprintDisplayName(story.sprintId))}</button>`;
   }
 
   const fibBadge = story.fibonacciSize
@@ -392,8 +395,8 @@ function _renderStoryRow(story, mode, allData) {
 
 function _renderSprintHeader(sprint, allStoriesInSprint, isExpanded) {
   const { endDate } = deriveSprintMeta(sprint.startDate, sprint.durationWeeks);
-  const startFmt = _formatDate(sprint.startDate);
-  const endFmt = _formatDate(endDate);
+  const startFmt = _fmtBacklogDate(sprint.startDate);
+  const endFmt = _fmtBacklogDate(endDate);
   // Count chips (unfiltered)
   const todoCount = allStoriesInSprint.filter(s => s.status === 'backlog').length;
   const activeCount = allStoriesInSprint.filter(s => s.status === 'active').length;
@@ -411,7 +414,7 @@ function _renderSprintHeader(sprint, allStoriesInSprint, isExpanded) {
       <span class="bl-section-chevron${isExpanded ? '' : ' bl-collapsed'}">${isExpanded ? '▼' : '▶'}</span>
       <button type="button" class="bl-sprint-name bl-name-link"
         onclick="event.stopPropagation(); window.backlogDetailPanel?.openSprint?.('${esc(sprint.id)}')"
-        title="View sprint details">${esc(sprint.id)}</button>
+        title="View sprint details">S${sprint.sprintNumber || '?'}</button>
       <span class="bl-sprint-dates">${startFmt}–${endFmt}</span>
       <span class="bl-sprint-status-badge" data-sprint-status="${esc(sprint.status)}">${esc(sprint.status)}</span>
       ${todoChip}${activeChip}${doneChip}
@@ -872,10 +875,10 @@ function _renderSprintSidebarCell(sprint, allStories) {
       aria-controls='sm2-row-${esc(sprint.id)}'>
       <div class='sm2-sprint-name'>
         <span class='sm2-sprint-chevron${chevCls}'>${chevron}</span>
-        ${esc(sprint.id)}
+        S${sprint.sprintNumber || '?'}
       </div>
       <div class='sm2-sprint-dates'>
-        ${_formatDate(sprint.startDate)} – ${_formatDate(endDate)}
+        ${_fmtBacklogDate(sprint.startDate)} – ${_fmtBacklogDate(endDate)}
       </div>
       <div class='sm2-sprint-chips'>${chips}</div>
       <div class='sm2-cap-label'>···</div>

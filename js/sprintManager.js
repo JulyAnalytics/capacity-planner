@@ -4,8 +4,10 @@
  */
 
 import DB from './db.js';
-import { validateSprint, validateTravelSegment } from './businessRules.js';
+import { validateTravelSegment } from './businessRules.js';
+import { validateSprint } from './locationCapacity.js';
 import { detectGaps, deriveSprintMeta } from './sprintCapacity.js';
+import { CHANNEL_HIERARCHY_SYNC } from './constants.js';
 
 // ── Sprint CRUD ────────────────────────────────────────────────────────────────
 
@@ -19,8 +21,7 @@ export async function createSprint({ startDate, durationWeeks, goal = null, focu
   if (errors.length) throw new _SprintValidationError(errors[0].message, errors[0].field);
 
   const sprintNumber = await _incrementSprintCounter();
-  const { isoYear }  = deriveSprintMeta(startDate, durationWeeks);
-  const id = `${isoYear}-S${String(sprintNumber).padStart(2, '0')}`;
+  const id = crypto.randomUUID();
 
   const sprint = {
     id,
@@ -112,14 +113,18 @@ async function _incrementSprintCounter() {
 
 // ── BroadcastChannel helpers ──────────────────────────────────────────────────
 
+// INVARIANT: Messages on CHANNEL_HIERARCHY_SYNC must use { type, action, sprint|segment } shape.
+// handleInvalidationMessage() in hierarchyCache.js is the listener — check its sprint/travelSegment
+// handlers before changing this payload. CHANNEL_CAPACITY_PLANNER expects { entity, action, data }
+// and will silently drop messages with this shape.
 function _broadcastSprintChange(action, sprint) {
-  const ch = new BroadcastChannel(CHANNELS.HIERARCHY_CACHE);
+  const ch = new BroadcastChannel(CHANNEL_HIERARCHY_SYNC);
   ch.postMessage({ type: 'sprint', action, sprint });
   ch.close();
 }
 
 function _broadcastSegmentChange(action, segment) {
-  const ch = new BroadcastChannel(CHANNELS.HIERARCHY_CACHE);
+  const ch = new BroadcastChannel(CHANNEL_HIERARCHY_SYNC);
   ch.postMessage({ type: 'travelSegment', action, segment });
   ch.close();
 }

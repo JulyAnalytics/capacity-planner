@@ -8,6 +8,19 @@
 // ============================================================================
 
 /**
+ * Escape a string for safe interpolation into HTML text or attribute contexts.
+ * Single source of truth — five modules previously had byte-identical copies of
+ * this function; consolidated here in R08 (2026-04-25).
+ */
+export function esc(s) {
+  return String(s || '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
+/**
  * Safely set text content (prevents XSS)
  * Engineering Review: Q14 - Sanitize imported data
  */
@@ -249,35 +262,8 @@ export function checkFileSizeLimit(file, maxSizeMB = 10) {
   return true;
 }
 
-// ============================================================================
-// DEBOUNCE & THROTTLE
-// ============================================================================
+// Expose the canonical toast utility globally so cross-tab listeners
+// (hierarchyCache.js) and recovery flows (errorHandler.js) can call it without
+// importing. Authoritative source — do not re-assign window.showToast elsewhere.
+window.showToast = showToast;
 
-/**
- * Debounce function calls
- */
-export function debounce(func, wait) {
-  let timeout;
-  return function executedFunction(...args) {
-    const later = () => {
-      clearTimeout(timeout);
-      func(...args);
-    };
-    clearTimeout(timeout);
-    timeout = setTimeout(later, wait);
-  };
-}
-
-/**
- * Throttle function calls
- */
-export function throttle(func, limit) {
-  let inThrottle;
-  return function(...args) {
-    if (!inThrottle) {
-      func.apply(this, args);
-      inThrottle = true;
-      setTimeout(() => inThrottle = false, limit);
-    }
-  };
-}

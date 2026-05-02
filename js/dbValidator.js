@@ -10,6 +10,8 @@
 
 import DB from './db.js';
 import { getFocusById } from './hierarchyCache.js';
+import { validateStory } from './businessRules.js';
+import { formatFieldName } from './errorHandler.js';
 
 // ============================================================================
 // VALIDATION CONSTANTS
@@ -17,11 +19,7 @@ import { getFocusById } from './hierarchyCache.js';
 
 const VALIDATION_RULES = {
   story: {
-    required: ['name', 'epicId'],
-    optional: ['status', 'fibonacciSize', 'estimatedBlocks', 'dailyLogs', 'timeSpent'],
-    maxLengths: { name: 200 },
-    validStatuses: ['backlog', 'active', 'completed', 'abandoned', 'blocked'],
-    validFibonacci: [1, 2, 3, 5, 8, 13, 21]
+    maxLengths: { name: 200 }
   },
   epic: {
     required: ['name', 'subFocusId'],
@@ -80,11 +78,12 @@ function validateFields(entityData) {
     return { valid: false, error: `Unknown entity type: ${entityData.type}`, field: 'type' };
   }
 
-  // Required fields
-  for (const field of rules.required) {
-    const val = entityData[field];
-    if (!val || (typeof val === 'string' && !val.trim())) {
-      return { valid: false, error: `${formatFieldName(field)} is required`, field };
+  // Stories: domain rules owned by businessRules.js
+  if (entityData.type === 'story') {
+    const result = validateStory(entityData);
+    if (!result.valid) {
+      const first = result.errors[0];
+      return { valid: false, error: first.message, field: first.field };
     }
   }
 
@@ -101,48 +100,23 @@ function validateFields(entityData) {
     }
   }
 
+  // Required fields
+  if (rules.required) {
+    for (const field of rules.required) {
+      const val = entityData[field];
+      if (!val || (typeof val === 'string' && !val.trim())) {
+        return { valid: false, error: `${formatFieldName(field)} is required`, field };
+      }
+    }
+  }
+
   // Type-specific field checks
   switch (entityData.type) {
-    case 'story':    return validateStoryFields(entityData, rules);
     case 'epic':     return validateEpicFields(entityData, rules);
     case 'subFocus': return validateSubFocusFields(entityData);
     case 'focus':    return validateFocusFields(entityData);
     default:         return { valid: true };
   }
-}
-
-function validateStoryFields(data, rules) {
-  if (data.status && !rules.validStatuses.includes(data.status)) {
-    return {
-      valid: false,
-      error: `Invalid status: ${data.status}. Must be one of: ${rules.validStatuses.join(', ')}`,
-      field: 'status'
-    };
-  }
-
-  if (data.fibonacciSize && !rules.validFibonacci.includes(data.fibonacciSize)) {
-    return {
-      valid: false,
-      error: `Invalid fibonacci size: ${data.fibonacciSize}. Must be one of: ${rules.validFibonacci.join(', ')}`,
-      field: 'fibonacciSize'
-    };
-  }
-
-  if (data.estimatedBlocks !== null && data.estimatedBlocks !== undefined) {
-    if (typeof data.estimatedBlocks !== 'number' || data.estimatedBlocks < 0) {
-      return { valid: false, error: 'Estimate must be a positive number', field: 'estimatedBlocks' };
-    }
-  }
-
-  if (data.status === 'completed' && !data.estimatedBlocks) {
-    return {
-      valid: false,
-      error: 'Completed stories must have an estimated time',
-      field: 'estimatedBlocks'
-    };
-  }
-
-  return { valid: true };
 }
 
 function validateEpicFields(data, rules) {
@@ -395,16 +369,7 @@ async function validateStoryBusinessRules(data) {
 // HELPERS
 // ============================================================================
 
-function formatFieldName(field) {
-  const nameMap = {
-    epicId: 'Epic',
-    subFocusId: 'Sub-Focus',
-    focusId: 'Focus',
-    fibonacciSize: 'Fibonacci Size',
-    estimatedBlocks: 'Time Estimate'
-  };
-  return nameMap[field] || field.replace(/([A-Z])/g, ' $1').trim();
-}
+// formatFieldName imported from errorHandler.js — single source (R08, 2026-04-25).
 
 // ============================================================================
 // EXPORTS

@@ -2,8 +2,17 @@
 
 import DB from './db.js';
 import { openBulkEditModal } from './bulkEdit.js';
-import { DAY_CAPACITY, STORY_STATUS, EPIC_STATUS } from './constants.js';
+import { validateStory } from './businessRules.js';
+import { validateExternalInput } from './barricade.js';
+import { snapshotAllStores, restoreFromSnapshot } from './importUtils.js';
+import { DAY_CAPACITY, STORY_STATUS, EPIC_STATUS, CHANNEL_CAPACITY_PLANNER } from './constants.js';
 import { deriveCapacityForDateRange } from './locationCapacity.js';
+
+// ── localStorage/sessionStorage fallback defaults ────────────────────────────
+// Named constants required by the barricade gate — never use raw string literals
+// as fallbacks; corruption should be visible in the constant, not buried inline.
+const DEFAULT_CALENDAR_VIEW    = 'default';
+const DEFAULT_SIDEBAR_COLLAPSED = false;
 
 const FIBONACCI_DESCRIPTIONS = {
   1: 'Trivial (<30 min)',
@@ -661,11 +670,13 @@ class CapacityManager {
       this.setupNavigation();
       this.setDefaultDate();
       this.makeCardsCollapsible();
-      // Restore last calendar view
-      const savedView = localStorage.getItem('calendarView');
-      if (savedView && ['default', 'all', 'archived'].includes(savedView)) {
-        this.calendarView = savedView;
+      // Restore last calendar view — gated through barricade
+      const rawCalendarView = localStorage.getItem('calendarView');
+      const calendarViewResult = validateExternalInput('local:calendarView', rawCalendarView);
+      if (!calendarViewResult.valid) {
+        console.warn('Corrupt localStorage key "calendarView":', calendarViewResult.errors);
       }
+      this.calendarView = calendarViewResult.valid ? rawCalendarView : DEFAULT_CALENDAR_VIEW;
 
       this.renderAll();
       this.refreshDailyView();
@@ -3835,31 +3846,186 @@ class CapacityManager {
   }
 
   importData(file) {
+    // Step 1: top-level shape key constants — single source of truth for shape validation
+    const KNOWN_STORE_KEYS = ['focuses', 'calendar', 'priorities', 'subFocuses',
+                              'epics', 'stories', 'dailyLogs'];
+
     const reader = new FileReader();
     reader.onload = async (e) => {
+      // Step 1: Parse JSON — fail fast, no state change
+      let data;
       try {
-        const data = JSON.parse(e.target.result);
+        data = JSON.parse(e.target.result);
+      } catch (parseErr) {
+        this.showNotification('Import failed: file is not valid JSON.', 'error');
+        return;
+      }
 
-        // Clear all stores and re-populate
-        for (const storeName of Object.values(DB.STORES)) {
-          if (storeName === 'metadata') continue;
-          await DB.clear(storeName);
+      // Step 2: Top-level shape check — version present, keys known
+      if (!data.version) {
+        this.showNotification('Import failed: file has no version field.', 'error');
+        return;
+      }
+      const unknownKeys = Object.keys(data).filter(
+        k => !KNOWN_STORE_KEYS.includes(k) && k !== 'version' && k !== 'exportedAt'
+      );
+      if (unknownKeys.length > 0) {
+        // Warn only — do not reject; forward-compatibility
+        console.warn('Import: unknown top-level keys (future format?):', unknownKeys);
+      }
+
+      // Step 3: Snapshot current data — abort if snapshot fails (nothing written yet)
+      let snapshot;
+      try {
+        snapshot = await snapshotAllStores();
+      } catch (snapshotErr) {
+        console.error('Import snapshot error:', snapshotErr);
+        this.showNotification(
+          `Import aborted: could not read current data for backup (${snapshotErr.message}). ` +
+          `Your data has not been changed.`,
+          'error'
+        );
+        return;
+      }
+
+      // Step 4: Barricade validation — R20 gate; called per record per store
+      // Per-store accepted/rejected counts are surfaced in the notification.
+      // Only structurally valid records are written; rejections are logged.
+      const storeImportResult = {};
+
+      /** Gate a store array: returns only records that pass the barricade. */
+      const _gateStore = (records, schemaKey) => {
+        const storeName = schemaKey.replace('store:', '');
+        storeImportResult[storeName] = { accepted: 0, rejected: 0 };
+        const valid = [];
+        for (const record of records ?? []) {
+          const result = validateExternalInput(schemaKey, record);
+          if (result.valid) {
+            valid.push(record);
+            storeImportResult[storeName].accepted++;
+          } else {
+            storeImportResult[storeName].rejected++;
+            console.warn(`Barricade rejected ${storeName} record:`, result.errors, record);
+          }
         }
+        return valid;
+      };
 
-        if (data.focuses) await DB.putAll(DB.STORES.FOCUSES, data.focuses);
-        if (data.calendar) await DB.putAll(DB.STORES.CALENDAR, data.calendar);
-        if (data.priorities) await DB.putAll(DB.STORES.PRIORITIES, data.priorities);
-        if (data.subFocuses) await DB.putAll(DB.STORES.SUB_FOCUSES, data.subFocuses);
-        if (data.epics) await DB.putAll(DB.STORES.EPICS, data.epics);
-        if (data.stories) await DB.putAll(DB.STORES.STORIES, data.stories);
-        if (data.dailyLogs) await DB.putAll(DB.STORES.DAILY_LOGS, data.dailyLogs);
+      const validFocuses    = _gateStore(data.focuses,    'store:focuses');
+      const validCalendar   = _gateStore(data.calendar,   'store:calendar');
+      const validPriorities = _gateStore(data.priorities, 'store:priorities');
+      const validSubFocuses = _gateStore(data.subFocuses, 'store:subFocuses');
+      const validEpics      = _gateStore(data.epics,      'store:epics');
+      const validDailyLogs  = _gateStore(data.dailyLogs,  'store:dailyLogs');
 
-        await this.loadAllData();
-        this.renderAll();
-        this.showNotification('Data imported successfully', 'success');
-      } catch (error) {
-        console.error('Import error:', error);
-        this.showNotification('Import failed: invalid file', 'error');
+      // Stories: barricade gate first (structural), then domain validation.
+      // DECISION: epicId is enforced at two layers.
+      // Layer 1 (JS): validateStory() rejects stories missing epicId before write.
+      // Layer 2 (DB): CHECK ((data->>'epicId') IS NOT NULL) on the Supabase stories
+      // table — applied 2026-04-14 via migrations/20260414_stories_epic_id_not_null.sql.
+      // Revisit if: stories table is refactored to individual columns (use NOT NULL column then).
+      // Date: 2026-04-14 | Author: [initials]
+      const domainRejections = [];
+      const barricadePassedStories = _gateStore(data.stories ?? [], 'store:stories');
+      // _gateStore tallied barricade rejections into storeImportResult.stories; reset accepted
+      // count so the domain pass below populates it correctly
+      storeImportResult.stories = { accepted: 0, rejected: storeImportResult.stories.rejected };
+
+      const validStories = [];
+      for (const story of barricadePassedStories) {
+        const validation = validateStory(story);
+        if (validation.valid) {
+          validStories.push(story);
+          storeImportResult.stories.accepted++;
+        } else {
+          storeImportResult.stories.rejected++;
+          domainRejections.push({ story: story.name || story.id, errors: validation.errors });
+          console.warn('Import: rejected story (domain)', story.name || story.id, validation.errors);
+        }
+      }
+
+      // Step 5: Abort if zero valid records across all stores and input was non-empty
+      const totalAccepted = Object.values(storeImportResult).reduce((n, s) => n + s.accepted, 0);
+      const totalRejected = Object.values(storeImportResult).reduce((n, s) => n + s.rejected, 0);
+      const inputWasNonEmpty = KNOWN_STORE_KEYS.some(k => (data[k]?.length ?? 0) > 0);
+      if (totalAccepted === 0 && inputWasNonEmpty) {
+        console.warn('Import: all records rejected by barricade — aborting without write.');
+        this.showNotification(
+          `Import aborted: all ${totalRejected} records were rejected by validation. ` +
+          `Your data has not been changed. See console for details.`,
+          'error'
+        );
+        return;
+      }
+
+      // Steps 6–7: Clear all stores then write valid records
+      // On any failure: restore from snapshot and notify
+      try {
+        await DB.clear(DB.STORES.FOCUSES);
+        await DB.clear(DB.STORES.CALENDAR);
+        await DB.clear(DB.STORES.PRIORITIES);
+        await DB.clear(DB.STORES.SUB_FOCUSES);
+        await DB.clear(DB.STORES.EPICS);
+        await DB.clear(DB.STORES.STORIES);
+        await DB.clear(DB.STORES.DAILY_LOGS);
+
+        if (validFocuses.length > 0)    await DB.putAll(DB.STORES.FOCUSES,     validFocuses);
+        if (validCalendar.length > 0)   await DB.putAll(DB.STORES.CALENDAR,    validCalendar);
+        if (validPriorities.length > 0) await DB.putAll(DB.STORES.PRIORITIES,  validPriorities);
+        if (validSubFocuses.length > 0) await DB.putAll(DB.STORES.SUB_FOCUSES, validSubFocuses);
+        if (validEpics.length > 0)      await DB.putAll(DB.STORES.EPICS,       validEpics);
+        if (validStories.length > 0)    await DB.putAll(DB.STORES.STORIES,     validStories);
+        if (validDailyLogs.length > 0)  await DB.putAll(DB.STORES.DAILY_LOGS,  validDailyLogs);
+      } catch (writeErr) {
+        // Step 8: Write failed — attempt restore
+        console.error('Import write error:', writeErr);
+        const restore = await restoreFromSnapshot(snapshot);
+        if (restore.restored) {
+          // State 3: write failure + successful restore
+          this.showNotification(
+            `Import failed: ${writeErr.message}. Your previous data has been restored.`,
+            'error'
+          );
+        } else {
+          // State 4: write failure + failed restore (critical)
+          console.error('Import restore error:', restore.error);
+          this.showNotification(
+            `Import failed and data restore failed at store "${restore.failedStore}". ` +
+            `Stores restored before failure: ${restore.restoredStores.join(', ') || 'none'}. ` +
+            `Your data may be incomplete — export a backup immediately.`,
+            'error'
+          );
+        }
+        return;
+      }
+
+      await this.loadAllData();
+      this.renderAll();
+
+      // Step 9: Full success — State 2 notification with optional rejection note
+      if (totalRejected > 0) {
+        const storeSummary = Object.entries(storeImportResult)
+          .filter(([, s]) => s.rejected > 0)
+          .map(([name, s]) => `${name}: ${s.accepted} accepted, ${s.rejected} rejected`)
+          .join('\n');
+        const domainSummary = domainRejections.length > 0
+          ? '\n' + domainRejections
+              .map(r => `• ${r.story}: ${r.errors.map(err => err.message).join(', ')}`)
+              .join('\n')
+          : '';
+        // State 2 (partial): success with rejection note
+        this.showNotification(
+          `Import complete: ${totalAccepted} records imported. ` +
+          `${totalRejected} records rejected — see console for details.\n${storeSummary}${domainSummary}`,
+          'warning'
+        );
+        console.warn('Import store results:', storeImportResult);
+      } else {
+        // State 2 (clean): full success
+        this.showNotification(
+          `Import complete: ${totalAccepted} records imported.`,
+          'success'
+        );
       }
     };
     reader.readAsText(file);
@@ -3868,8 +4034,15 @@ class CapacityManager {
   // Sidebar Navigation
 
   initSidebar() {
-    const sidebarState = localStorage.getItem('sidebarCollapsed');
-    if (sidebarState === 'true') {
+    const rawSidebarState = localStorage.getItem('sidebarCollapsed');
+    const sidebarStateResult = validateExternalInput('local:sidebarCollapsed', rawSidebarState);
+    if (!sidebarStateResult.valid) {
+      console.warn('Corrupt localStorage key "sidebarCollapsed":', sidebarStateResult.errors);
+    }
+    const sidebarCollapsed = sidebarStateResult.valid
+      ? rawSidebarState === 'true'
+      : DEFAULT_SIDEBAR_COLLAPSED;
+    if (sidebarCollapsed) {
       document.getElementById('floatingSidebar').classList.add('collapsed');
       this.sidebarCollapsed = true;
     }

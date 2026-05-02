@@ -3,6 +3,7 @@
 
 import DB from './db.js';
 import { validateLocationPeriod, addDays } from './locationCapacity.js';
+import { CHANNEL_CAPACITY_PLANNER } from './constants.js';
 
 class ValidationError extends Error {
   constructor(message, field) {
@@ -102,7 +103,7 @@ export async function clearDayTypeOverride(date) {
 // ── Broadcast helper ───────────────────────────────────────────────────────────
 
 function _broadcast(entity, action, data) {
-  const ch = new BroadcastChannel(CHANNELS.CAPACITY_PLANNER);
+  const ch = new BroadcastChannel(CHANNEL_CAPACITY_PLANNER);
   ch.postMessage({ entity, action, data });
   ch.close();
 }

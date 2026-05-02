@@ -9,6 +9,7 @@
  */
 
 import DB from './db.js';
+import { esc } from './utils.js';
 
 
 // ============================================================================
@@ -25,11 +26,18 @@ function hasSelection() {
   return selectionState.storyIds.size > 0 || selectionState.epicIds.size > 0;
 }
 
-function clearSelection() {
+// DECISION: clearSelection / updateSelectionUI renamed to _ddClearSelection /
+// _ddUpdateSelectionUI (R08, 2026-04-25). bulkEdit.js exported functions of the
+// same names operating on a different state object (bulkEditState vs the local
+// selectionState). The IIFE bundle's last-wins meant bulkEdit's versions
+// shadowed these — drill-down's clear button mutated the wrong state and its
+// "update UI" call queried bulk-edit DOM that doesn't exist. The _dd prefix
+// keeps the helpers local to the drill-down module.
+function _ddClearSelection() {
   selectionState.storyIds.clear();
   selectionState.epicIds.clear();
   selectionState.lastStoryId = null;
-  updateSelectionUI();
+  _ddUpdateSelectionUI();
 }
 
 function toggleStory(storyId, shiftKey = false) {
@@ -52,7 +60,7 @@ function toggleStory(storyId, shiftKey = false) {
     }
   }
   selectionState.lastStoryId = storyId;
-  updateSelectionUI();
+  _ddUpdateSelectionUI();
 }
 
 function toggleEpic(epicId) {
@@ -61,10 +69,10 @@ function toggleEpic(epicId) {
   } else {
     selectionState.epicIds.add(epicId);
   }
-  updateSelectionUI();
+  _ddUpdateSelectionUI();
 }
 
-function updateSelectionUI() {
+function _ddUpdateSelectionUI() {
   // Sync story checkboxes + selected class
   document.querySelectorAll('.dd-story-item').forEach(el => {
     const id = el.dataset.storyId;
@@ -161,7 +169,7 @@ async function batchStoryStatus(newStatus) {
     await DB.put(DB.STORES.STORIES, story);
   }
 
-  clearSelection();
+  _ddClearSelection();
   showDDToast(`Updated ${ids.length} stor${ids.length !== 1 ? 'ies' : 'y'} to "${newStatus}"`, 'success');
 
   const focusName = history.state?.focusName;
@@ -184,7 +192,7 @@ async function batchDelete() {
     if (!window.confirm(`Delete ${total} item${total !== 1 ? 's' : ''}?\n\nYou'll have 30 seconds to undo.`)) return;
   }
 
-  clearSelection();
+  _ddClearSelection();
 
   // Visually mark items as pending-delete immediately
   storyIds.forEach(id => {
@@ -320,14 +328,7 @@ export function groupStoriesByEpic(epics, stories) {
 // RENDER HELPERS
 // ============================================================================
 
-function esc(str) {
-  if (!str) return '';
-  return String(str)
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;');
-}
+// esc imported from utils.js — single source (R08, 2026-04-25).
 
 function renderSubFocusCard(sf) {
   const icon = sf.icon || '📁';
@@ -595,7 +596,7 @@ async function _focusDrillDownMain(focusName) {
     root.innerHTML = renderDrillDown(focusName, focusId, focusColor, subFocuses, epics, stories, epiclessStories);
 
     // Re-sync selection UI after re-render
-    updateSelectionUI();
+    _ddUpdateSelectionUI();
 
     // Initialise long-press only once (guards against duplicate listeners)
     if (!window._ddLongPressInit) {
@@ -636,7 +637,7 @@ window.focusDrillDown = { render: _focusDrillDownMain };
 window.ddSelection = {
   toggleStory:       (id, shift)  => toggleStory(id, shift),
   toggleEpic:        (id)         => toggleEpic(id),
-  clearAll:          ()           => clearSelection(),
+  clearAll:          ()           => _ddClearSelection(),
   batchStoryStatus:  (status)     => batchStoryStatus(status),
   batchDelete:       ()           => batchDelete()
 };

@@ -18,6 +18,18 @@ const _TABLE_MAP = {
   metadata:        null  // stored in localStorage, not synced
 };
 
+// Thrown by _uid() when called with no active session.
+// The leading underscore signals this class is internal to db.js — do not export it.
+// Callers outside db.js must discriminate by name, not instanceof:
+//   catch (e) { if (e.name === 'SessionExpiredError') { ... } }
+// This works because the constructor sets this.name = 'SessionExpiredError' explicitly.
+class _SessionExpiredError extends Error {
+  constructor() {
+    super('Session expired — please sign in again.');
+    this.name = 'SessionExpiredError';
+  }
+}
+
 const DB = {
   STORES: {
     CALENDAR:      'calendar',
@@ -102,7 +114,14 @@ const DB = {
   },
 
   _sb()  { return window.supabase; },
-  _uid() { return window.currentUserId; },
+  // INVARIANT: _uid() must be called synchronously before the first await in every
+  // DB method. This guarantees SessionExpiredError surfaces as a rejected promise
+  // to the caller rather than being caught by internal error handling.
+  // Verify this holds whenever a new DB method is added.
+  _uid() {
+    if (!window.currentUserId) throw new _SessionExpiredError();
+    return window.currentUserId;
+  },
 
   // ── Core CRUD ─────────────────────────────────────────────────────────────
 
@@ -125,14 +144,55 @@ const DB = {
     return data?.data ?? undefined;
   },
 
+  // DECISION: DB.getAll() returns a shallow copy of the cache array, never the live reference.
+  // Rationale: Live reference makes every caller an unintentional co-owner of cache internals.
+  //            Shallow copy preserves O(1) cache-serve performance while enforcing encapsulation.
+  // Consequence: Callers that mutated the returned array to update app state were relying on
+  //              shared-reference side effects. Those callers are updated to reload their
+  //              app.data slice from DB.getAll() after writes.
+  // Date: 2026-04-15
+  // Revisit if: record volumes grow large enough that shallow copy cost is measurable.
+
+  // DECISION: hierarchyCache.data is retained.
+  // Rationale: It is not a duplicate cache — it is a synchronous lookup index for
+  //            contextDetection.js (3 sites), creationModal.js (9 sites), dbValidator.js
+  //            (3 sites). All are genuinely mid-render or mid-validation; cannot await.
+  //            Eliminating it requires async render paths, introducing race conditions
+  //            and a cascade of async obligations. Code philosophy: pull complexity downward.
+  // Sync path confirmed: write → notifyDataChange → BroadcastChannel → refreshHierarchyCache().
+  //            invalidateCache() also calls refreshHierarchyCache() directly.
+  // Date: 2026-04-15
+
+  // DECISION: DB.subscribe() is not introduced.
+  // Rationale: app.notifyDataChange(type) already provides fan-out notification.
+  //            A subscription layer would be a third mechanism alongside notifyDataChange
+  //            and BroadcastChannel — more complexity, no benefit.
+  // Date: 2026-04-15
+
+  // DECISION: app.data is retained as a view-layer cache.
+  // Rationale: All render methods read from app.data. Eliminating it requires async
+  //            render paths. It is kept consistent by the standard post-write pattern.
+  // Date: 2026-04-15
+
+  // DECISION: Standard post-write pattern for all write paths touching
+  //           focuses, epics, subFocuses, stories, sprints:
+  //   1. await DB.put/delete(storeName, ...)
+  //   2. app.data[storeKey] = await DB.getAll(DB.STORES.X)       // reload slice
+  //   3. await window.invalidateCache(type)                        // hierarchy stores only
+  //   4. app.notifyDataChange(type)                                // trigger re-renders
+  // Direct app.data mutations after writes are banned.
+  // window.invalidateCache() is required for writes to focuses, epics, subFocuses only.
+  // portfolioUpdater.js uses window.invalidateCache() — it is a globals file, no imports.
+  // Date: 2026-04-15
+
   async getAll(storeName) {
     if (storeName === 'metadata') return [];
     const table = _TABLE_MAP[storeName];
     if (!table) return [];
 
-    // Serve from cache if ready
+    // Serve from cache if ready — return shallow copy to prevent caller co-ownership
     if (this._cacheReady && this._cache[storeName] !== null) {
-      return this._cache[storeName];
+      return [...this._cache[storeName]];
     }
 
     // Fallback: live fetch
@@ -145,7 +205,7 @@ const DB = {
     if (error) { console.error('getAll error', storeName, error); return []; }
     const records = (data || []).map(row => row.data);
     this._cache[storeName] = records;
-    return records;
+    return [...records];
   },
 
   async getByIndex(storeName, indexName, value) {
