@@ -140,9 +140,10 @@ async function _render(storyId) {
       <div class="bdp-fields">
         ${_renderFieldRow('Sprint',   _renderSprintPicker(story, allSprints))}
         ${_renderFieldRow('Epic',     _renderEpicPicker(story, allEpics))}
-        ${_renderFieldRow('Priority', _renderPriorityPicker(story))}
+        ${_renderFieldRow('Fib Size', _renderFibInput(story))}
         ${_renderFieldRow('Estimate', _renderEstimateInput(story))}
-        ${story.actionItems?.length ? _renderFieldRow('Actions', _renderActionItems(story)) : ''}
+        ${_renderFieldRow('Priority', _renderPriorityPicker(story))}
+        ${_renderFieldRow('Actions', _renderActionItems(story))}
       </div>
     </div>
   `;
@@ -195,19 +196,37 @@ function _renderPriorityPicker(story) {
   </select>`;
 }
 
-function _renderEstimateInput(story) {
+function _renderFibInput(story) {
   return `<input type="number" class="bdp-field-input" value="${story.fibonacciSize || ''}"
     step="1" min="0" placeholder="—"
     onblur="window.backlogDetailPanel.saveField('${esc(story.id)}', 'fibonacciSize', this.value)" />`;
 }
 
+function _renderEstimateInput(story) {
+  return `<input type="number" class="bdp-field-input" value="${story.estimatedBlocks || ''}"
+    step="0.5" min="0" placeholder="—"
+    onblur="window.backlogDetailPanel.saveField('${esc(story.id)}', 'estimatedBlocks', this.value)" />`;
+}
+
 function _renderActionItems(story) {
-  return (story.actionItems || []).map(ai => `
+  const items = story.actionItems || [];
+  const rows  = items.map((ai, idx) => `
     <div class="bdp-action-item ${ai.done ? 'bdp-ai-done' : ''}">
-      <span>${ai.done ? '✓' : '○'}</span>
+      <input type="checkbox" ${ai.done ? 'checked' : ''}
+             onchange="window.backlogDetailPanel.toggleActionItem('${esc(story.id)}', ${idx})" />
       <span>${esc(ai.text)}</span>
+      <button class="bdp-ai-del-btn" onclick="window.backlogDetailPanel.removeActionItem('${esc(story.id)}', ${idx})" title="Delete">×</button>
     </div>
-  `).join('');
+  `).join('') || '<p class="bdp-empty-hint">No action items yet.</p>';
+
+  return `<div class="bdp-action-items">${rows}
+    <div class="bdp-ai-add-row">
+      <input type="text" class="bdp-ai-add-input" id="bdp-ai-input-${esc(story.id)}"
+             placeholder="Add an action item…"
+             onkeydown="if(event.key==='Enter'){event.preventDefault();window.backlogDetailPanel.addActionItem('${esc(story.id)}')}" />
+      <button class="bdp-ai-add-btn" onclick="window.backlogDetailPanel.addActionItem('${esc(story.id)}')">Add</button>
+    </div>
+  </div>`;
 }
 
 // ── Epic panel render ─────────────────────────────────────────────────────────
@@ -542,7 +561,9 @@ export async function saveField(storyId, field, value) {
   if (!story) return;
 
   const prev   = story[field];
-  const parsed = field === 'fibonacciSize' ? (parseInt(value) || null) : value;
+  const parsed = field === 'fibonacciSize' ? (parseInt(value) || null)
+               : field === 'estimatedBlocks' ? (parseFloat(value) || null)
+               : value;
   story[field] = parsed;
 
   // Re-derive focus from new epic when epicId changes
@@ -566,6 +587,52 @@ export async function saveField(storyId, field, value) {
     _render(storyId);
     if (window.showToastWithActions) window.showToastWithActions('Save failed', 'error', { duration: 3000 });
   }
+}
+
+// ── Action item CRUD ──────────────────────────────────────────────────────────
+
+async function _saveActionItems(storyId, actionItems) {
+  const story = window.app?.data?.stories?.find(s => s.id === storyId);
+  if (!story) return;
+  story.actionItems = actionItems;
+  try {
+    await DB.put(DB.STORES.STORIES, story);
+    if (window.backlogView) window.backlogView.patchStoryRow(storyId);
+  } catch (err) {
+    const fresh = await DB.get(DB.STORES.STORIES, storyId);
+    if (fresh) window.app?.updateStoryInMemory(storyId, fresh);
+    _render(storyId);
+    if (window.showToastWithActions) window.showToastWithActions('Save failed', 'error', { duration: 3000 });
+  }
+}
+
+export async function addActionItem(storyId) {
+  const input = document.getElementById(`bdp-ai-input-${storyId}`);
+  const text  = input?.value.trim();
+  if (!text) return;
+  const story = window.app?.data?.stories?.find(s => s.id === storyId);
+  if (!story) return;
+  const items = [...(story.actionItems || []), { id: `ai-${Date.now()}`, text, done: false, createdAt: new Date().toISOString() }];
+  await _saveActionItems(storyId, items);
+  _render(storyId);
+}
+
+export async function toggleActionItem(storyId, idx) {
+  const story = window.app?.data?.stories?.find(s => s.id === storyId);
+  if (!story) return;
+  const items = [...(story.actionItems || [])];
+  if (items[idx]) { items[idx] = { ...items[idx], done: !items[idx].done }; }
+  await _saveActionItems(storyId, items);
+  _render(storyId);
+}
+
+export async function removeActionItem(storyId, idx) {
+  const story = window.app?.data?.stories?.find(s => s.id === storyId);
+  if (!story) return;
+  const items = [...(story.actionItems || [])];
+  items.splice(idx, 1);
+  await _saveActionItems(storyId, items);
+  _render(storyId);
 }
 
 export async function saveEpicField(epicId, field, value) {
@@ -1435,6 +1502,9 @@ window.backlogDetailPanel = {
   saveFocusField,
   saveSubFocusField,
   refreshIfShowing,
+  addActionItem,
+  toggleActionItem,
+  removeActionItem,
   _toggleEpicFilter,
   _archiveFocus,
   _deleteSubFocus,
@@ -1451,4 +1521,4 @@ window.backlogDetailPanel = {
   _editRanking,
 };
 
-export default { open, openStory: open, openEpic, openFocus, openSubFocus, openSprint, openSegmentBuilder, close, isOpen, saveField, saveEpicField, saveFocusField, saveSubFocusField, refreshIfShowing };
+export default { open, openStory: open, openEpic, openFocus, openSubFocus, openSprint, openSegmentBuilder, close, isOpen, saveField, saveEpicField, saveFocusField, saveSubFocusField, refreshIfShowing, addActionItem, toggleActionItem, removeActionItem };

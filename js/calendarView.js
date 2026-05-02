@@ -1147,6 +1147,8 @@ async function _savePeriod() {
     }
     _closePanel();
     render();
+    window.app?.notifyDataChange('travelSegment');
+    window.backlogView?.renderSprintCapacityHeaders();
   } catch (err) {
     if (errEl) { errEl.textContent = err.message; errEl.style.display = ''; }
   }
@@ -1175,6 +1177,8 @@ async function _confirmDelete() {
   window.app?.removeLocationPeriodInMemory(_editingPeriodId);
   _closePanel();
   render();
+  window.app?.notifyDataChange('travelSegment');
+  window.backlogView?.renderSprintCapacityHeaders();
 }
 
 // ── DOM event binding ──────────────────────────────────────────────────────────

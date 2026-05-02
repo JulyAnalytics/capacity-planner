@@ -12,7 +12,7 @@ import { deriveSprintMeta } from './sprintCapacity.js';
 
 let _blGroupBy = 'sprint'; // 'sprint' | 'focus' | 'calendar' | 'storymap'
 let activeFocus = null; // focus.id | null (null = All)
-let activeStatuses = new Set(['all']); // 'all' is sentinel
+let activeStatuses = new Set(['active']);
 let openPanelType = null; // 'story' | 'epic' | 'focus' | 'subFocus' | null
 let openPanelId = null;
 let epicFilter = null; // epic.id | null
@@ -317,9 +317,11 @@ function _renderEpicTag(epic) {
   >${esc(epic.name)}</button>`;
 }
 
-function _renderStatusBadge(status) {
+function _renderStatusBadge(status, storyId) {
   const label = STATUS_DISPLAY_LABELS[status] || status;
-  return `<span class="bl-status-badge bl-status-badge--${esc(status)}">${esc(label)}</span>`;
+  return `<button type="button" class="bl-status-badge bl-status-badge--${esc(status)}"
+    onclick="event.stopPropagation(); window.backlogView._toggleStoryStatus('${esc(storyId)}')"
+    title="Click to toggle status">${esc(label)}</button>`;
 }
 
 // ── Story row ─────────────────────────────────────────────────────────────────
@@ -386,7 +388,7 @@ function _renderStoryRow(story, mode, allData) {
     ${epicTag}
     ${sprintTag}
     ${fibBadge}
-    ${_renderStatusBadge(story.status)}
+    ${_renderStatusBadge(story.status, story.id)}
     <span class="bl-row-pad"></span>
   </div>`;
 }
@@ -437,6 +439,7 @@ function _renderBacklogHeader(allBacklogStories, isExpanded) {
     <span class="bl-section-chevron${isExpanded ? '' : ' bl-collapsed'}">${isExpanded ? '▼' : '▶'}</span>
     <span class="bl-sprint-name">Backlog</span>
     <span class="bl-section-count"><span class="bl-count-num">${total}</span> <span class="bl-count-label">total</span></span>
+    <span class="bl-hdr-spacer"></span>
     <button type="button" class="bl-add-btn"
       onclick="event.stopPropagation(); window.openCreationModal?.({type:'story'})">+ Story</button>
   </div>`;
@@ -621,6 +624,25 @@ function _applySelectedRow() {
 
 function _onStoryRowClick(storyId, _event) {
   openStoryPanel(storyId);
+}
+
+async function _toggleStoryStatus(storyId) {
+  const story = _getStoryFromData(storyId);
+  if (!story) return;
+  const cycle = ['active', 'completed', 'blocked', 'backlog'];
+  const idx   = cycle.indexOf(story.status);
+  const next  = cycle[(idx + 1) % cycle.length];
+  story.status = next;
+  story.updatedAt = new Date().toISOString();
+  if (next === 'completed') story.completedAt = story.updatedAt;
+  try {
+    await DB.put(DB.STORES.STORIES, story);
+    window.app?.updateStoryInMemory(storyId, { status: story.status, completedAt: story.completedAt, updatedAt: story.updatedAt });
+    patchStoryRow(storyId);
+  } catch (err) {
+    story.status = cycle[idx] || 'backlog';
+    if (window.showToastWithActions) window.showToastWithActions('Status toggle failed', 'error', { duration: 3000 });
+  }
 }
 
 function _setGroupBy(mode) {
@@ -1525,6 +1547,7 @@ export async function _submitCreateSprint() {
   try {
     await window.sprintManager.createSprint({ startDate, durationWeeks, goal });
     document.getElementById('create-sprint-overlay')?.remove();
+    window.app?.notifyDataChange('sprint');
     _renderBacklogView();
   } catch (err) {
     if (errEl) { errEl.textContent = err.message; errEl.style.display = ''; }
@@ -1549,6 +1572,7 @@ window.backlogView = {
   closePanel,
   _toggleSection,
   _onStoryRowClick,
+  _toggleStoryStatus,
   _onFocusDotClick,
   _onSprintTagClick,
   _setGroupBy: (mode) => { _setGroupBy(mode); },

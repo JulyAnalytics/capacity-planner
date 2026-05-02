@@ -73,12 +73,24 @@ function openCreationModal(overrides = {}) {
 
   const defaults = getMergedDefaults();
   creationModalState.selectedType = overrides.type || defaults.type;
+
+  // Derive subFocusId and focusId from epic when not explicitly provided
+  let focusId    = overrides.focusId    ?? defaults.focusId    ?? null;
+  let subFocusId = overrides.subFocusId ?? defaults.subFocusId ?? null;
+  let epicId     = overrides.epicId     ?? defaults.epicId     ?? null;
+  if (epicId && (!subFocusId || !focusId)) {
+    const epic = getEpicById(epicId);
+    if (epic) {
+      if (!subFocusId) subFocusId = epic.subFocusId || null;
+      if (!focusId)    focusId    = epic.focusId || null;
+    }
+  }
   creationModalState.formData = {
-    name:       '',
-    focusId:    overrides.focusId    ?? defaults.focusId    ?? null,
-    subFocusId: overrides.subFocusId ?? defaults.subFocusId ?? null,
-    epicId:     overrides.epicId     ?? defaults.epicId     ?? null,
-    sprintId:   overrides.sprintId   ?? null,
+    name: '',
+    focusId,
+    subFocusId,
+    epicId,
+    sprintId: overrides.sprintId ?? null,
   };
 
   createModalDOM();
@@ -242,6 +254,12 @@ function renderStoryForm() {
       <small class="cm-form-hint">Short, action-oriented description</small>
     </div>
 
+    <div class="cm-form-group">
+      <label for="cm-story-description" class="cm-form-label">Description</label>
+      <textarea id="cm-story-description" class="cm-form-textarea"
+        placeholder="Add a description…" rows="3"></textarea>
+    </div>
+
     <div class="cm-hierarchy-section">
       <label class="cm-form-label">
         Categorize <span class="cm-required">*</span>
@@ -304,6 +322,17 @@ function renderStoryForm() {
       <select id="story-sprint" class="cm-form-select">
         <option value="">Backlog (no sprint)</option>
         ${_renderSprintOptions(creationModalState.formData.sprintId)}
+      </select>
+    </div>
+
+    <div class="cm-form-group">
+      <label for="cm-story-priority" class="cm-form-label">Priority</label>
+      <select id="cm-story-priority" class="cm-form-select">
+        <option value="">—</option>
+        <option value="primary">primary</option>
+        <option value="secondary1">secondary1</option>
+        <option value="secondary2">secondary2</option>
+        <option value="floor">floor</option>
       </select>
     </div>
 
@@ -633,6 +662,7 @@ function getFormData() {
       const fib      = document.getElementById('cm-story-fib')?.value;
       const est      = document.getElementById('cm-story-estimate')?.value;
       const status   = document.getElementById('cm-story-status')?.value || 'active';
+      const priority = document.getElementById('cm-story-priority')?.value || null;
       const epicId   = document.getElementById('story-epic')?.value || null;
       const sprintId = document.getElementById('story-sprint')?.value || null;
 
@@ -648,7 +678,8 @@ function getFormData() {
         epicId,
         sprintId,
         focus: focusStr,
-        description: '',
+        description: document.getElementById('cm-story-description')?.value || '',
+        priority,
         month: String(new Date().getMonth() + 1).padStart(2, '0'),
         weight: 1,
         status,
@@ -768,6 +799,7 @@ async function createEntity(options = {}) {
       // Clear name only — keep hierarchy selections for rapid-fire creation
       creationModalState.formData.name = '';
       renderForm(true); // re-render + focus name field
+      enableForm(); // re-enable footer buttons disabled by disableForm()
     } else {
       closeCreationModal();
     }
