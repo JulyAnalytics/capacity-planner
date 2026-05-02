@@ -107,13 +107,57 @@ async function _loadSprintCapacityHeaders() {
       .filter(s => s.sprintId === sprintId && s.status !== 'abandoned');
 
     if (segments.length === 0) {
+      // Fallback: check location periods overlapping this sprint's date range
+      const periods = (window.app?.data?.locationPeriods || []).filter(p =>
+        p.endDate >= sprint.startDate && p.startDate <= endDate
+      );
+      if (periods.length === 0) {
+        tier2El.innerHTML = `
+          <div class="bl-cov-track-wrap">
+            <div class="bl-cov-rail">
+              <div class="bl-cov-seg bl-cov-seg--uncov" style="width:100%"></div>
+            </div>
+            <span class="bl-cov-warn">${sprintDays} day${sprintDays !== 1 ? 's' : ''} uncovered</span>
+          </div>
+        `;
+        continue;
+      }
+      // Derive capacity + coverage from location periods
+      const { deriveSprintCapacityFromPeriods } = await import('./locationCapacity.js');
+      const overrides = window.app?.data?.dayTypeOverrides || [];
+      const cap = deriveSprintCapacityFromPeriods(sprint, periods, overrides);
+
+      let domDays = 0;
+      let intlDays = 0;
+      for (const p of periods) {
+        const pStart = p.startDate > sprint.startDate ? p.startDate : sprint.startDate;
+        const pEnd   = p.endDate   < endDate   ? p.endDate   : endDate;
+        const overlapDays = daysBetween(pStart, pEnd) + 1;
+        if (p.locationType === 'international') intlDays += overlapDays;
+        else domDays += overlapDays;
+      }
+      const uncovDays = Math.max(0, sprintDays - domDays - intlDays);
+      const domPct  = Math.round((domDays  / sprintDays) * 100);
+      const intlPct = Math.round((intlDays / sprintDays) * 100);
+      const uncPct  = 100 - domPct - intlPct;
+
+      const allocation = deriveFocusAllocation(sprintStories, allFocuses);
+      const tierCheck  = deriveTierCheck(sprintStories, cap);
+      const allocHtml  = _renderAllocDots(allocation) + _renderTierStatus(tierCheck);
+
       tier2El.innerHTML = `
         <div class="bl-cov-track-wrap">
           <div class="bl-cov-rail">
-            <div class="bl-cov-seg bl-cov-seg--uncov" style="width:100%"></div>
+            ${domPct  > 0 ? `<div class="bl-cov-seg bl-cov-seg--dom"  style="width:${domPct}%"></div>`  : ''}
+            ${intlPct > 0 ? `<div class="bl-cov-seg bl-cov-seg--intl" style="width:${intlPct}%"></div>` : ''}
+            ${uncPct  > 0 ? `<div class="bl-cov-seg bl-cov-seg--uncov" style="width:${uncPct}%"></div>` : ''}
           </div>
-          <span class="bl-cov-warn">${sprintDays} day${sprintDays !== 1 ? 's' : ''} uncovered</span>
+          ${uncovDays > 0 ? `<span class="bl-cov-warn">${uncovDays} day${uncovDays !== 1 ? 's' : ''} uncovered</span>` : ''}
         </div>
+        <span class="bl-cap-sep">·</span>
+        <span class="bl-sprint-cap-total">${cap.total.toFixed(1)} total</span>
+        <span class="bl-sprint-cap-priority">· ${cap.priority.toFixed(1)} priority</span>
+        ${allocHtml ? `<span class="bl-cap-sep">·</span><span class="bl-sprint-alloc">${allocHtml}</span>` : ''}
       `;
       continue;
     }
