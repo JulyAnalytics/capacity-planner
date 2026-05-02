@@ -33,6 +33,7 @@ const JS_FILES = [
   'js/sprintAllocation.js',
   'js/backlogView.js',
   'js/backlogDetailPanel.js',
+  'js/barricade.js',
   'js/calendarView.js',
   'js/bulkEdit.js',
   'js/app.js',
