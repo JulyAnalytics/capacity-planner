@@ -36,8 +36,6 @@ export const VALID_STATUSES = {
   epic: ['planning', 'active', 'completed', 'archived']
 };
 
-export const VALID_FIBONACCI = [1, 2, 3, 5, 8, 13, 21];
-
 export const VALID_PRIORITY_LEVELS = ['primary', 'secondary1', 'secondary2', 'floor'];
 
 export const VALID_FOCUSES = [
@@ -137,18 +135,19 @@ export function validateStory(story, context = {}) {
   }
 
   // Fibonacci validation
-  if (story.fibonacciSize && !VALID_FIBONACCI.includes(story.fibonacciSize)) {
+  if (story.fibonacciSize && !FIBONACCI_SIZES.includes(story.fibonacciSize)) {
     errors.push({
       field: 'fibonacciSize',
-      message: `Invalid fibonacci size. Must be one of: ${VALID_FIBONACCI.join(', ')}`
+      message: `Invalid fibonacci size. Must be one of: ${FIBONACCI_SIZES.join(', ')}`
     });
   }
 
-  // Focus validation
-  if (story.focus && !VALID_FOCUSES.some(f => normalizedEquals(f, story.focus))) {
+  // Focus validation — use live data when available, fall back to seed list at boot time
+  const focusList = context.focusNames && context.focusNames.length > 0 ? context.focusNames : VALID_FOCUSES;
+  if (story.focus && !focusList.some(f => normalizedEquals(f, story.focus))) {
     errors.push({
       field: 'focus',
-      message: `Invalid focus. Must be one of: ${VALID_FOCUSES.join(', ')}`
+      message: `Invalid focus. Must be one of: ${focusList.join(', ')}`
     });
   }
 
@@ -233,11 +232,12 @@ export function validateEpic(epic, context = {}) {
     });
   }
 
-  // Focus validation
-  if (epic.focus && !VALID_FOCUSES.some(f => normalizedEquals(f, epic.focus))) {
+  // Focus validation — use live data when available, fall back to seed list at boot time
+  const focusList = context.focusNames && context.focusNames.length > 0 ? context.focusNames : VALID_FOCUSES;
+  if (epic.focus && !focusList.some(f => normalizedEquals(f, epic.focus))) {
     errors.push({
       field: 'focus',
-      message: `Invalid focus. Must be one of: ${VALID_FOCUSES.join(', ')}`
+      message: `Invalid focus. Must be one of: ${focusList.join(', ')}`
     });
   }
 

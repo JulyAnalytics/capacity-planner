@@ -32,11 +32,11 @@ window.initAuth = function initAuth() {
         _onSignedIn(session.user);
         done();
         // Re-initialize app data after sign-in (if already booted)
-        if (window.app && typeof window.app.loadData === 'function') {
+        if (window.app && typeof window.app.loadAllData === 'function') {
           if (window.DB) {
-            window.DB.preloadAll().then(() => window.app.loadData());
+            window.DB.preloadAll().then(() => window.app.loadAllData());
           } else {
-            window.app.loadData();
+            window.app.loadAllData();
           }
         }
       } else {

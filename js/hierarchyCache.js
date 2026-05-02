@@ -52,7 +52,7 @@ function initBroadcastChannel() {
   }
 
   try {
-    broadcastChannel = new BroadcastChannel('hierarchy-cache-sync');
+    broadcastChannel = new BroadcastChannel(CHANNELS.HIERARCHY_CACHE_SYNC);
 
     broadcastChannel.onmessage = (event) => {
       console.log('📡 Broadcast received:', event.data);
@@ -292,49 +292,42 @@ function getEpicById(epicId) {
 // ============================================================================
 
 function _initCapacityPlannerChannel() {
-  if (typeof BroadcastChannel === 'undefined') return;
-  try {
-    const ch = new BroadcastChannel('capacity_planner');
-    ch.onmessage = (e) => {
-      const { entity, action, data } = e.data || {};
-      if (!entity) return;
-
-      if (entity === 'sprint') {
-        if (action === 'created') {
-          hierarchyCache.data.sprints.push(data);
-          hierarchyCache.data.sprints.sort((a, b) => b.startDate.localeCompare(a.startDate));
-        } else if (action === 'updated') {
-          const i = hierarchyCache.data.sprints.findIndex(s => s.id === data.id);
-          if (i >= 0) hierarchyCache.data.sprints[i] = data;
-        }
-
-      } else if (entity === 'locationPeriod') {
-        if (action === 'created') {
-          hierarchyCache.data.locationPeriods.push(data);
-        } else if (action === 'updated') {
-          const i = hierarchyCache.data.locationPeriods.findIndex(p => p.id === data.id);
-          if (i >= 0) hierarchyCache.data.locationPeriods[i] = data;
-          else hierarchyCache.data.locationPeriods.push(data);
-        } else if (action === 'deleted') {
-          hierarchyCache.data.locationPeriods =
-            hierarchyCache.data.locationPeriods.filter(p => p.id !== data.id);
-        }
-
-      } else if (entity === 'dayTypeOverride') {
-        // keyed by date (C3)
-        if (action === 'upserted') {
-          const i = hierarchyCache.data.dayTypeOverrides.findIndex(o => o.date === data.date);
-          if (i >= 0) hierarchyCache.data.dayTypeOverrides[i] = data;
-          else hierarchyCache.data.dayTypeOverrides.push(data);
-        } else if (action === 'deleted') {
-          hierarchyCache.data.dayTypeOverrides =
-            hierarchyCache.data.dayTypeOverrides.filter(o => o.date !== data.date);
-        }
+  listenCapacityPlannerChannel({
+    onSprint: (action, data) => {
+      if (action === 'created') {
+        hierarchyCache.data.sprints.push(data);
+        hierarchyCache.data.sprints.sort((a, b) => b.startDate.localeCompare(a.startDate));
+      } else if (action === 'updated') {
+        const i = hierarchyCache.data.sprints.findIndex(s => s.id === data.id);
+        if (i >= 0) hierarchyCache.data.sprints[i] = data;
       }
-    };
-  } catch (err) {
-    console.error('Failed to init capacity_planner channel:', err);
-  }
+      window.app?.notifyDataChange('sprint');
+    },
+    onLocationPeriod: (action, data) => {
+      if (action === 'created') {
+        hierarchyCache.data.locationPeriods.push(data);
+      } else if (action === 'updated') {
+        const i = hierarchyCache.data.locationPeriods.findIndex(p => p.id === data.id);
+        if (i >= 0) hierarchyCache.data.locationPeriods[i] = data;
+        else hierarchyCache.data.locationPeriods.push(data);
+      } else if (action === 'deleted') {
+        hierarchyCache.data.locationPeriods =
+          hierarchyCache.data.locationPeriods.filter(p => p.id !== data.id);
+      }
+      window.app?.notifyDataChange('locationPeriod');
+    },
+    onDayTypeOverride: (action, data) => {
+      if (action === 'upserted') {
+        const i = hierarchyCache.data.dayTypeOverrides.findIndex(o => o.date === data.date);
+        if (i >= 0) hierarchyCache.data.dayTypeOverrides[i] = data;
+        else hierarchyCache.data.dayTypeOverrides.push(data);
+      } else if (action === 'deleted') {
+        hierarchyCache.data.dayTypeOverrides =
+          hierarchyCache.data.dayTypeOverrides.filter(o => o.date !== data.date);
+      }
+      window.app?.notifyDataChange('dayTypeOverride');
+    },
+  });
 }
 
 // ============================================================================

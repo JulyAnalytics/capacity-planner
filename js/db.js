@@ -199,7 +199,7 @@ const DB = {
       .from(table)
       .upsert(rows, { onConflict: 'id' });
 
-    if (error) { console.error('putAll error', storeName, error); return; }
+    if (error) { console.error('putAll error', storeName, error); throw new Error(error.message); }
 
     // Invalidate so next getAll re-fetches fresh data
     this._cache[storeName] = null;
@@ -219,7 +219,7 @@ const DB = {
       .eq('id', id)
       .eq('user_id', this._uid());
 
-    if (error) { console.error('delete error', storeName, error); return; }
+    if (error) { console.error('delete error', storeName, error); throw new Error(error.message); }
 
     // Update cache
     if (this._cache[storeName] !== null) {
@@ -237,7 +237,7 @@ const DB = {
       .delete()
       .eq('user_id', this._uid());
 
-    if (error) { console.error('clear error', storeName, error); return; }
+    if (error) { console.error('clear error', storeName, error); throw new Error(error.message); }
 
     this._cache[storeName] = [];
   },

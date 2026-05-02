@@ -235,61 +235,16 @@ async function batchDelete() {
 }
 
 // ============================================================================
-// TOAST HELPERS
+// TOAST HELPERS — delegate to canonical showToast in utils.js
 // ============================================================================
 
-function getToastContainer() {
-  let container = document.getElementById('cm-toast-container');
-  if (!container) {
-    container = document.createElement('div');
-    container.id = 'cm-toast-container';
-    document.body.appendChild(container);
-  }
-  return container;
-}
-
 function showDDToast(message, type = 'info') {
-  const container = getToastContainer();
-  const toast = document.createElement('div');
-  toast.className = `cm-toast cm-toast-${type}`;
-  toast.textContent = message;
-  container.appendChild(toast);
-
-  setTimeout(() => toast.classList.add('show'), 10);
-  setTimeout(() => {
-    toast.classList.remove('show');
-    setTimeout(() => toast.remove(), 300);
-  }, 4000);
+  showToast(message, type, { duration: 4000 });
 }
 
 function showDDUndoToast(message, onUndo, duration = 30000) {
-  const container = getToastContainer();
-  const toast = document.createElement('div');
-  toast.className = 'cm-toast cm-toast-warning dd-undo-toast';
-  toast.innerHTML = `
-    <span class="dd-undo-msg">${message}</span>
-    <button class="dd-undo-btn">Undo</button>
-  `;
-
-  let dismissed = false;
-  const undoBtn = toast.querySelector('.dd-undo-btn');
-  undoBtn.addEventListener('click', () => {
-    if (dismissed) return;
-    dismissed = true;
-    onUndo();
-    clearTimeout(hideTimer);
-    toast.classList.remove('show');
-    setTimeout(() => toast.remove(), 300);
-  });
-
-  container.appendChild(toast);
-  setTimeout(() => toast.classList.add('show'), 10);
-
-  const hideTimer = setTimeout(() => {
-    if (dismissed) return;
-    toast.classList.remove('show');
-    setTimeout(() => toast.remove(), 300);
-  }, duration);
+  const toast = showToast(message, 'warning', { duration, action: 'Undo', onAction: onUndo });
+  if (toast) toast.classList.add('dd-undo-toast');
 }
 
 // ============================================================================

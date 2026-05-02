@@ -786,15 +786,10 @@ async function _saveNewSprint() {
 
   try {
     const sprint = await createSprint({ startDate, durationWeeks, goal, focusRanking });
-    // Update app data
-    if (window.app?.data) {
-      if (!window.app.data.sprints) window.app.data.sprints = [];
-      window.app.data.sprints.push(sprint);
-    }
+    window.app?.upsertSprintInMemory(sprint);
     _sprintFormRanking = [];
     _closePanel();
     render();
-    if (window.app?.notifyDataChange) window.app.notifyDataChange('sprint');
   } catch (err) {
     if (errEl) { errEl.textContent = err.message; errEl.style.display = ''; }
   }
@@ -1115,11 +1110,7 @@ function _overrideDate(ds) {
   const nextIdx  = current ? (dayTypes.indexOf(current.dayType) + 1) % dayTypes.length : 0;
   const newType  = dayTypes[nextIdx];
   setDayTypeOverride(ds, newType).then(override => {
-    if (window.app?.data) {
-      const i = window.app.data.dayTypeOverrides.findIndex(o => o.date === ds);
-      if (i >= 0) window.app.data.dayTypeOverrides[i] = override;
-      else window.app.data.dayTypeOverrides.push(override);
-    }
+    window.app?.upsertDayTypeOverrideInMemory(override);
     render({ previewPeriod: _periodForm ? { ..._periodForm, id: _editingPeriodId || '_preview_' } : undefined });
     _renderDetailPanel();
   });
@@ -1127,10 +1118,7 @@ function _overrideDate(ds) {
 
 function _clearOverride(ds) {
   clearDayTypeOverride(ds).then(() => {
-    if (window.app?.data) {
-      if (!Array.isArray(window.app.data.dayTypeOverrides)) window.app.data.dayTypeOverrides = [];
-      window.app.data.dayTypeOverrides = window.app.data.dayTypeOverrides.filter(o => o.date !== ds);
-    }
+    window.app?.removeDayTypeOverrideInMemory(ds);
     render({ previewPeriod: _periodForm ? { ..._periodForm, id: _editingPeriodId || '_preview_' } : undefined });
     _renderDetailPanel();
   });
@@ -1144,22 +1132,13 @@ async function _savePeriod() {
   try {
     if (_editingPeriodId) {
       const { period } = await updateLocationPeriod(_editingPeriodId, f);
-      if (window.app?.data) {
-        if (!Array.isArray(window.app.data.locationPeriods)) window.app.data.locationPeriods = [];
-        const i = window.app.data.locationPeriods.findIndex(p => p.id === period.id);
-        if (i >= 0) window.app.data.locationPeriods[i] = period;
-        else window.app.data.locationPeriods.push(period);
-      }
+      window.app?.upsertLocationPeriodInMemory(period);
     } else {
       const { period } = await createLocationPeriod(f);
-      if (window.app?.data) {
-        if (!Array.isArray(window.app.data.locationPeriods)) window.app.data.locationPeriods = [];
-        window.app.data.locationPeriods.push(period);
-      }
+      window.app?.upsertLocationPeriodInMemory(period);
     }
     _closePanel();
     render();
-    if (window.app?.notifyDataChange) window.app.notifyDataChange('locationPeriod');
   } catch (err) {
     if (errEl) { errEl.textContent = err.message; errEl.style.display = ''; }
   }
@@ -1185,12 +1164,9 @@ async function _confirmDelete() {
   clearTimeout(_deleteConfirmTimer);
   if (!_editingPeriodId) return;
   await deleteLocationPeriod(_editingPeriodId);
-  if (window.app?.data) {
-    window.app.data.locationPeriods = window.app.data.locationPeriods.filter(p => p.id !== _editingPeriodId);
-  }
+  window.app?.removeLocationPeriodInMemory(_editingPeriodId);
   _closePanel();
   render();
-  if (window.app?.notifyDataChange) window.app.notifyDataChange('locationPeriod');
 }
 
 // ── DOM event binding ──────────────────────────────────────────────────────────

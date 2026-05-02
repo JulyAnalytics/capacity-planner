@@ -798,29 +798,7 @@ function enableForm() {
     .forEach(el => { el.disabled = false; });
 }
 
-// ============================================================================
-// TOAST NOTIFICATIONS
-// ============================================================================
-
-function showToast(message, type = 'info') {
-  let container = document.getElementById('cm-toast-container');
-  if (!container) {
-    container = document.createElement('div');
-    container.id = 'cm-toast-container';
-    document.body.appendChild(container);
-  }
-
-  const toast = document.createElement('div');
-  toast.className = `cm-toast cm-toast-${type}`;
-  toast.textContent = message;
-  container.appendChild(toast);
-
-  setTimeout(() => toast.classList.add('show'), 10);
-  setTimeout(() => {
-    toast.classList.remove('show');
-    setTimeout(() => toast.remove(), 300);
-  }, 3000);
-}
+// Toast delegation — the canonical showToast is in utils.js
 
 // ============================================================================
 // KEYBOARD SHORTCUTS

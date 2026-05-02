@@ -8,7 +8,7 @@
 import DB from '../db.js';
 
 export async function migrateCalendarToSprints() {
-  const migrationKey = 'calendar_to_sprints_migration';
+  const migrationKey = 'migration:calendar-to-sprints';
   const done = await DB.get(DB.STORES.METADATA, migrationKey);
   if (done?.value) { console.log('Migration already run, skipping.'); return; }
 

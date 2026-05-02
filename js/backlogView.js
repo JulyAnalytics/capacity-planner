@@ -1393,12 +1393,7 @@ async function _handleDrop(e, targetSectionId) {
 
   try {
     await DB.put(DB.STORES.STORIES, story);
-    if (window.app?.data?.stories) {
-      const idx = window.app.data.stories.findIndex(s => s.id === story.id);
-      if (idx >= 0) {
-        window.app.data.stories[idx] = { ...window.app.data.stories[idx], sprintId: story.sprintId };
-      }
-    }
+    window.app?.updateStoryInMemory(story.id, { sprintId: story.sprintId });
     patchStoryRow(storyId, { movedToSection: targetSectionId });
   } catch (err) {
     story.sprintId = prevSprintId;

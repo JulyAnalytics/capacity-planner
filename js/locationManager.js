@@ -102,7 +102,7 @@ export async function clearDayTypeOverride(date) {
 // ── Broadcast helper ───────────────────────────────────────────────────────────
 
 function _broadcast(entity, action, data) {
-  const ch = new BroadcastChannel('capacity_planner');
+  const ch = new BroadcastChannel(CHANNELS.CAPACITY_PLANNER);
   ch.postMessage({ entity, action, data });
   ch.close();
 }

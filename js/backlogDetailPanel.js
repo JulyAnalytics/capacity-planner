@@ -546,10 +546,7 @@ export async function saveField(storyId, field, value) {
   } catch (err) {
     story[field] = prev;
     const fresh = await DB.get(DB.STORES.STORIES, storyId);
-    if (fresh) {
-      const idx = window.app?.data?.stories?.findIndex(s => s.id === storyId);
-      if (idx >= 0) window.app.data.stories[idx] = fresh;
-    }
+    if (fresh) window.app?.updateStoryInMemory(storyId, fresh);
     _render(storyId);
     if (window.showToastWithActions) window.showToastWithActions('Save failed', 'error', { duration: 3000 });
   }
@@ -938,8 +935,7 @@ async function _editRanking(sprintId) {
     save: async () => {
       const newRanking = editRanking.length > 0 ? editRanking : null;
       await window.sprintManager.updateSprint(sprintId, { focusRanking: newRanking });
-      const i = window.app?.data?.sprints?.findIndex(s => s.id === sprintId);
-      if (i >= 0) window.app.data.sprints[i].focusRanking = newRanking;
+      window.app?.updateSprintInMemory(sprintId, { focusRanking: newRanking });
       await openSegmentBuilder(sprintId);
     },
     clear: () => {
@@ -1352,25 +1348,17 @@ function _cancelSegmentForm() {
 
 async function _activateSprint(sprintId) {
   await window.sprintManager.updateSprint(sprintId, { status: 'active' });
-  if (window.app?.data?.sprints) {
-    const i = window.app.data.sprints.findIndex(s => s.id === sprintId);
-    if (i >= 0) window.app.data.sprints[i].status = 'active';
-  }
+  window.app?.updateSprintInMemory(sprintId, { status: 'active' });
   await openSegmentBuilder(sprintId);
-  if (window.app?.notifyDataChange) window.app.notifyDataChange('sprint');
 }
 
 async function _completeSprint(sprintId) {
   await window.sprintManager.completeSprint(sprintId);
-  if (window.app?.data?.sprints) {
-    const i = window.app.data.sprints.findIndex(s => s.id === sprintId);
-    if (i >= 0) {
-      window.app.data.sprints[i].status      = 'done';
-      window.app.data.sprints[i].completedAt = new Date().toISOString();
-    }
-  }
+  window.app?.updateSprintInMemory(sprintId, {
+    status: 'done',
+    completedAt: new Date().toISOString()
+  });
   close();
-  if (window.app?.notifyDataChange) window.app.notifyDataChange('sprint');
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────

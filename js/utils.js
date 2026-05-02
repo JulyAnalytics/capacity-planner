@@ -53,22 +53,51 @@ export function hideLoading() {
 }
 
 /**
- * Show toast notification
+ * Canonical toast notification. Supports optional action buttons.
+ * All other notification paths (showNotification, showToastWithActions)
+ * delegate here so there is exactly one DOM toast implementation.
+ *
+ * @param {string}            message
+ * @param {'info'|'success'|'warning'|'error'} type
+ * @param {{ duration?: number, action?: string, onAction?: Function }} [config]
  */
-export function showToast(message, type = 'info', duration = 3000) {
+export function showToast(message, type = 'info', config = {}) {
+  const { duration = 3000, action = null, onAction = null } = config;
+
+  let container = document.getElementById('toast-container');
+  if (!container) {
+    container = document.createElement('div');
+    container.id = 'toast-container';
+    document.body.appendChild(container);
+  }
+
   const toast = document.createElement('div');
   toast.className = `toast toast-${type}`;
-  toast.textContent = message;
-  document.body.appendChild(toast);
 
-  // Animate in
-  setTimeout(() => toast.classList.add('show'), 10);
+  let html = `<div class="toast-message">${message}</div>`;
+  if (action && onAction) {
+    html += `<div class="toast-actions"><button class="toast-action-btn">${action}</button></div>`;
+  }
 
-  // Animate out and remove
-  setTimeout(() => {
-    toast.classList.remove('show');
-    setTimeout(() => toast.remove(), 300);
-  }, duration);
+  toast.innerHTML = html;
+  if (action && onAction) {
+    toast.querySelector('.toast-action-btn').addEventListener('click', () => {
+      onAction();
+      toast.remove();
+    });
+  }
+
+  container.appendChild(toast);
+  requestAnimationFrame(() => toast.classList.add('show'));
+
+  if (duration > 0) {
+    setTimeout(() => {
+      toast.classList.remove('show');
+      setTimeout(() => toast.remove(), 300);
+    }, duration);
+  }
+
+  return toast;
 }
 
 // ============================================================================

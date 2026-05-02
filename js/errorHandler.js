@@ -143,7 +143,7 @@ async function createSnapshot(entityType, entityId = null) {
     };
 
     if (entityId) {
-      const storeName = entityType + 's';
+      const storeName = ENTITY_TO_STORE[entityType] || entityType;
       snapshot.data = await DB.get(storeName, entityId);
     }
 
@@ -174,13 +174,13 @@ async function restoreSnapshot(snapshotId) {
 
   if (!snapshot) {
     console.error('Snapshot not found:', snapshotId);
-    _toast('Cannot undo: snapshot not found', 'error');
+    showToast('Cannot undo: snapshot not found', 'error');
     return false;
   }
 
   try {
     if (!DB.db) await DB.init();
-    const storeName = snapshot.entityType + 's';
+    const storeName = ENTITY_TO_STORE[snapshot.entityType] || snapshot.entityType;
 
     if (snapshot.data) {
       // Restore previous state
@@ -195,12 +195,12 @@ async function restoreSnapshot(snapshotId) {
     await invalidateCache(snapshot.entityType);
     errorState.snapshots.delete(snapshotId);
 
-    _toast('Undone successfully', 'success');
+    showToast('Undone successfully', 'success');
     return true;
 
   } catch (error) {
     console.error('Failed to restore snapshot:', error);
-    _toast('Undo failed: ' + error.message, 'error');
+    showToast('Undo failed: ' + error.message, 'error');
     return false;
   }
 }
@@ -254,61 +254,11 @@ function isNetworkRelated(error) {
 // ============================================================================
 
 /**
- * Show a toast notification with optional action buttons.
- * Replaces the simple showToast from creationModal for cases needing actions.
+ * Canonical toast with optional action buttons.
+ * Delegates to showToast in utils.js so there is exactly one DOM implementation.
  */
 function showToastWithActions(message, type = 'info', config = {}) {
-  const {
-    duration = 3000,
-    action = null,
-    onAction = null
-  } = config;
-
-  let container = document.getElementById('cm-toast-container');
-  if (!container) {
-    container = document.createElement('div');
-    container.id = 'cm-toast-container';
-    document.body.appendChild(container);
-  }
-
-  const toastId = `toast-${Date.now()}`;
-  const toast = document.createElement('div');
-  toast.className = `cm-toast cm-toast-${type}`;
-  toast.id = toastId;
-
-  let html = `<div class="toast-message">${message}</div>`;
-
-  if (action && onAction) {
-    html += `<div class="toast-actions">
-      <button class="toast-action-btn">${action}</button>
-    </div>`;
-  }
-
-  toast.innerHTML = html;
-
-  if (action && onAction) {
-    toast.querySelector('.toast-action-btn').addEventListener('click', () => {
-      onAction();
-      toast.remove();
-    });
-  }
-
-  container.appendChild(toast);
-  setTimeout(() => toast.classList.add('show'), 10);
-
-  if (duration > 0) {
-    setTimeout(() => {
-      toast.classList.remove('show');
-      setTimeout(() => toast.remove(), 300);
-    }, duration);
-  }
-
-  return toastId;
-}
-
-// Internal helper so errorHandler can show toasts without importing creationModal
-function _toast(message, type) {
-  showToastWithActions(message, type);
+  return showToast(message, type, config);
 }
 
 // ============================================================================

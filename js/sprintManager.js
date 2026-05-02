@@ -113,13 +113,13 @@ async function _incrementSprintCounter() {
 // ── BroadcastChannel helpers ──────────────────────────────────────────────────
 
 function _broadcastSprintChange(action, sprint) {
-  const ch = new BroadcastChannel('hierarchy_cache');
+  const ch = new BroadcastChannel(CHANNELS.HIERARCHY_CACHE);
   ch.postMessage({ type: 'sprint', action, sprint });
   ch.close();
 }
 
 function _broadcastSegmentChange(action, segment) {
-  const ch = new BroadcastChannel('hierarchy_cache');
+  const ch = new BroadcastChannel(CHANNELS.HIERARCHY_CACHE);
   ch.postMessage({ type: 'travelSegment', action, segment });
   ch.close();
 }
