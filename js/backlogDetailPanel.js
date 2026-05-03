@@ -8,6 +8,7 @@ import { esc } from './utils.js';
 import { daysBetween } from './locationCapacity.js';
 import { invalidateCache } from './hierarchyCache.js';
 import { deriveSprintCapacity, detectGaps, deriveSprintMeta } from './sprintCapacity.js';
+import { SPRINT_STATUS } from './constants.js';
 
 const container = () => document.getElementById('backlog-detail-panel');
 const root      = () => document.getElementById('backlog-root');
@@ -166,7 +167,7 @@ function _renderStatusSelect(status, storyId) {
 
 function _renderSprintPicker(story, sprints) {
   const options = sprints
-    .filter(s => s.status !== 'done')
+    .filter(s => s.status !== SPRINT_STATUS.COMPLETED)
     .sort((a, b) => a.startDate.localeCompare(b.startDate))
     .map(s => `<option value="${esc(s.id)}" ${story.sprintId === s.id ? 'selected' : ''}>${esc(s.id)} · ${s.startDate}</option>`);
   return `<select class="bdp-field-select"
@@ -779,7 +780,7 @@ async function _renderSegmentBuilder(sprint, segments) {
 
       <div class="p-tl-section">
         <div class="p-tl-label">Timeline</div>
-        <div class="p-tl-row${sprint.status === 'done' ? ' p-tl-row--done' : ''}">
+        <div class="p-tl-row${sprint.status === SPRINT_STATUS.COMPLETED ? ' p-tl-row--completed' : ''}">
           ${_renderTimelineBar(sprint, segments, endDate)}
         </div>
       </div>
@@ -829,21 +830,21 @@ async function _renderSegmentBuilder(sprint, segments) {
       </div>
 
       <div class="bdp-sprint-actions">
-        ${sprint.status === 'planning'
+        ${sprint.status === SPRINT_STATUS.PLANNING
           ? `<button class="p-btn-primary"
                onclick="window.backlogDetailPanel._activateSprint('${esc(sprint.id)}')">
                Mark active
              </button>`
           : ''
         }
-        ${sprint.status === 'active'
+        ${sprint.status === SPRINT_STATUS.ACTIVE
           ? `<button class="p-btn-secondary"
                onclick="window.backlogDetailPanel._completeSprint('${esc(sprint.id)}')">
                Complete sprint
              </button>`
           : ''
         }
-        ${sprint.status === 'done'
+        ${sprint.status === SPRINT_STATUS.COMPLETED
           ? `<button class="p-btn-secondary"
                onclick="window.backlogDetailPanel._reopenSprint('${esc(sprint.id)}')">
                Reopen sprint
@@ -1448,22 +1449,22 @@ function _cancelSegmentForm() {
 }
 
 async function _activateSprint(sprintId) {
-  await window.sprintManager.updateSprint(sprintId, { status: 'active' });
-  window.app?.updateSprintInMemory(sprintId, { status: 'active' });
+  await window.sprintManager.updateSprint(sprintId, { status: SPRINT_STATUS.ACTIVE });
+  window.app?.updateSprintInMemory(sprintId, { status: SPRINT_STATUS.ACTIVE });
   await openSegmentBuilder(sprintId);
 }
 
 async function _completeSprint(sprintId) {
   await window.sprintManager.completeSprint(sprintId);
   window.app?.updateSprintInMemory(sprintId, {
-    status: 'done',
+    status: SPRINT_STATUS.COMPLETED,
     completedAt: new Date().toISOString()
   });
   close();
 }
 
 async function _reopenSprint(sprintId) {
-  await window.sprintManager.updateSprint(sprintId, { status: 'active' });
+  await window.sprintManager.updateSprint(sprintId, { status: SPRINT_STATUS.ACTIVE });
   if (window.app) {
     window.app.data.sprints = await DB.getAll(DB.STORES.SPRINTS);
   }

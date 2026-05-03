@@ -233,29 +233,8 @@ export function validateLocationPeriod(period, existingPeriods = []) {
   return errors;
 }
 
-// DECISION: Single authoritative definition of validateSprint (R08, 2026-04-25).
-// A behaviourally identical duplicate previously lived in businessRules.js.
-// In the IIFE bundle (build.js), locationCapacity.js (position 8) loaded after
-// businessRules.js (position 5), so this version was the one actually running
-// in production. The duplicate has been removed; sprintManager.js now imports
-// validateSprint from this module. If sprint validation rules change, change
-// them here only. A duplicate-name guard in build.js will fail the build if
-// any future module re-introduces a top-level validateSprint declaration.
-// Date: 2026-04-25 | Author: JA
-export function validateSprint(sprint) {
-  // Monday constraint REMOVED (S2). Any start date is valid.
-  const errors = [];
-  if (!sprint.startDate) {
-    errors.push({ field: 'startDate', message: 'Start date is required' });
-    return errors;
-  }
-  if (![1, 2].includes(sprint.durationWeeks)) {
-    errors.push({ field: 'durationWeeks', message: 'Duration must be 1 or 2 weeks' });
-  }
-  if (!['planning', 'active', 'done'].includes(sprint.status)) {
-    errors.push({ field: 'status', message: 'Invalid sprint status' });
-  }
-  return errors;
-}
+// DECISION: validateSprint consolidated to businessRules.js (2026-05-03).
+// The single authoritative definition now lives alongside all other entity validation.
+// All callers import it from businessRules.js.
 
 window._locationCapacityUtils = { addDays: isoAddDays };
