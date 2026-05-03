@@ -7,6 +7,7 @@ import DB from './db.js';
 import { esc } from './utils.js';
 import { daysBetween } from './locationCapacity.js';
 import { deriveSprintMeta } from './sprintCapacity.js';
+import { STORY_STATUS, EPIC_STATUS, SPRINT_STATUS } from './constants.js';
 
 // ── State ─────────────────────────────────────────────────────────────────────
 
@@ -104,7 +105,7 @@ async function _loadSprintCapacityHeaders() {
 
     // Allocation dots (Phase 1)
     const sprintStories = (window.app?.data?.stories || [])
-      .filter(s => s.sprintId === sprintId && s.status !== 'abandoned');
+      .filter(s => s.sprintId === sprintId && s.status !== STORY_STATUS.ABANDONED);
 
     if (segments.length === 0) {
       // Fallback: check location periods overlapping this sprint's date range
@@ -446,7 +447,7 @@ function _renderSprintHeader(sprint, allStoriesInSprint, isExpanded) {
   // Count chips (unfiltered)
   const todoCount = allStoriesInSprint.filter(s => s.status === 'backlog').length;
   const activeCount = allStoriesInSprint.filter(s => s.status === 'active').length;
-  const doneCount = allStoriesInSprint.filter(s => s.status === 'completed').length;
+  const doneCount = allStoriesInSprint.filter(s => s.status === STORY_STATUS.COMPLETED).length;
 
   const todoChip = todoCount > 0
     ? `<span class="bl-sprint-chip bl-sprint-chip--todo">${todoCount} todo</span>` : '';
@@ -758,9 +759,9 @@ function _onSprintTagClick(sprintId) {
 async function _renderBySprintMode(allSprints, allStories, filteredStories, allEpics, allFocuses, allSubFocuses) {
   const allData = { allEpics, allFocuses, allSubFocuses };
 
-  const activeSprints  = allSprints.filter(s => s.status === 'active').sort((a,b) => a.startDate.localeCompare(b.startDate));
-  const planningSprints = allSprints.filter(s => s.status === 'planning').sort((a,b) => a.startDate.localeCompare(b.startDate));
-  const doneSprints    = allSprints.filter(s => s.status === 'done').sort((a,b) => b.startDate.localeCompare(a.startDate));
+  const activeSprints    = allSprints.filter(s => s.status === SPRINT_STATUS.ACTIVE).sort((a,b) => a.startDate.localeCompare(b.startDate));
+  const planningSprints = allSprints.filter(s => s.status === SPRINT_STATUS.PLANNING).sort((a,b) => a.startDate.localeCompare(b.startDate));
+  const doneSprints     = allSprints.filter(s => s.status === SPRINT_STATUS.COMPLETED).sort((a,b) => b.startDate.localeCompare(a.startDate));
 
   const parts = [];
 
@@ -779,7 +780,7 @@ async function _renderBySprintMode(allSprints, allStories, filteredStories, allE
       ? displayStories.map(s => _renderStoryRow(s, 'sprint', allData)).join('')
       : '<div class="bl-story-empty">No stories — drag here or use +</div>';
 
-    const doneClass = sprint.status === 'done' ? ' bl-section-sprint--done' : '';
+    const doneClass = sprint.status === SPRINT_STATUS.COMPLETED ? ' bl-section-sprint--completed' : '';
     return `<div class="bl-section-sprint${doneClass}" data-section-id="${esc(sprint.id)}" data-sprint-id="${esc(sprint.id)}">
       ${_renderSprintHeader(sprint, allInSprint, isExpanded)}
       <div class="bl-section-body${isExpanded ? '' : ' bl-hidden'}">
@@ -921,7 +922,7 @@ function _renderSprintSidebarCell(sprint, allStories) {
 
   const inSprint = allStories.filter(s => s.sprintId === sprint.id);
   const active   = inSprint.filter(s => s.status === 'active').length;
-  const done     = inSprint.filter(s => s.status === 'completed').length;
+  const done     = inSprint.filter(s => s.status === STORY_STATUS.COMPLETED).length;
   const blocked  = inSprint.filter(s => s.status === 'blocked').length;
 
   const chips = [
@@ -930,7 +931,7 @@ function _renderSprintSidebarCell(sprint, allStories) {
     blocked > 0 ? `<span class='sm2-sprint-chip sm2-chip--blocked'>${blocked} blocked</span>` : '',
   ].join('');
 
-  const doneCls = sprint.status === 'done' ? ' sm2-sprint-cell--done' : '';
+  const doneCls = sprint.status === SPRINT_STATUS.COMPLETED ? ' sm2-sprint-cell--completed' : '';
 
   return `
     <div class='sm2-sprint-cell${doneCls}'
@@ -982,7 +983,7 @@ function _renderEpicCardCell(epic, allStories, allFocuses) {
   const accentColor = focus?.color || '#6B7784';
 
   const epicStories  = allStories.filter(s => s.epicId === epic.id);
-  const completedCnt = epicStories.filter(s => s.status === 'completed').length;
+  const completedCnt = epicStories.filter(s => s.status === STORY_STATUS.COMPLETED).length;
   const pct = epicStories.length > 0
     ? Math.round((completedCnt / epicStories.length) * 100) : 0;
 
@@ -1228,7 +1229,7 @@ async function _loadStoryMapCapacityBars(orderedSprints, allStories) {
     const cap = deriveSprintCapacity(segments);
 
     const allocated = allStories
-      .filter(s => s.sprintId === sprint.id && s.status !== 'abandoned')
+      .filter(s => s.sprintId === sprint.id && s.status !== STORY_STATUS.ABANDONED)
       .reduce((sum, s) => sum + (s.weight || 0), 0);
 
     const pct = cap.total > 0
@@ -1265,7 +1266,7 @@ async function _renderByStoryMapMode(
        .sort((a,b) => a.startDate.localeCompare(b.startDate)),
     ...allSprints.filter(s => s.status === 'planning')
        .sort((a,b) => a.startDate.localeCompare(b.startDate)),
-    ...allSprints.filter(s => s.status === 'done')
+    ...allSprints.filter(s => s.status === SPRINT_STATUS.COMPLETED)
        .sort((a,b) => b.startDate.localeCompare(a.startDate)),
   ];
 

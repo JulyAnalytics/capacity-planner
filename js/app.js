@@ -5,7 +5,7 @@ import { openBulkEditModal } from './bulkEdit.js';
 import { validateStory } from './businessRules.js';
 import { validateExternalInput } from './barricade.js';
 import { snapshotAllStores, restoreFromSnapshot } from './importUtils.js';
-import { DAY_CAPACITY, STORY_STATUS, EPIC_STATUS, CHANNEL_CAPACITY_PLANNER } from './constants.js';
+import { DAY_CAPACITY, STORY_STATUS, EPIC_STATUS, FOCUS_STATUS, CHANNEL_CAPACITY_PLANNER } from './constants.js';
 import { deriveCapacityForDateRange } from './locationCapacity.js';
 
 // ── localStorage/sessionStorage fallback defaults ────────────────────────────
@@ -180,7 +180,7 @@ class ModalManager {
       <button class="modal-close" onclick="app.modal.close()" aria-label="Close">&times;</button>
     `;
     document.getElementById('itemModalBody').innerHTML = body;
-    const archiveBtn = (type === 'focus' && item.status === 'active')
+    const archiveBtn = (type === 'focus' && item.status === FOCUS_STATUS.ACTIVE)
       ? `<button class="btn-secondary" onclick="app.archiveFocus('${item.id}'); app.modal.close()">Archive</button>`
       : '';
     document.getElementById('itemModalFooter').innerHTML = `
@@ -268,7 +268,7 @@ class ModalManager {
           <span class="modal-color-swatch" style="background:${focus.color || '#6b7784'}"></span>
         </div>
         ${focus.description ? `<div class="modal-field-ro"><span class="mfr-label">Description</span><span>${escapeHtml(focus.description)}</span></div>` : ''}
-        <div class="modal-field-ro"><span class="mfr-label">Status</span><span class="tag ${focus.status === 'active' ? 'tag-active' : 'tag-abandoned'}">${focus.status}</span></div>
+        <div class="modal-field-ro"><span class="mfr-label">Status</span><span class="tag ${focus.status === FOCUS_STATUS.ACTIVE ? 'tag-active' : 'tag-abandoned'}">${focus.status}</span></div>
         <div class="modal-field-ro"><span class="mfr-label">Sub-Focuses</span><span>${sfCount}</span></div>
         <div class="modal-field-ro"><span class="mfr-label">Epics</span><span>${epicCount}</span></div>
         <div class="modal-field-ro"><span class="mfr-label">Stories</span><span>${storyCount}</span></div>
@@ -299,7 +299,7 @@ class ModalManager {
   }
 
   _editSubFocus(sf) {
-    const activeFocuses = this.app.data.focuses.filter(f => f.status === 'active');
+    const activeFocuses = this.app.data.focuses.filter(f => f.status === FOCUS_STATUS.ACTIVE);
     return {
       header: `<h3>Edit Sub-Focus<span class="modal-type-badge edit">Editing</span></h3>`,
       body: SubFocusForm.renderFields('edit', sf, activeFocuses),
@@ -663,6 +663,7 @@ class CapacityManager {
       await this.migrateSeedFocuses();
       await this.migrateEpicsToFocusId();
       await this.migrateSubFocusesToFocusId();
+      await this.migrateSprintStatusToCompleted();
       await this.checkAutoClose();
       this.populateFocusSelects();
       this.modal = new ModalManager(this);
@@ -764,7 +765,7 @@ class CapacityManager {
         color:       seed.color,
         icon:        seed.icon,
         description: '',
-        status:      'active',
+        status:      FOCUS_STATUS.ACTIVE,
         createdAt:   new Date().toISOString(),
         archivedAt:  null,
       };
@@ -847,6 +848,32 @@ class CapacityManager {
     console.log(`migrateSubFocusesToFocusId: ${migrated} records updated`);
   }
 
+  // Migrate sprint status 'done' → 'completed' (2026-05-03)
+  // The check uses 'done' intentionally — it converts OLD data to the NEW format.
+  async migrateSprintStatusToCompleted() {
+    const guard = await DB.get(DB.STORES.METADATA, 'migration:sprint-status-completed');
+    if (guard) return;
+    const sprints = this.data.sprints || [];
+    let migrated = 0;
+    for (const sprint of sprints) {
+      if (sprint.status === 'done') {
+        sprint.status = 'completed';
+        sprint.updatedAt = new Date().toISOString();
+        await DB.put(DB.STORES.SPRINTS, sprint);
+        migrated++;
+      }
+    }
+    if (migrated > 0) {
+      this.data.sprints = await DB.getAll(DB.STORES.SPRINTS);
+      console.log(`migrateSprintStatusToCompleted: ${migrated} sprint(s) updated`);
+    }
+    await DB.put(DB.STORES.METADATA, {
+      id: 'migration:sprint-status-completed',
+      value: true,
+      timestamp: new Date().toISOString(),
+    });
+  }
+
   // ── F-0 Focus CRUD ────────────────────────────────────────────────────────
 
   async saveFocus(data) {
@@ -863,7 +890,7 @@ class CapacityManager {
 
     const dependentEpics = this.data.epics.filter(e => e.focusId === id);
     const activeDependents = dependentEpics.filter(e =>
-      e.status === 'active' || e.status === 'planning'
+      e.status === EPIC_STATUS.ACTIVE || e.status === EPIC_STATUS.PLANNING
     );
 
     if (activeDependents.length > 0) {
@@ -873,7 +900,7 @@ class CapacityManager {
       )) return;
     }
 
-    const updated = { ...focus, status: 'archived', archivedAt: new Date().toISOString() };
+    const updated = { ...focus, status: FOCUS_STATUS.ARCHIVED, archivedAt: new Date().toISOString() };
     await this.saveFocus(updated);
     this.showNotification(`"${focus.name}" archived`, 'success');
   }
@@ -894,7 +921,7 @@ class CapacityManager {
       color:       color || '#6b7784',
       icon:        icon || '',
       description: description || '',
-      status:      'active',
+      status:      FOCUS_STATUS.ACTIVE,
       createdAt:   new Date().toISOString(),
       archivedAt:  null,
     };
@@ -945,7 +972,7 @@ class CapacityManager {
 
   populateFocusSelects() {
     const active = this.data.focuses
-      .filter(f => f.status === 'active')
+      .filter(f => f.status === FOCUS_STATUS.ACTIVE)
       .sort((a, b) => a.name.localeCompare(b.name));
 
     const selectIds = ['primaryFocus', 'secondary1Focus', 'secondary2Focus', 'floorFocus'];
@@ -961,7 +988,7 @@ class CapacityManager {
       ).join('');
 
       const currentFocus = this.data.focuses.find(f => f.name === currentValue);
-      const archivedOption = (currentValue && currentFocus?.status === 'archived')
+      const archivedOption = (currentValue && currentFocus?.status === FOCUS_STATUS.ARCHIVED)
         ? `<optgroup label="Archived">
              <option value="${this.escapeHtml(currentValue)}" disabled>
                ${this.escapeHtml(currentValue)} (archived)
@@ -979,7 +1006,7 @@ class CapacityManager {
     if (!select) return;
 
     const active = this.data.focuses
-      .filter(f => f.status === 'active')
+      .filter(f => f.status === FOCUS_STATUS.ACTIVE)
       .sort((a, b) => a.name.localeCompare(b.name));
 
     select.innerHTML = `<option value="">Select</option>` +
@@ -1973,7 +2000,7 @@ class CapacityManager {
     if (!container) return;
 
     const activeEpics = this.data.epics.filter(e =>
-      e.status === 'active' || e.status === 'planning'
+      e.status === EPIC_STATUS.ACTIVE || e.status === EPIC_STATUS.PLANNING
     );
 
     if (activeEpics.length === 0) {
@@ -2281,7 +2308,7 @@ class CapacityManager {
       vision,
       focusId,
       subFocusId: subFocusId || '',
-      status: 'active',
+      status: EPIC_STATUS.ACTIVE,
       createdAt: new Date().toISOString()
     };
 
@@ -2309,7 +2336,7 @@ class CapacityManager {
       });
     });
 
-    let filtered = this.data.epics.filter(e => e.status !== 'archived');
+    let filtered = this.data.epics.filter(e => e.status !== EPIC_STATUS.ARCHIVED);
 
     if (statusFilter !== 'all') {
       filtered = filtered.filter(e => e.status === statusFilter);
@@ -2317,7 +2344,7 @@ class CapacityManager {
     if (schedulingFilter === 'scheduled') {
       filtered = filtered.filter(e => schedulingMap.has(e.id));
     } else if (schedulingFilter === 'unscheduled') {
-      filtered = filtered.filter(e => !schedulingMap.has(e.id) && e.status !== 'completed');
+      filtered = filtered.filter(e => !schedulingMap.has(e.id) && e.status !== EPIC_STATUS.COMPLETED);
     }
 
     if (filtered.length === 0) {
@@ -2327,9 +2354,9 @@ class CapacityManager {
 
     let html = '';
     filtered.forEach(epic => {
-      const statusTagClass = epic.status === 'completed' ? 'tag-completed' :
-                              epic.status === 'active' ? 'tag-active' :
-                              epic.status === 'archived' ? 'tag-abandoned' : 'tag-backlog';
+      const statusTagClass = epic.status === EPIC_STATUS.COMPLETED ? 'tag-completed' :
+                              epic.status === EPIC_STATUS.ACTIVE ? 'tag-active' :
+                              epic.status === EPIC_STATUS.ARCHIVED ? 'tag-abandoned' : 'tag-backlog';
 
       // Sub-focus lookup
       const subFocus = epic.subFocusId
@@ -2345,7 +2372,7 @@ class CapacityManager {
       if (scheduling && scheduling.length > 0) {
         const latest = scheduling[scheduling.length - 1];
         schedulingBadge = `<span class="epic-scheduling-badge scheduled" title="Scheduled in ${latest.year}-${latest.month}">${latest.year}-${latest.month}</span>`;
-      } else if (epic.status !== 'completed' && epic.status !== 'archived') {
+      } else if (epic.status !== EPIC_STATUS.COMPLETED && epic.status !== EPIC_STATUS.ARCHIVED) {
         schedulingBadge = '<span class="epic-scheduling-badge unscheduled">Unscheduled</span>';
       }
 
@@ -2593,7 +2620,7 @@ class CapacityManager {
 
   renderFocusGroup(focus, epics) {
     const activeEpics = epics.filter(e =>
-      e.status === 'active' || e.status === 'planning'
+      e.status === EPIC_STATUS.ACTIVE || e.status === EPIC_STATUS.PLANNING
     );
 
     if (activeEpics.length === 0) return '';
@@ -3007,7 +3034,7 @@ class CapacityManager {
     if (!epic) return;
 
     // Don't auto-complete if epic is archived
-    if (epic.status === 'archived') return;
+    if (epic.status === EPIC_STATUS.ARCHIVED) return;
 
     const epicStories = this.data.stories.filter(s => s.epicId === epicId);
     if (epicStories.length === 0) return;
@@ -4284,8 +4311,8 @@ class CapacityManager {
     const currentValue = select.value;
 
     const epics = this.data.epics.filter(epic => {
-      if (epic.status === 'archived') return false;
-      if (!showCompleted && epic.status === 'completed') return false;
+      if (epic.status === EPIC_STATUS.ARCHIVED) return false;
+      if (!showCompleted && epic.status === EPIC_STATUS.COMPLETED) return false;
       return true;
     });
 
@@ -4305,8 +4332,8 @@ class CapacityManager {
         html += `<optgroup label="${this.escapeHtml(epicFocusName)}">`;
         currentFocus = epicFocusName;
       }
-      const statusBadge = epic.status === 'completed' ? ' (completed)' :
-                           epic.status === 'planning' ? ' (planning)' : '';
+      const statusBadge = epic.status === EPIC_STATUS.COMPLETED ? ' (completed)' :
+                           epic.status === EPIC_STATUS.PLANNING ? ' (planning)' : '';
       html += `<option value="${epic.id}">${this.escapeHtml(epic.name)}${statusBadge}</option>`;
     });
     if (currentFocus !== null) html += '</optgroup>';
@@ -4325,11 +4352,11 @@ class CapacityManager {
       this.showNotification('Epic not found', 'error');
       return false;
     }
-    if (epic.status === 'archived') {
+    if (epic.status === EPIC_STATUS.ARCHIVED) {
       this.showNotification('Cannot add stories to archived epic', 'error');
       return false;
     }
-    if (epic.status === 'completed') {
+    if (epic.status === EPIC_STATUS.COMPLETED) {
       const reactivate = confirm(
         `Epic "${epic.name}" is marked as completed.\n\n` +
         `Do you want to reactivate it?\n\n` +
@@ -4366,7 +4393,7 @@ class CapacityManager {
     if (!container) return;
 
     const archivedEpics = this.data.epics.filter(e =>
-      e.status === 'completed' || e.status === 'archived'
+      e.status === EPIC_STATUS.COMPLETED || e.status === EPIC_STATUS.ARCHIVED
     );
 
     if (countBadge) countBadge.textContent = archivedEpics.length;
@@ -4394,7 +4421,7 @@ class CapacityManager {
         ? new Date(epic.completedAt).toLocaleDateString()
         : 'Unknown';
 
-      const statusTagClass = epic.status === 'archived' ? 'tag-abandoned' : 'tag-completed';
+      const statusTagClass = epic.status === EPIC_STATUS.ARCHIVED ? 'tag-abandoned' : 'tag-completed';
 
       html += `
         <div class="archive-epic-card ${epic.status}">
@@ -4421,7 +4448,7 @@ class CapacityManager {
             ${epic.vision ? `<p class="archive-vision">${this.escapeHtml(epic.vision)}</p>` : ''}
           </div>
           <div class="archive-epic-actions">
-            ${epic.status === 'completed' ? `
+            ${epic.status === EPIC_STATUS.COMPLETED ? `
               <button class="btn-primary btn-sm" onclick="app.reactivateEpicUI('${epic.id}')">
                 ↻ Reactivate
               </button>
@@ -4459,7 +4486,7 @@ class CapacityManager {
       `Permanently archive "${epic.name}"?\n\n` +
       `This will hide it from all views. You can still restore it from the archive.`
     )) return;
-    epic.status = 'archived';
+    epic.status = EPIC_STATUS.ARCHIVED;
     epic.archivedAt = new Date().toISOString();
     await this.saveEpic(epic);
     this.renderEpicArchive();

@@ -51,7 +51,7 @@ export async function updateSprint(id, fields) {
 }
 
 export async function completeSprint(id) {
-  return updateSprint(id, { status: 'done', completedAt: new Date().toISOString() });
+  return updateSprint(id, { status: SPRINT_STATUS.COMPLETED, completedAt: new Date().toISOString() });
 }
 
 // ── TravelSegment CRUD ────────────────────────────────────────────────────────

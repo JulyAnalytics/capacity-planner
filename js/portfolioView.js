@@ -7,6 +7,7 @@
 
 import DB from './db.js';
 import { esc } from './utils.js';
+import { SPRINT_STATUS } from './constants.js';
 
 // ============================================================================
 // PORTFOLIO SELECTION STATE — Phase 7
@@ -395,10 +396,10 @@ async function renderSprintInvestmentTimeline(container) {
     DB.getAll(DB.STORES.FOCUSES),
   ]);
 
-  const doneSprints     = sprints.filter(s => s.status === 'done')
+  const doneSprints     = sprints.filter(s => s.status === SPRINT_STATUS.COMPLETED)
     .sort((a, b) => b.startDate.localeCompare(a.startDate)).slice(0, 5).reverse();
-  const activeSprints   = sprints.filter(s => s.status === 'active');
-  const planningSprints = sprints.filter(s => s.status === 'planning')
+  const activeSprints   = sprints.filter(s => s.status === SPRINT_STATUS.ACTIVE);
+  const planningSprints = sprints.filter(s => s.status === SPRINT_STATUS.PLANNING)
     .sort((a, b) => a.startDate.localeCompare(b.startDate)).slice(0, 3);
 
   const displaySprints = [...doneSprints, ...activeSprints, ...planningSprints];

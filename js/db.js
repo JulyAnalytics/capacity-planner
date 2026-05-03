@@ -2,6 +2,8 @@
 // Maintains same public API as the IndexedDB version so app.js requires zero changes.
 // Records are stored as a JSONB `data` column to avoid field-name mapping issues.
 
+import { EPIC_STATUS } from './constants.js';
+
 const _TABLE_MAP = {
   calendar:        'calendar',
   priorities:      'priorities',
@@ -447,8 +449,8 @@ const DB = {
 
     return allEpics.filter(epic =>
       !scheduledThisMonth.has(epic.id) &&
-      epic.status !== 'completed' &&
-      epic.status !== 'archived'
+      epic.status !== EPIC_STATUS.COMPLETED &&
+      epic.status !== EPIC_STATUS.ARCHIVED
     );
   },
 
@@ -461,8 +463,8 @@ const DB = {
 
     return allEpics.filter(epic =>
       !scheduledIds.has(epic.id) &&
-      epic.status !== 'completed' &&
-      epic.status !== 'archived'
+      epic.status !== EPIC_STATUS.COMPLETED &&
+      epic.status !== EPIC_STATUS.ARCHIVED
     );
   },
 
