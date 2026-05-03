@@ -5,7 +5,7 @@ import { openBulkEditModal } from './bulkEdit.js';
 import { validateStory } from './businessRules.js';
 import { validateExternalInput } from './barricade.js';
 import { snapshotAllStores, restoreFromSnapshot } from './importUtils.js';
-import { DAY_CAPACITY, STORY_STATUS, EPIC_STATUS, CHANNEL_CAPACITY_PLANNER } from './constants.js';
+import { DAY_CAPACITY, STORY_STATUS, EPIC_STATUS, FOCUS_STATUS, CHANNEL_CAPACITY_PLANNER } from './constants.js';
 import { deriveCapacityForDateRange } from './locationCapacity.js';
 
 // ── localStorage/sessionStorage fallback defaults ────────────────────────────

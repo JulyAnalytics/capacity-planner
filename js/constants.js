@@ -24,6 +24,17 @@ export const EPIC_STATUS = {
   ARCHIVED:  'archived',
 };
 
+export const FOCUS_STATUS = {
+  ACTIVE:   'active',
+  ARCHIVED: 'archived',
+};
+
+export const SPRINT_STATUS = {
+  PLANNING:   'planning',
+  ACTIVE:     'active',
+  COMPLETED:  'completed',
+};
+
 export const FIBONACCI_SIZES = [1, 2, 3, 5, 8, 13, 21];
 
 // ── Entity type → store name lookup (English pluralization is not a function) ──
