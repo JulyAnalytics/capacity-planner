@@ -4,10 +4,9 @@
  */
 
 import DB from './db.js';
-import { validateTravelSegment } from './businessRules.js';
-import { validateSprint } from './locationCapacity.js';
+import { validateTravelSegment, validateSprint } from './businessRules.js';
 import { detectGaps, deriveSprintMeta } from './sprintCapacity.js';
-import { CHANNEL_HIERARCHY_SYNC } from './constants.js';
+import { CHANNEL_HIERARCHY_SYNC, SPRINT_STATUS } from './constants.js';
 
 // ── Sprint CRUD ────────────────────────────────────────────────────────────────
 
@@ -16,7 +15,7 @@ import { CHANNEL_HIERARCHY_SYNC } from './constants.js';
  * Returns the saved sprint or throws.
  */
 export async function createSprint({ startDate, durationWeeks, goal = null, focusRanking = null }) {
-  const draft = { startDate, durationWeeks, status: 'planning', goal };
+  const draft = { startDate, durationWeeks, status: SPRINT_STATUS.PLANNING, goal };
   const errors = validateSprint(draft);
   if (errors.length) throw new _SprintValidationError(errors[0].message, errors[0].field);
 
@@ -28,7 +27,7 @@ export async function createSprint({ startDate, durationWeeks, goal = null, focu
     sprintNumber,
     startDate,
     durationWeeks,
-    status:       'planning',
+    status:       SPRINT_STATUS.PLANNING,
     goal:         goal || null,
     focusRanking: focusRanking && focusRanking.length > 0 ? focusRanking : null,
     createdAt:    new Date().toISOString(),

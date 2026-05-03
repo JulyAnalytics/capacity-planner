@@ -447,7 +447,7 @@ function _renderSprintHeader(sprint, allStoriesInSprint, isExpanded) {
   // Count chips (unfiltered)
   const todoCount = allStoriesInSprint.filter(s => s.status === 'backlog').length;
   const activeCount = allStoriesInSprint.filter(s => s.status === 'active').length;
-  const doneCount = allStoriesInSprint.filter(s => s.status === STORY_STATUS.COMPLETED).length;
+  const doneCount = allStoriesInSprint.filter(s => s.status === 'completed').length;
 
   const todoChip = todoCount > 0
     ? `<span class="bl-sprint-chip bl-sprint-chip--todo">${todoCount} todo</span>` : '';
@@ -759,9 +759,9 @@ function _onSprintTagClick(sprintId) {
 async function _renderBySprintMode(allSprints, allStories, filteredStories, allEpics, allFocuses, allSubFocuses) {
   const allData = { allEpics, allFocuses, allSubFocuses };
 
-  const activeSprints    = allSprints.filter(s => s.status === SPRINT_STATUS.ACTIVE).sort((a,b) => a.startDate.localeCompare(b.startDate));
-  const planningSprints = allSprints.filter(s => s.status === SPRINT_STATUS.PLANNING).sort((a,b) => a.startDate.localeCompare(b.startDate));
-  const doneSprints     = allSprints.filter(s => s.status === SPRINT_STATUS.COMPLETED).sort((a,b) => b.startDate.localeCompare(a.startDate));
+  const activeSprints  = allSprints.filter(s => s.status === 'active').sort((a,b) => a.startDate.localeCompare(b.startDate));
+  const planningSprints = allSprints.filter(s => s.status === 'planning').sort((a,b) => a.startDate.localeCompare(b.startDate));
+  const doneSprints    = allSprints.filter(s => s.status === SPRINT_STATUS.COMPLETED).sort((a,b) => b.startDate.localeCompare(a.startDate));
 
   const parts = [];
 
@@ -922,7 +922,7 @@ function _renderSprintSidebarCell(sprint, allStories) {
 
   const inSprint = allStories.filter(s => s.sprintId === sprint.id);
   const active   = inSprint.filter(s => s.status === 'active').length;
-  const done     = inSprint.filter(s => s.status === STORY_STATUS.COMPLETED).length;
+  const done     = inSprint.filter(s => s.status === 'completed').length;
   const blocked  = inSprint.filter(s => s.status === 'blocked').length;
 
   const chips = [
@@ -983,7 +983,7 @@ function _renderEpicCardCell(epic, allStories, allFocuses) {
   const accentColor = focus?.color || '#6B7784';
 
   const epicStories  = allStories.filter(s => s.epicId === epic.id);
-  const completedCnt = epicStories.filter(s => s.status === STORY_STATUS.COMPLETED).length;
+  const completedCnt = epicStories.filter(s => s.status === 'completed').length;
   const pct = epicStories.length > 0
     ? Math.round((completedCnt / epicStories.length) * 100) : 0;
 

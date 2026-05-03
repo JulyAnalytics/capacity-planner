@@ -10,7 +10,7 @@
 
 import DB from './db.js';
 import { getFocusById } from './hierarchyCache.js';
-import { validateStory } from './businessRules.js';
+import { validateStory, VALID_STATUSES } from './businessRules.js';
 import { formatFieldName } from './errorHandler.js';
 
 // ============================================================================
@@ -25,7 +25,7 @@ const VALIDATION_RULES = {
     required: ['name', 'subFocusId'],
     optional: ['vision', 'status', 'stories'],
     maxLengths: { name: 200, vision: 1000 },
-    validStatuses: ['planning', 'active', 'completed', 'archived']
+    validStatuses: VALID_STATUSES.epic
   },
   subFocus: {
     required: ['name'],

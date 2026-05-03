@@ -8,7 +8,7 @@ import { esc } from './utils.js';
 import { daysBetween } from './locationCapacity.js';
 import { invalidateCache } from './hierarchyCache.js';
 import { deriveSprintCapacity, detectGaps, deriveSprintMeta } from './sprintCapacity.js';
-import { SPRINT_STATUS } from './constants.js';
+import { STORY_STATUS, EPIC_STATUS, SPRINT_STATUS } from './constants.js';
 
 const container = () => document.getElementById('backlog-detail-panel');
 const root      = () => document.getElementById('backlog-root');
@@ -780,7 +780,7 @@ async function _renderSegmentBuilder(sprint, segments) {
 
       <div class="p-tl-section">
         <div class="p-tl-label">Timeline</div>
-        <div class="p-tl-row${sprint.status === SPRINT_STATUS.COMPLETED ? ' p-tl-row--completed' : ''}">
+        <div class="p-tl-row${sprint.status === SPRINT_STATUS.COMPLETED ? ' p-tl-row--done' : ''}">
           ${_renderTimelineBar(sprint, segments, endDate)}
         </div>
       </div>

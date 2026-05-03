@@ -12,10 +12,82 @@
 # Error details
 
 ```
-Error: page.goto: net::ERR_CONNECTION_REFUSED at http://localhost:8080/
-Call log:
-  - navigating to "http://localhost:8080/", waiting until "load"
+Test timeout of 30000ms exceeded.
+```
 
+```
+Error: page.waitForFunction: Test timeout of 30000ms exceeded.
+```
+
+# Page snapshot
+
+```yaml
+- generic [active] [ref=e1]:
+  - generic [ref=e3]:
+    - heading "Capacity Planner" [level=2] [ref=e4]
+    - paragraph [ref=e5]: Sign in to continue.
+    - textbox "your@email.com" [ref=e6]
+    - textbox "Password" [ref=e7]
+    - button "Sign In" [ref=e8] [cursor=pointer]
+    - paragraph [ref=e9]
+  - navigation [ref=e10]:
+    - generic [ref=e12]:
+      - heading "Quick Nav" [level=4] [ref=e13]
+      - button "◀" [ref=e14] [cursor=pointer]
+  - generic [ref=e16]:
+    - banner [ref=e17]:
+      - heading "Capacity Planner" [level=1] [ref=e18]
+      - generic [ref=e19]:
+        - generic [ref=e20]: "Last saved: Never"
+        - button "Export" [ref=e21] [cursor=pointer]
+        - button "Import" [ref=e22] [cursor=pointer]
+        - button "Migrate Local Data" [ref=e23] [cursor=pointer]
+    - navigation [ref=e24]:
+      - button "Daily Log" [ref=e25] [cursor=pointer]
+      - button "History" [ref=e26] [cursor=pointer]
+      - button "Portfolio" [ref=e27] [cursor=pointer]
+      - button "Analytics" [ref=e28] [cursor=pointer]
+      - button "Backlog" [ref=e29] [cursor=pointer]
+    - generic [ref=e30]:
+      - generic [ref=e31]:
+        - heading "Daily Log" [level=2] [ref=e32] [cursor=pointer]
+        - generic [ref=e33]:
+          - generic [ref=e34]: Date
+          - textbox "Date" [ref=e35]
+      - heading "Daily Floor" [level=2] [ref=e37] [cursor=pointer]
+      - heading "Missed Days" [level=2] [ref=e39] [cursor=pointer]
+      - generic [ref=e40]:
+        - heading "Story Work" [level=2] [ref=e41] [cursor=pointer]
+        - generic [ref=e42]:
+          - generic [ref=e43]:
+            - generic [ref=e44]: Day Type
+            - combobox "Day Type" [ref=e45] [cursor=pointer]:
+              - option "Travel (0.25 blocks)"
+              - option "Buffer (1.5 blocks)"
+              - option "Stable (3.5 blocks)" [selected]
+              - option "Project (3.5 blocks)"
+              - option "Social (0.5 blocks)"
+          - generic [ref=e46]:
+            - generic [ref=e47]: Actual Capacity (2hr blocks)
+            - spinbutton "Actual Capacity (2hr blocks)" [ref=e48]: "3.5"
+        - heading "Capacity Utilization" [level=3] [ref=e49]
+        - generic [ref=e50]:
+          - generic [ref=e51]:
+            - generic [ref=e52]: "Available:"
+            - generic [ref=e53]: "0"
+          - generic [ref=e54]:
+            - generic [ref=e55]: "Utilized:"
+            - generic [ref=e56]: "0"
+          - generic [ref=e57]:
+            - generic [ref=e58]: "Remaining:"
+            - generic [ref=e59]: "0"
+        - generic [ref=e60]:
+          - generic [ref=e61]: Notes
+          - textbox "Notes" [ref=e62]:
+            - /placeholder: What went well? Challenges?
+        - button "Save Daily Log" [ref=e63] [cursor=pointer]
+      - heading "History" [level=2] [ref=e65] [cursor=pointer]
+  - button "+ Create" [ref=e68] [cursor=pointer]
 ```
 
 # Test source
@@ -66,11 +138,11 @@ Call log:
   43  | // ---------------------------------------------------------------------------
   44  | 
   45  | async function loadApp(page: Page) {
-> 46  |   await page.goto('/');
-      |              ^ Error: page.goto: net::ERR_CONNECTION_REFUSED at http://localhost:8080/
+  46  |   await page.goto('/');
   47  |   // Supabase restores the session from localStorage (seeded by global-setup).
   48  |   // Wait for the auth overlay to be hidden and app.data to be populated.
-  49  |   await page.waitForFunction(
+> 49  |   await page.waitForFunction(
+      |              ^ Error: page.waitForFunction: Test timeout of 30000ms exceeded.
   50  |     () => {
   51  |       const overlay = document.getElementById('auth-overlay') as HTMLElement | null;
   52  |       const authGone = !overlay || overlay.style.display === 'none';
@@ -168,4 +240,7 @@ Call log:
   144 | // and drag-handle selector in the live backlog DOM, then replace the
   145 | // waitForTimeout below with:
   146 | //   await page.dragAndDrop(
+  147 | //     '[data-story-id]:first-child',
+  148 | //     '[data-sprint-id="<target>"]'
+  149 | //   );
 ```

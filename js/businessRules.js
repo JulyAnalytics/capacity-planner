@@ -33,13 +33,15 @@ export function normalizedEquals(a, b) {
 // ============================================================================
 
 export const VALID_STATUSES = {
-  story: ['backlog', 'active', 'completed', 'abandoned', 'blocked'],
-  epic: ['planning', 'active', 'completed', 'archived']
+  story:  ['backlog', 'active', 'completed', 'abandoned', 'blocked'],
+  epic:   ['planning', 'active', 'completed', 'archived'],
+  focus:  ['active', 'archived'],
+  sprint: ['planning', 'active', 'completed'],
 };
 
 export const VALID_PRIORITY_LEVELS = ['primary', 'secondary1', 'secondary2', 'floor'];
 
-export const VALID_FOCUSES = [
+export const VALID_FOCUS_NAMES = [
   'Trading',
   'Building',
   'Physical',
@@ -85,9 +87,22 @@ const EPIC_TRANSITIONS = {
   //   flagging (e.g., a "reactivated" marker). Currently allowed.
 };
 
+const FOCUS_TRANSITIONS = {
+  active:   ['archived'],
+  archived: ['active'],
+};
+
+const SPRINT_TRANSITIONS = {
+  planning:  ['active', 'completed'],
+  active:    ['planning', 'completed'],
+  completed: ['planning', 'active'],
+};
+
 const TRANSITION_MAP = {
-  story: STORY_TRANSITIONS,
-  epic:  EPIC_TRANSITIONS,
+  story:  STORY_TRANSITIONS,
+  epic:   EPIC_TRANSITIONS,
+  focus:  FOCUS_TRANSITIONS,
+  sprint: SPRINT_TRANSITIONS,
 };
 
 /**
@@ -177,7 +192,7 @@ export function validateStory(story, context = {}) {
   // When context.focusNames is provided (e.g. from import pipeline), use live
   // focus data; otherwise fall back to the seed list for boot-time validation.
   // Date: 2026-04-14 | Author: [initials]
-  const focusList = context.focusNames && context.focusNames.length > 0 ? context.focusNames : VALID_FOCUSES;
+  const focusList = context.focusNames && context.focusNames.length > 0 ? context.focusNames : VALID_FOCUS_NAMES;
   if (story.focus && !focusList.some(f => normalizedEquals(f, story.focus))) {
     errors.push({
       field: 'focus',
@@ -246,7 +261,7 @@ export function validateEpic(epic, context = {}) {
   }
 
   // Focus validation — use live data when available, fall back to seed list at boot time
-  const focusList = context.focusNames && context.focusNames.length > 0 ? context.focusNames : VALID_FOCUSES;
+  const focusList = context.focusNames && context.focusNames.length > 0 ? context.focusNames : VALID_FOCUS_NAMES;
   if (epic.focus && !focusList.some(f => normalizedEquals(f, epic.focus))) {
     errors.push({
       field: 'focus',
@@ -446,10 +461,21 @@ export function validateTravelSegment(seg, sprint) {
   return errors;
 }
 
-// DECISION: validateSprint moved to locationCapacity.js (R08, 2026-04-25).
-// The two definitions were behaviourally identical; the IIFE bundle's
-// last-definition-wins rule meant locationCapacity.js's copy was the one
-// active in production. Consolidated there; sprintManager.js imports it
-// from locationCapacity.js. Do not re-add a definition here.
+// DECISION: validateSprint moved back from locationCapacity.js (2026-05-03).
+// The single authoritative definition now lives here alongside all other
+// entity validation. sprintManager.js and locationCapacity.js import it from here.
 
-// _daysBetween replaced by daysBetween imported from locationCapacity.js (R08, 2026-04-25).
+export function validateSprint(sprint) {
+  const errors = [];
+  if (!sprint.startDate) {
+    errors.push({ field: 'startDate', message: 'Start date is required' });
+    return errors;
+  }
+  if (![1, 2].includes(sprint.durationWeeks)) {
+    errors.push({ field: 'durationWeeks', message: 'Duration must be 1 or 2 weeks' });
+  }
+  if (!VALID_STATUSES.sprint.includes(sprint.status)) {
+    errors.push({ field: 'status', message: 'Invalid sprint status' });
+  }
+  return errors;
+}

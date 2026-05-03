@@ -9,8 +9,9 @@ import {
   canTransitionStatus,
   validateStories,
   VALID_STATUSES,
-  VALID_FOCUSES
+  VALID_FOCUS_NAMES
 } from './businessRules.js';
+import { FIBONACCI_SIZES } from './constants.js';
 import {
   showToast,
   showLoading,
@@ -19,7 +20,6 @@ import {
   createElement
 } from './utils.js';
 import DB from './db.js';
-import { FIBONACCI_SIZES, STORY_STATUS, EPIC_STATUS } from './constants.js';
 
 // ============================================================================
 // STATE
@@ -140,7 +140,7 @@ function createModal() {
 
             <select id="bulk-filter-focus" onchange="applyFilters()">
               <option value="">All Focuses</option>
-              ${VALID_FOCUSES.map(f => `<option value="${f}">${f}</option>`).join('')}
+              ${VALID_FOCUS_NAMES.map(f => `<option value="${f}">${f}</option>`).join('')}
             </select>
           ` : ''}
 
@@ -551,7 +551,7 @@ async function applyBulkAction(action) {
           item.modified = true;
           break;
         case 'archive':
-          item.status = bulkEditState.mode === 'stories' ? STORY_STATUS.ABANDONED : EPIC_STATUS.ARCHIVED;
+          item.status = bulkEditState.mode === 'stories' ? 'abandoned' : VALID_STATUSES.epic[3];
           item.modified = true;
           break;
         case 'delete':

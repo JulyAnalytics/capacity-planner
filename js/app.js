@@ -782,6 +782,33 @@ class CapacityManager {
     console.log('migrateSeedFocuses: 8 focuses seeded');
   }
 
+  async migrateSprintStatusToCompleted() {
+    const guard = await DB.get(DB.STORES.METADATA, 'migration:sprint-status-completed');
+    if (guard) return;
+
+    const sprints = this.data.sprints || [];
+    let migrated = 0;
+    for (const sprint of sprints) {
+      if (sprint.status === 'done') {
+        sprint.status = 'completed';
+        sprint.updatedAt = new Date().toISOString();
+        await DB.put(DB.STORES.SPRINTS, sprint);
+        migrated++;
+      }
+    }
+
+    if (migrated > 0) {
+      this.data.sprints = await DB.getAll(DB.STORES.SPRINTS);
+      console.log(`migrateSprintStatusToCompleted: ${migrated} sprint(s) updated`);
+    }
+
+    await DB.put(DB.STORES.METADATA, {
+      id: 'migration:sprint-status-completed',
+      value: true,
+      timestamp: new Date().toISOString(),
+    });
+  }
+
   async migrateEpicsToFocusId() {
     const guard = await DB.get(DB.STORES.METADATA, 'migration:epics-focus-id');
     if (guard) return;
@@ -4377,7 +4404,7 @@ class CapacityManager {
   async reactivateEpic(epicId) {
     const epic = this.data.epics.find(e => e.id === epicId);
     if (!epic) return;
-    epic.status = 'active';
+    epic.status = EPIC_STATUS.ACTIVE;
     epic.completedAt = null;
     await this.saveEpic(epic);
     this.renderEpicsList();
