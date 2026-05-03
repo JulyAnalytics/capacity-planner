@@ -42,6 +42,7 @@ import {
 } from './accessibility.js';
 import { setButtonLoading } from './performance.js';
 import { optimizeModalForMobile } from './mobileOptimizations.js';
+import { SPRINT_STATUS } from './constants.js';
 
 // ============================================================================
 // STATE
@@ -537,7 +538,7 @@ function renderFocusForm() {
 
 function _renderSprintOptions(selectedSprintId) {
   const sprints = (window.hierarchyCache?.data?.sprints || [])
-    .filter(s => s.status !== 'done')
+    .filter(s => s.status !== SPRINT_STATUS.COMPLETED)
     .sort((a, b) => a.startDate.localeCompare(b.startDate));
   return sprints.map(s =>
     `<option value="${s.id}" ${selectedSprintId === s.id ? 'selected' : ''}>${s.id} · ${s.startDate}</option>`

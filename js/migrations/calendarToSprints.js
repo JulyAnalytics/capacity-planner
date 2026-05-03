@@ -36,7 +36,7 @@ export async function migrateCalendarToSprints() {
       sprintNumber:  null,
       startDate,
       durationWeeks: 1,
-      status:        'done',
+      status:        'completed',
       goal:          entry.capstone || null,
       createdAt:     new Date().toISOString(),
       _migratedFromCalendar: true,

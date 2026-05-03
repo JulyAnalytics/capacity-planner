@@ -9,7 +9,6 @@ import {
   canTransitionStatus,
   validateStories,
   VALID_STATUSES,
-  VALID_FIBONACCI,
   VALID_FOCUSES
 } from './businessRules.js';
 import {
@@ -20,6 +19,7 @@ import {
   createElement
 } from './utils.js';
 import DB from './db.js';
+import { FIBONACCI_SIZES, STORY_STATUS, EPIC_STATUS } from './constants.js';
 
 // ============================================================================
 // STATE
@@ -304,7 +304,7 @@ function renderActionButtons() {
     const fibSelect = document.createElement('select');
     fibSelect.id = 'bulk-action-fib';
     fibSelect.innerHTML = '<option value="">Change Fibonacci...</option>' +
-      VALID_FIBONACCI.map(f => `<option value="${f}">${f}</option>`).join('');
+      FIBONACCI_SIZES.map(f => `<option value="${f}">${f}</option>`).join('');
 
     const fibBtn = document.createElement('button');
     fibBtn.className = 'btn btn-primary';
@@ -551,7 +551,7 @@ async function applyBulkAction(action) {
           item.modified = true;
           break;
         case 'archive':
-          item.status = bulkEditState.mode === 'stories' ? 'abandoned' : 'archived';
+          item.status = bulkEditState.mode === 'stories' ? STORY_STATUS.ABANDONED : EPIC_STATUS.ARCHIVED;
           item.modified = true;
           break;
         case 'delete':
