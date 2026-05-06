@@ -1,0 +1,294 @@
+.dlo-backdrop {
+  display: none;
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.6);
+  z-index: 1000;
+  align-items: center;
+  justify-content: center;
+}
+.dlo-backdrop.dlo-visible {
+  display: flex;
+}
+.dlo-panel {
+  background: var(--bg-card, #1a1a2e);
+  border: 1px solid var(--border, rgba(255,255,255,0.1));
+  border-radius: 12px;
+  width: min(640px, 95vw);
+  max-height: 90vh;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+}
+.dlo-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--border);
+  position: sticky;
+  top: 0;
+  background: var(--bg-card, #1a1a2e);
+  z-index: 1;
+}
+.dlo-date-label {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--text-dark, #fff);
+}
+.dlo-close {
+  background: none;
+  border: none;
+  font-size: 22px;
+  color: var(--text-muted);
+  cursor: pointer;
+  min-width: 44px;
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 6px;
+}
+.dlo-close:hover { background: rgba(255,255,255,0.08); }
+.dlo-close:focus-visible {
+  outline: 2px solid var(--primary, #6366f1);
+  outline-offset: 2px;
+}
+.dlo-body {
+  padding: 20px;
+  flex: 1;
+}
+.dlo-future-notice,
+.dlo-loading {
+  color: var(--text-muted);
+  font-size: 13px;
+  text-align: center;
+  padding: 40px 0;
+}
+
+/* ── Sections ─────────────────────────────────────────────────────── */
+.dlo-section {
+  padding: 16px 0;
+  border-bottom: 1px solid var(--border, rgba(255,255,255,0.06));
+}
+.dlo-section:last-child { border-bottom: none; }
+
+.dlo-section-label {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-muted);
+  margin-bottom: 10px;
+}
+
+/* ── Day type row ─────────────────────────────────────────────────── */
+.dlo-day-type-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.dlo-derived-badge {
+  font-size: 12px;
+  padding: 4px 10px;
+  border-radius: var(--radius-sm, 4px);
+}
+
+.dlo-override-select {
+  font-size: 12px;
+  padding: 6px 10px;
+  background: var(--bg-subtle, rgba(255,255,255,0.05));
+  color: var(--bg-white, #fff);
+  border: 1px solid var(--border, rgba(255,255,255,0.1));
+  border-radius: var(--radius-sm, 4px);
+  min-height: 44px;
+  cursor: pointer;
+}
+.dlo-override-select:focus-visible {
+  outline: 2px solid var(--primary, #6366f1);
+  outline-offset: 2px;
+}
+
+/* ── Capacity row ─────────────────────────────────────────────────── */
+.dlo-capacity-row {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.dlo-cap-derived {
+  font-size: 13px;
+  color: var(--text-muted);
+}
+
+.dlo-cap-override-label {
+  font-size: 13px;
+  color: var(--text-muted);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.dlo-cap-input {
+  width: 72px;
+  font-size: 13px;
+  padding: 6px 8px;
+  background: var(--bg-subtle, rgba(255,255,255,0.05));
+  color: var(--bg-white, #fff);
+  border: 1px solid var(--border, rgba(255,255,255,0.1));
+  border-radius: var(--radius-sm, 4px);
+  min-height: 44px;
+}
+.dlo-cap-input:focus-visible {
+  outline: 2px solid var(--primary, #6366f1);
+  outline-offset: 2px;
+}
+
+/* ── Floor checklist grid ─────────────────────────────────────────── */
+.dlo-floor-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px;
+}
+
+.dlo-floor-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
+  padding: 6px 8px;
+  cursor: pointer;
+  border-radius: var(--radius-sm, 4px);
+  font-size: 13px;
+  color: var(--bg-white, #e0e0e0);
+}
+.dlo-floor-item:hover {
+  background: var(--bg-subtle, rgba(255,255,255,0.04));
+}
+
+.dlo-floor-check {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--primary, #6366f1);
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+/* ── Notes ────────────────────────────────────────────────────────── */
+.dlo-notes {
+  width: 100%;
+  resize: vertical;
+  font-size: 13px;
+  font-family: inherit;
+  padding: 10px 12px;
+  background: var(--bg-subtle, rgba(255,255,255,0.05));
+  color: var(--bg-white, #e0e0e0);
+  border: 1px solid var(--border, rgba(255,255,255,0.1));
+  border-radius: var(--radius, 6px);
+  line-height: 1.5;
+  box-sizing: border-box;
+  min-height: 44px;
+}
+.dlo-notes:focus-visible {
+  outline: 2px solid var(--primary, #6366f1);
+  outline-offset: 2px;
+}
+.dlo-notes::placeholder {
+  color: var(--text-muted);
+}
+
+/* ── Focused stories ──────────────────────────────────────────────── */
+.dlo-stories-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.dlo-story-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border-radius: var(--radius-sm, 4px);
+  background: var(--bg-subtle, rgba(255,255,255,0.03));
+  min-height: 44px;
+}
+
+.dlo-story-star {
+  flex-shrink: 0;
+}
+
+.dlo-story-name {
+  flex: 1;
+  font-size: 13px;
+  color: var(--bg-white, #e0e0e0);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dlo-story-status {
+  font-size: 11px;
+  padding: 2px 8px;
+  border-radius: 10px;
+  flex-shrink: 0;
+  text-transform: capitalize;
+}
+
+.dlo-status--active    { background: rgba(59,130,246,0.18); color: #60a5fa; }
+.dlo-status--completed { background: rgba(34,197,94,0.18);  color: #4ade80; }
+.dlo-status--blocked   { background: rgba(245,158,11,0.18); color: #fbbf24; }
+.dlo-status--backlog   { background: rgba(148,163,184,0.18); color: #94a3b8; }
+.dlo-status--abandoned { background: rgba(148,163,184,0.12); color: #64748b; }
+
+.dlo-empty-stories {
+  font-size: 13px;
+  color: var(--text-muted);
+  text-align: center;
+  padding: 20px 0;
+  line-height: 1.5;
+}
+
+/* ── Footer ───────────────────────────────────────────────────────── */
+.dlo-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 0 8px;
+  border-top: 1px solid var(--border, rgba(255,255,255,0.06));
+  margin-top: 4px;
+}
+
+.dlo-save-indicator {
+  font-size: 12px;
+  color: var(--text-muted);
+  min-width: 50px;
+}
+
+.dlo-delete-btn {
+  background: none;
+  border: 1px solid var(--border, rgba(255,255,255,0.1));
+  color: var(--text-muted);
+  font-size: 12px;
+  padding: 6px 14px;
+  border-radius: var(--radius-sm, 4px);
+  cursor: pointer;
+  min-height: 44px;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+}
+.dlo-delete-btn:hover {
+  background: rgba(255,255,255,0.05);
+}
+
+.dlo-delete-btn--confirm {
+  background: var(--danger, #ef4444);
+  border-color: var(--danger, #ef4444);
+  color: #fff;
+}
+.dlo-delete-btn--confirm:hover {
+  background: #dc2626;
+  border-color: #dc2626;
+}

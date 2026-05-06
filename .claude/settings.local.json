@@ -39,7 +39,13 @@
       "Bash(npx dotenv *)",
       "Bash(python3 -c \"import json,sys; d=json.load\\(sys.stdin\\); origins=d.get\\('origins',[]\\); print\\('origins count:', len\\(origins\\)\\); [print\\('  origin:', o['origin'], 'localStorage keys:', len\\(o.get\\('localStorage',[]\\)\\)\\) for o in origins]\")",
       "Bash(python3 -c \"import json,sys; d=json.load\\(sys.stdin\\); ls=d['origins'][0]['localStorage']; [print\\(k['name'][:60]\\) for k in ls]\")",
-      "Bash(awk -F: '{print $1}')"
+      "Bash(awk -F: '{print $1}')",
+      "Bash(python3 -m http.server 8080)",
+      "Bash(echo \"Exit: $?\")",
+      "Bash(lsof -ti:8080)",
+      "Bash(xargs kill *)",
+      "Bash([ ! -f \"/Users/jun/Library/CloudStorage/OneDrive-Personal/Tools/capacity-planner/$f\" ])",
+      "Bash(curl -sf http://localhost:8080/)"
     ]
   }
 }

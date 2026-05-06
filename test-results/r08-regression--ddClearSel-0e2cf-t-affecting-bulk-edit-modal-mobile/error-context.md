@@ -44,51 +44,12 @@ Error: page.waitForFunction: Test timeout of 30000ms exceeded.
         - button "Import" [ref=e23] [cursor=pointer]
         - button "Migrate Local Data" [ref=e24] [cursor=pointer]
     - navigation [ref=e25]:
-      - button "Daily Log" [ref=e26] [cursor=pointer]
-      - button "History" [ref=e27] [cursor=pointer]
-      - button "Portfolio" [ref=e28] [cursor=pointer]
-      - button "Analytics" [ref=e29] [cursor=pointer]
-      - button "Backlog" [ref=e30] [cursor=pointer]
-    - generic [ref=e31]:
-      - generic [ref=e32]:
-        - heading "Daily Log" [level=2] [ref=e33] [cursor=pointer]
-        - generic [ref=e34]:
-          - generic [ref=e35]: Date
-          - textbox "Date" [ref=e36]
-      - heading "Daily Floor" [level=2] [ref=e38] [cursor=pointer]
-      - heading "Missed Days" [level=2] [ref=e40] [cursor=pointer]
-      - generic [ref=e41]:
-        - heading "Story Work" [level=2] [ref=e42] [cursor=pointer]
-        - generic [ref=e43]:
-          - generic [ref=e44]:
-            - generic [ref=e45]: Day Type
-            - combobox "Day Type" [ref=e46] [cursor=pointer]:
-              - option "Travel (0.25 blocks)"
-              - option "Buffer (1.5 blocks)"
-              - option "Stable (3.5 blocks)" [selected]
-              - option "Project (3.5 blocks)"
-              - option "Social (0.5 blocks)"
-          - generic [ref=e47]:
-            - generic [ref=e48]: Actual Capacity (2hr blocks)
-            - spinbutton "Actual Capacity (2hr blocks)" [ref=e49]: "3.5"
-        - heading "Capacity Utilization" [level=3] [ref=e50]
-        - generic [ref=e51]:
-          - generic [ref=e52]:
-            - generic [ref=e53]: "Available:"
-            - generic [ref=e54]: "0"
-          - generic [ref=e55]:
-            - generic [ref=e56]: "Utilized:"
-            - generic [ref=e57]: "0"
-          - generic [ref=e58]:
-            - generic [ref=e59]: "Remaining:"
-            - generic [ref=e60]: "0"
-        - generic [ref=e61]:
-          - generic [ref=e62]: Notes
-          - textbox "Notes" [ref=e63]:
-            - /placeholder: What went well? Challenges?
-        - button "Save Daily Log" [ref=e64] [cursor=pointer]
-      - heading "History" [level=2] [ref=e66] [cursor=pointer]
-  - button "+ Create" [ref=e69] [cursor=pointer]
+      - button "Calendar" [ref=e26] [cursor=pointer]
+      - button "Focus" [ref=e27] [cursor=pointer]
+      - button "Sprints" [ref=e28] [cursor=pointer]
+      - button "Story Map" [ref=e29] [cursor=pointer]
+      - button "Analytics" [ref=e30] [cursor=pointer]
+  - button "+ Create" [ref=e33] [cursor=pointer]
 ```
 
 # Test source

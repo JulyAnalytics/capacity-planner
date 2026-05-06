@@ -6,8 +6,8 @@
 
 # Test info
 
-- Name: r08-regression.spec.ts >> _attachPanelSwipeToClose — fix: swipe-to-close called wrong panel on mobile >> swipe down on backlog detail panel closes the panel [mobile]
-- Location: tests/r08-regression.spec.ts:205:7
+- Name: r08-regression.spec.ts >> showCreationModalToast — fix: modal internal toast still renders after rename >> creation modal shows its own cm-toast notification when saving without a name
+- Location: tests/r08-regression.spec.ts:94:7
 
 # Error details
 

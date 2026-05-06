@@ -17,17 +17,12 @@ const JS_FILES = [
   'js/contextDetection.js',
   'js/locationCapacity.js',
   'js/locationManager.js',
-  'js/navigationState.js',
   'js/errorHandler.js',
   'js/dbValidator.js',
   'js/accessibility.js',
   'js/performance.js',
   'js/mobileOptimizations.js',
-  'js/portfolioUpdater.js',
-  'js/epicSelection.js',
   'js/creationModal.js',
-  'js/portfolioView.js',
-  'js/focusDrillDown.js',
   'js/sprintManager.js',
   'js/sprintCapacity.js',
   'js/sprintAllocation.js',
@@ -35,7 +30,8 @@ const JS_FILES = [
   'js/backlogDetailPanel.js',
   'js/barricade.js',
   'js/calendarView.js',
-  'js/bulkEdit.js',
+  'js/dailyLogOverlay.js',
+  'js/importUtils.js',
   'js/app.js',
 ];
 
@@ -43,8 +39,8 @@ const JS_FILES = [
 
 const CSS_FILES = [
   'css/styles.css',
-  'css/portfolio.css',
   'css/backlog.css',
+  'css/dailyLogOverlay.css',
   'css/storyMapV2.css',
 ];
 

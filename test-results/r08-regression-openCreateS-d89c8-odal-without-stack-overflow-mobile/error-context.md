@@ -6,8 +6,8 @@
 
 # Test info
 
-- Name: r08-regression.spec.ts >> _attachPanelSwipeToClose — fix: swipe-to-close called wrong panel on mobile >> swipe down on backlog detail panel closes the panel [mobile]
-- Location: tests/r08-regression.spec.ts:205:7
+- Name: r08-regression.spec.ts >> openCreateSprintModal — fix: infinite recursion on "+ New Sprint" >> clicking "+ New Sprint" in backlog toolbar opens sprint creation modal without stack overflow
+- Location: tests/r08-regression.spec.ts:41:7
 
 # Error details
 

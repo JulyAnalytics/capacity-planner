@@ -422,11 +422,22 @@ function _renderStoryRow(story, mode, allData) {
     ? `<span class="bl-fib-badge">${esc(String(story.fibonacciSize))}</span>`
     : `<span class="bl-fib-badge"></span>`;
 
+  const starBtn = (mode === 'sprint')
+    ? `<button class="bl-focus-star${story.inFocus ? ' bl-focus-star--on' : ''}"
+         title="${story.inFocus ? 'Remove from focus' : 'Add to focus'}"
+         aria-label="${story.inFocus ? 'Remove from focus' : 'Add to focus'}"
+         aria-pressed="${story.inFocus ? 'true' : 'false'}"
+         onclick="event.stopPropagation(); window.backlogView._toggleStoryFocus('${esc(story.id)}')">
+         ${story.inFocus ? '★' : '☆'}
+       </button>`
+    : '';
+
   return `<div class="bl-story-row bl-story-row--${mode}${isSelected ? ' bl-story-row--selected' : ''}"
     data-story-id="${esc(story.id)}"
     draggable="true"
     onclick="window.backlogView._onStoryRowClick('${esc(story.id)}', event)">
     <span class="bl-drag-handle" title="Drag to move">⠿</span>
+    ${starBtn}
     <span class="bl-story-id">${esc(idDisplay)}</span>
     ${focusDot}
     <span class="bl-story-title">${esc(story.name)}</span>
@@ -1599,6 +1610,42 @@ export async function _submitCreateSprint() {
   }
 }
 
+async function _toggleStoryFocus(storyId) {
+  const story = _getStoryFromData(storyId);
+  if (!story) return;
+
+  const prev = !!story.inFocus;
+  story.inFocus = !prev;
+
+  // DOM patch — update all matching star buttons (sprint view + overlay)
+  document.querySelectorAll(`[data-story-id="${storyId}"] .bl-focus-star`).forEach(btn => {
+    btn.textContent = story.inFocus ? '★' : '☆';
+    btn.title = story.inFocus ? 'Remove from focus' : 'Add to focus';
+    btn.setAttribute('aria-label', btn.title);
+    btn.setAttribute('aria-pressed', story.inFocus ? 'true' : 'false');
+    btn.classList.toggle('bl-focus-star--on', story.inFocus);
+  });
+
+  try {
+    await DB.put(DB.STORES.STORIES, story);
+    if (window.app?.data?.stories) {
+      const idx = window.app.data.stories.findIndex(s => s.id === storyId);
+      if (idx >= 0) window.app.data.stories[idx].inFocus = story.inFocus;
+    }
+  } catch (err) {
+    // Revert DOM on failure
+    story.inFocus = prev;
+    document.querySelectorAll(`[data-story-id="${storyId}"] .bl-focus-star`).forEach(btn => {
+      btn.textContent = prev ? '★' : '☆';
+      btn.setAttribute('aria-pressed', prev ? 'true' : 'false');
+      btn.classList.toggle('bl-focus-star--on', prev);
+    });
+    if (window.showToastWithActions) {
+      window.showToastWithActions("Couldn't save focus — try again", 'error', { duration: 3000 });
+    }
+  }
+}
+
 // ── Epic filter exposure for backlogDetailPanel ───────────────────────────────
 
 window._backlogEpicFilter = () => epicFilter;
@@ -1633,6 +1680,7 @@ window.backlogView = {
   },
   openCreateSprintModal,
   _submitCreateSprint,
+  _toggleStoryFocus,
   _openSegmentBuilder: (sprintId) => window.backlogDetailPanel?.openSegmentBuilder(sprintId),
   _openSprintDetail: (sprintId) => window.backlogDetailPanel?.openSprint?.(sprintId),
   _currentGroupBy: () => _blGroupBy,

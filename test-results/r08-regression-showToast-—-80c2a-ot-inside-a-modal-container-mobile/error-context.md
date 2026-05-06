@@ -6,8 +6,8 @@
 
 # Test info
 
-- Name: r08-regression.spec.ts >> _attachPanelSwipeToClose — fix: swipe-to-close called wrong panel on mobile >> swipe down on backlog detail panel closes the panel [mobile]
-- Location: tests/r08-regression.spec.ts:205:7
+- Name: r08-regression.spec.ts >> showToast — fix: bulkEdit warning toasts used cm-toast styles >> bulk edit "No items selected" toast appears in document body, not inside a modal container
+- Location: tests/r08-regression.spec.ts:77:7
 
 # Error details
 

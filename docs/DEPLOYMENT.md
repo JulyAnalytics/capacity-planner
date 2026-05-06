@@ -53,7 +53,7 @@ cp -r css/ js/ index.html /path/to/hosting/
 npx terser js/app.js js/db.js js/hierarchyCache.js js/contextDetection.js \
            js/portfolioUpdater.js js/dbValidator.js js/errorHandler.js \
            js/accessibility.js js/performance.js js/mobileOptimizations.js \
-           js/epicSelection.js js/creationModal.js \
+           js/creationModal.js \
   --module --compress --mangle -o dist/app.min.js
 
 # CSS (requires cssnano)

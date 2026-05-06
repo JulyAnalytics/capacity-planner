@@ -6,8 +6,8 @@
 
 # Test info
 
-- Name: r08-regression.spec.ts >> _attachPanelSwipeToClose — fix: swipe-to-close called wrong panel on mobile >> swipe down on backlog detail panel closes the panel [mobile]
-- Location: tests/r08-regression.spec.ts:205:7
+- Name: r08-regression.spec.ts >> _renderStatusSelect — fix: status select rendered with undefined storyId >> backlog detail panel status select has a defined data-story-id attribute after opening a story
+- Location: tests/r08-regression.spec.ts:114:7
 
 # Error details
 

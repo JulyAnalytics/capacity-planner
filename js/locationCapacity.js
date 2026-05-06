@@ -237,4 +237,19 @@ export function validateLocationPeriod(period, existingPeriods = []) {
 // The single authoritative definition now lives alongside all other entity validation.
 // All callers import it from businessRules.js.
 
+/**
+ * Return the sprint that covers a given date, or null if none do.
+ * Sprint coverage: date >= sprint.startDate && date <= isoAddDays(sprint.startDate, sprint.durationWeeks * 7 - 1)
+ * @param {string} dateStr - ISO date string (YYYY-MM-DD)
+ * @param {Object[]} sprints - Array of sprint records
+ * @returns {Object|null} The covering sprint, or null
+ */
+export function getSprintCoveringDate(dateStr, sprints) {
+  if (!sprints || !sprints.length) return null;
+  return sprints.find(s => {
+    const end = isoAddDays(s.startDate, s.durationWeeks * 7 - 1);
+    return dateStr >= s.startDate && dateStr <= end;
+  }) || null;
+}
+
 window._locationCapacityUtils = { addDays: isoAddDays };

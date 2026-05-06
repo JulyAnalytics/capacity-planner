@@ -1,13 +1,14 @@
 /**
  * calendarView.js — Location Calendar View (Phase 4)
  * Month / week grid showing location periods, sprint bars, day type tints.
- * Renders inside #bl-list (managed by backlogView.js when groupBy==='calendar').
+ * Renders inside #calendar-root in the Calendar tab.
  */
 
 import { esc } from './utils.js';
 import {
   isoAddDays, isoDateRange, daysBetween,
   buildDayMap, deriveSprintCapacityFromPeriods, detectUncoveredDays,
+  getSprintCoveringDate,
 } from './locationCapacity.js';
 import {
   createLocationPeriod, updateLocationPeriod, deleteLocationPeriod,
@@ -65,14 +66,15 @@ function _weekRange(anchor) {
 // ── Main render ────────────────────────────────────────────────────────────────
 
 /**
- * @param {{ previewPeriod?: object }} opts
- *   previewPeriod: unsaved/edited period rendered provisionally (C1 fix — cache never mutated).
+ * Render the calendar grid (month or week view).
+ * @param {Object} [opts]
+ * @param {Object} [opts.previewPeriod] - optional period to render in preview
+ * @param {HTMLElement} [opts.container] - target container (default: #calendar-root)
  */
 export function render(opts = {}) {
-  const container = document.getElementById('bl-list');
-  if (!container) return;
-
-  const { previewPeriod } = opts;
+  const { previewPeriod, container } = opts;
+  const containerEl = container || document.getElementById('calendar-root');
+  if (!containerEl) return;
   const d = _data();
 
   let periods = [...(d.locationPeriods || [])];
@@ -82,19 +84,35 @@ export function render(opts = {}) {
   }
   const overrides = d.dayTypeOverrides || [];
 
-  container.innerHTML = _renderCalendarHtml(periods, overrides, d.sprints || [], d.stories || []);
+  // Pre-compute logged dates for unlogged indicator (Task 6)
+  const allLogs = window.app?.data?.dailyLogs || [];
+  const today = new Date().toISOString().slice(0, 10);
+  const loggedDates = new Set(
+    allLogs
+      .filter(l => {
+        if (l.date >= today) return false;
+        return (
+          (l.floorCompletedCount > 0) ||
+          (l.notes && l.notes.trim().length > 0) ||
+          (l.actualCapacity != null)
+        );
+      })
+      .map(l => l.date)
+  );
+
+  containerEl.innerHTML = _renderCalendarHtml(periods, overrides, d.sprints || [], d.stories || [], loggedDates);
   _bindCalendarEvents();
 }
 
 // ── Calendar HTML ──────────────────────────────────────────────────────────────
 
-function _renderCalendarHtml(periods, overrides, sprints, stories) {
+function _renderCalendarHtml(periods, overrides, sprints, stories, loggedDates) {
   const modeBar = _renderModeBar();
 
   if (_viewMode === 'month') {
-    return modeBar + _renderMonthGrid(periods, overrides, sprints, stories);
+    return modeBar + _renderMonthGrid(periods, overrides, sprints, stories, loggedDates);
   } else {
-    return modeBar + _renderWeekGrid(periods, overrides, sprints, stories);
+    return modeBar + _renderWeekGrid(periods, overrides, sprints, stories, loggedDates);
   }
 }
 
@@ -126,7 +144,7 @@ function _renderModeBar() {
 
 // ── Month grid ─────────────────────────────────────────────────────────────────
 
-function _renderMonthGrid(periods, overrides, sprints, stories) {
+function _renderMonthGrid(periods, overrides, sprints, stories, loggedDates) {
   const { start, end, year, month } = _monthRange(_anchorDate);
 
   // Pad to full weeks (Mon–Sun)
@@ -170,7 +188,7 @@ function _renderMonthGrid(periods, overrides, sprints, stories) {
   const rows = [];
   for (let i = 0; i < allDates.length; i += 7) {
     const week = allDates.slice(i, i + 7);
-    rows.push(_renderWeekRow(week, month, dayMap, periodMap, sprintMeta, overrideByDate, storyCountByDate, today, periods, overrides, sprints, stories));
+    rows.push(_renderWeekRow(week, month, dayMap, periodMap, sprintMeta, overrideByDate, storyCountByDate, today, periods, overrides, sprints, stories, loggedDates));
   }
 
   const dayHeaders = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
@@ -182,8 +200,8 @@ function _renderMonthGrid(periods, overrides, sprints, stories) {
   </div>`;
 }
 
-function _renderWeekRow(week, currentMonth, dayMap, periodMap, sprintMeta, overrideByDate, storyCountByDate, today, periods, overrides, sprints, stories) {
-  const cells = week.map(ds => _renderDayCell(ds, currentMonth, dayMap, periodMap, overrideByDate, storyCountByDate, today)).join('');
+function _renderWeekRow(week, currentMonth, dayMap, periodMap, sprintMeta, overrideByDate, storyCountByDate, today, periods, overrides, sprints, stories, loggedDates) {
+  const cells = week.map(ds => _renderDayCell(ds, currentMonth, dayMap, periodMap, overrideByDate, storyCountByDate, today, loggedDates)).join('');
 
   // One cal-sprint-row per overlapping sprint, ordered by start date; spacer if none
   const overlappingSprints = sprintMeta
@@ -209,19 +227,23 @@ function _renderWeekRow(week, currentMonth, dayMap, periodMap, sprintMeta, overr
   </div>`;
 }
 
-function _renderDayCell(ds, currentMonth, dayMap, periodMap, overrideByDate, storyCountByDate, today) {
+function _renderDayCell(ds, currentMonth, dayMap, periodMap, overrideByDate, storyCountByDate, today, loggedDates) {
   const info     = dayMap[ds] || { dayType: null, source: 'uncovered' };
   const dayNum   = ds.split('-')[2].replace(/^0/, '');
   const isOtherMonth = ds.slice(5, 7) !== String(currentMonth).padStart(2, '0');
   const isToday  = ds === today;
   const override = overrideByDate[ds];
   const storyCount = storyCountByDate[ds] || 0;
+  const isPast = ds < today;
+  const isCovered = info.source !== 'uncovered';
+  const isUnlogged = isPast && isCovered && !loggedDates.has(ds);
 
   const classes = [
     'cv-day-cell',
     info.source === 'uncovered' ? 'cv-day-cell--uncov' : '',
     isOtherMonth ? 'cv-day-cell--other-month' : '',
     isToday      ? 'cv-day--today'            : '',
+    isUnlogged   ? 'cv-day--unlogged'          : '',
   ].filter(Boolean).join(' ');
 
   // Get period for this date
@@ -244,17 +266,12 @@ function _renderDayCell(ds, currentMonth, dayMap, periodMap, overrideByDate, sto
     : '';
 
   const isUncovered = info.source === 'uncovered';
-  const inSprint    = _dateInAnySprint(ds);
 
-  const ghostAction = (inSprint && isUncovered)
+  const ghostAction = isUncovered
     ? `<button class="cv-ghost-location"
          onclick="event.stopPropagation(); window.calendarView._openNewPeriodFromDate('${ds}')"
          title="Add location period">+ Location</button>`
-    : (!inSprint)
-      ? `<button class="cv-ghost-sprint"
-           onclick="window.calendarView._openCreateSprint('${ds}')"
-           title="Create sprint starting here">+ Sprint</button>`
-      : '';
+    : '';
 
   return `<div class="${classes}" data-date="${ds}" onclick="window.calendarView._onCellClick('${ds}')">
     <div class="cv-day-top">
@@ -266,14 +283,6 @@ function _renderDayCell(ds, currentMonth, dayMap, periodMap, overrideByDate, sto
     ${storyBadge}
     ${ghostAction}
   </div>`;
-}
-
-function _dateInAnySprint(ds) {
-  const sprints = _data().sprints || [];
-  return sprints.some(s => {
-    const end = isoAddDays(s.startDate, s.durationWeeks * 7 - 1);
-    return ds >= s.startDate && ds <= end;
-  });
 }
 
 function _renderSprintBar(sm, week, periods, overrides, allStories) {
@@ -392,7 +401,7 @@ function _renderPeriodBands(week, periodMap, periods) {
 
 // ── Week grid ──────────────────────────────────────────────────────────────────
 
-function _renderWeekGrid(periods, overrides, sprints, stories) {
+function _renderWeekGrid(periods, overrides, sprints, stories, loggedDates) {
   const { start, end } = _weekRange(_anchorDate);
   const allDates = isoDateRange(start, end);
   const dayMap   = buildDayMap(start, end, periods, overrides);
@@ -415,7 +424,7 @@ function _renderWeekGrid(periods, overrides, sprints, stories) {
   }));
 
   const currentMonth = parseInt(start.split('-')[1], 10);
-  const cells = allDates.map(ds => _renderWeekViewCell(ds, dayMap, periodMap, overrideByDate, storyCountByDate, today)).join('');
+  const cells = allDates.map(ds => _renderWeekViewCell(ds, dayMap, periodMap, overrideByDate, storyCountByDate, today, loggedDates)).join('');
 
   const dayHeaders = allDates.map(ds => {
     const [y, m, d] = ds.split('-').map(Number);
@@ -446,17 +455,21 @@ function _renderWeekGrid(periods, overrides, sprints, stories) {
   </div>`;
 }
 
-function _renderWeekViewCell(ds, dayMap, periodMap, overrideByDate, storyCountByDate, today) {
+function _renderWeekViewCell(ds, dayMap, periodMap, overrideByDate, storyCountByDate, today, loggedDates) {
   const info     = dayMap[ds] || { dayType: null, source: 'uncovered' };
   const override = overrideByDate[ds];
   const storyCount = storyCountByDate[ds] || 0;
   const isToday  = ds === today;
+  const isPast = ds < today;
+  const isCovered = info.source !== 'uncovered';
+  const isUnlogged = isPast && isCovered && !loggedDates.has(ds);
 
   const classes = [
     'cv-day-cell',
     'cv-day-cell--week',
     info.source === 'uncovered' ? 'cv-day-cell--uncov' : '',
     isToday ? 'cv-day--today' : '',
+    isUnlogged ? 'cv-day--unlogged' : '',
   ].filter(Boolean).join(' ');
 
   const [y, m, d] = ds.split('-').map(Number);
@@ -479,10 +492,18 @@ function _renderWeekViewCell(ds, dayMap, periodMap, overrideByDate, storyCountBy
     ? `<div class="cv-story-count" title="${storyCount} stor${storyCount === 1 ? 'y' : 'ies'}">${storyCount} ◆</div>`
     : '';
 
+  const isUncovered = info.source === 'uncovered';
+  const ghostAction = isUncovered
+    ? `<button class="cv-ghost-location"
+         onclick="event.stopPropagation(); window.calendarView._openNewPeriodFromDate('${ds}')"
+         title="Add location period">+ Location</button>`
+    : '';
+
   return `<div class="${classes}" data-date="${ds}" onclick="window.calendarView._onCellClick('${ds}')">
     ${locationLabel}
     ${dayTypeBadge}
     ${storyBadge}
+    ${ghostAction}
     ${overrideDot}
   </div>`;
 }
@@ -554,13 +575,17 @@ function _setViewMode(mode) {
 // ── Cell click ─────────────────────────────────────────────────────────────────
 
 function _onCellClick(ds) {
-  // If clicking a date that's in a period, open the period panel
   const d = _data();
   const period = (d.locationPeriods || []).find(p => ds >= p.startDate && ds <= p.endDate);
-  if (period) {
-    _openPeriodPanel(period.id);
-  } else {
-    _openNewPeriodPanel(ds);
+
+  if (!period) {
+    // Uncovered: ghost button in cell handles this; no-op here
+    return;
+  }
+
+  // Covered date — open day log overlay
+  if (window.dailyLogOverlay) {
+    window.dailyLogOverlay.open(ds);
   }
 }
 

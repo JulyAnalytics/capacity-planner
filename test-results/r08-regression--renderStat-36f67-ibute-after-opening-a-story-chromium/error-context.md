@@ -6,8 +6,8 @@
 
 # Test info
 
-- Name: r08-regression.spec.ts >> _attachPanelSwipeToClose — fix: swipe-to-close called wrong panel on mobile >> swipe down on backlog detail panel closes the panel [mobile]
-- Location: tests/r08-regression.spec.ts:205:7
+- Name: r08-regression.spec.ts >> _renderStatusSelect — fix: status select rendered with undefined storyId >> backlog detail panel status select has a defined data-story-id attribute after opening a story
+- Location: tests/r08-regression.spec.ts:114:7
 
 # Error details
 
@@ -34,22 +34,21 @@ Error: page.waitForFunction: Test timeout of 30000ms exceeded.
     - generic [ref=e12]:
       - heading "Quick Nav" [level=4] [ref=e13]
       - button "◀" [ref=e14] [cursor=pointer]
-  - button "▶" [ref=e16] [cursor=pointer]
-  - generic [ref=e17]:
-    - banner [ref=e18]:
-      - heading "Capacity Planner" [level=1] [ref=e19]
-      - generic [ref=e20]:
-        - generic [ref=e21]: "Last saved: Never"
-        - button "Export" [ref=e22] [cursor=pointer]
-        - button "Import" [ref=e23] [cursor=pointer]
-        - button "Migrate Local Data" [ref=e24] [cursor=pointer]
-    - navigation [ref=e25]:
-      - button "Calendar" [ref=e26] [cursor=pointer]
-      - button "Focus" [ref=e27] [cursor=pointer]
-      - button "Sprints" [ref=e28] [cursor=pointer]
-      - button "Story Map" [ref=e29] [cursor=pointer]
-      - button "Analytics" [ref=e30] [cursor=pointer]
-  - button "+ Create" [ref=e33] [cursor=pointer]
+  - generic [ref=e16]:
+    - banner [ref=e17]:
+      - heading "Capacity Planner" [level=1] [ref=e18]
+      - generic [ref=e19]:
+        - generic [ref=e20]: "Last saved: Never"
+        - button "Export" [ref=e21] [cursor=pointer]
+        - button "Import" [ref=e22] [cursor=pointer]
+        - button "Migrate Local Data" [ref=e23] [cursor=pointer]
+    - navigation [ref=e24]:
+      - button "Calendar" [ref=e25] [cursor=pointer]
+      - button "Focus" [ref=e26] [cursor=pointer]
+      - button "Sprints" [ref=e27] [cursor=pointer]
+      - button "Story Map" [ref=e28] [cursor=pointer]
+      - button "Analytics" [ref=e29] [cursor=pointer]
+  - button "+ Create" [ref=e32] [cursor=pointer]
 ```
 
 # Test source

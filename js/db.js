@@ -355,7 +355,7 @@ const DB = {
     return { ok: true, counts, total };
   },
 
-  // ── Monthly Plan helpers (used by epicSelection.js) ───────────────────────
+  // ── Monthly Plan helpers ──────────────────────────────────────────────────
 
   async getMonthlyPlan(year, month) {
     const planId = `plan-${year}-${String(month).padStart(2, '0')}`;

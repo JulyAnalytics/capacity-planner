@@ -1,7 +1,6 @@
 // Capacity Planner - Main Application Logic
 
 import DB from './db.js';
-import { openBulkEditModal } from './bulkEdit.js';
 import { validateStory } from './businessRules.js';
 import { validateExternalInput } from './barricade.js';
 import { snapshotAllStores, restoreFromSnapshot } from './importUtils.js';
@@ -23,14 +22,6 @@ const FIBONACCI_DESCRIPTIONS = {
   13: 'Very Large (1-2 days)',
   21: 'Epic (break it down!)'
 };
-
-const FLOOR_ITEMS = {
-  movement: 'Movement',
-  learning: 'Learning',
-  admin: 'Admin',
-  tradeJournaling: 'Trade Journaling'
-};
-
 
 // ── Shared sub-focus form component (OQ-4) ────────────────────────────────────
 class SubFocusForm {
@@ -526,14 +517,9 @@ class CapacityManager {
     };
     this.timelineWeeks = 8;
     this.sidebarCollapsed = false;
-    this.currentTab = 'daily';
+    this.currentTab = 'calendar';
     this.calendarView = 'default'; // 'default', 'all', 'archived'
     this.modal = null;
-    // draftEffort: effort values survive re-renders (§2.2)
-    this.draftEffort = {};
-    // Daily log prioritisation state (§6.2)
-    this._prioritisedStoryIds = new Set();
-    this._expanderOpen = false;
     // Story creation form action item draft (§5.2)
     this._createActionItemDraft = [];
   }
@@ -542,28 +528,19 @@ class CapacityManager {
   notifyDataChange(type) {
     const map = {
       focus: () => {
-        this.populateFocusSelects();
-        this.populateEpicFocusSelect();
-        if (window.portfolioView) window.portfolioView.render();
       },
       story: () => {
-        this.renderStoriesList();
-        this.renderCapacityOverview();
-        this.renderDailyStories();
-        this.renderStoryMap();
         if (window.backlogView) window.backlogView.renderSprintCapacityHeaders();
         if (window.backlogView?._currentGroupBy?.() === 'storymap') window.backlogView.render();
       },
       epic: () => {
-        this.renderEpicsList();
-        this.renderEpicArchive();
+
         this.populateEpicDropdown();
-        this.renderStoryMap();
-        this.renderDailyStories();
+
         if (window.backlogView?._currentGroupBy?.() === 'storymap') window.backlogView.render();
       },
       subFocus: () => {
-        this.renderSubFocusList();
+
         this.loadSubFocusesForEpic();
       },
       sprint: () => {
@@ -617,6 +594,21 @@ class CapacityManager {
     this.notifyDataChange('dayTypeOverride');
   }
 
+  upsertDailyLogInMemory(log) {
+    if (!Array.isArray(this.data.dailyLogs)) this.data.dailyLogs = [];
+    const i = this.data.dailyLogs.findIndex(l => l.date === log.date);
+    if (i >= 0) this.data.dailyLogs[i] = log;
+    else this.data.dailyLogs.push(log);
+    if (window.calendarView) window.calendarView.render();
+  }
+
+  removeDailyLogInMemory(date) {
+    if (Array.isArray(this.data.dailyLogs)) {
+      this.data.dailyLogs = this.data.dailyLogs.filter(l => l.date !== date);
+    }
+    if (window.calendarView) window.calendarView.render();
+  }
+
   upsertSprintInMemory(sprint) {
     if (!Array.isArray(this.data.sprints)) this.data.sprints = [];
     const i = this.data.sprints.findIndex(s => s.id === sprint.id);
@@ -639,6 +631,7 @@ class CapacityManager {
 
   async init() {
     try {
+      window.app = this;  // must precede any render call that reads window.app.data
       await DB.init();
       const migrated = await DB.migrateFromLocalStorage();
       if (migrated) {
@@ -664,8 +657,7 @@ class CapacityManager {
       await this.migrateEpicsToFocusId();
       await this.migrateSubFocusesToFocusId();
       await this.migrateSprintStatusToCompleted();
-      await this.checkAutoClose();
-      this.populateFocusSelects();
+
       this.modal = new ModalManager(this);
       this.setupEventListeners();
       this.setupNavigation();
@@ -680,11 +672,10 @@ class CapacityManager {
       this.calendarView = calendarViewResult.valid ? rawCalendarView : DEFAULT_CALENDAR_VIEW;
 
       this.renderAll();
-      this.refreshDailyView();
       this.initSidebar();
       this._initCapacityPlannerChannel();
-      // Phase 5: calendar tab is read-only (history view)
-      document.getElementById('calendar')?.classList.add('calendar-tab-readonly');
+      // Calendar is the default tab — render it on init
+      this.switchTab('calendar');
     } catch (error) {
       console.error('Init failed:', error);
       this.showNotification('Failed to initialize: ' + error.message, 'error');
@@ -997,57 +988,6 @@ class CapacityManager {
 
   // ── F-0 Dynamic dropdown population ──────────────────────────────────────
 
-  populateFocusSelects() {
-    const active = this.data.focuses
-      .filter(f => f.status === FOCUS_STATUS.ACTIVE)
-      .sort((a, b) => a.name.localeCompare(b.name));
-
-    const selectIds = ['primaryFocus', 'secondary1Focus', 'secondary2Focus', 'floorFocus'];
-
-    selectIds.forEach(id => {
-      const select = document.getElementById(id);
-      if (!select) return;
-
-      const currentValue = select.value;
-
-      const activeOptions = active.map(f =>
-        `<option value="${this.escapeHtml(f.name)}">${this.escapeHtml(f.name)}</option>`
-      ).join('');
-
-      const currentFocus = this.data.focuses.find(f => f.name === currentValue);
-      const archivedOption = (currentValue && currentFocus?.status === FOCUS_STATUS.ARCHIVED)
-        ? `<optgroup label="Archived">
-             <option value="${this.escapeHtml(currentValue)}" disabled>
-               ${this.escapeHtml(currentValue)} (archived)
-             </option>
-           </optgroup>`
-        : '';
-
-      select.innerHTML = `<option value="">Select focus...</option>${activeOptions}${archivedOption}`;
-      select.value = currentValue;
-    });
-  }
-
-  populateEpicFocusSelect() {
-    const select = document.getElementById('epicFocus');
-    if (!select) return;
-
-    const active = this.data.focuses
-      .filter(f => f.status === FOCUS_STATUS.ACTIVE)
-      .sort((a, b) => a.name.localeCompare(b.name));
-
-    select.innerHTML = `<option value="">Select</option>` +
-      active.map(f => `<option value="${f.id}">${this.escapeHtml(f.name)}</option>`).join('');
-  }
-
-  // CRUD Operations
-  async saveWeek(weekData) {
-    await DB.put(DB.STORES.CALENDAR, weekData);
-    this.data.calendar = this.data.calendar.filter(w => w.id !== weekData.id);
-    this.data.calendar.push(weekData);
-    this.updateLastSaved();
-  }
-
   async savePriority(priorityData) {
     await DB.put(DB.STORES.PRIORITIES, priorityData);
     this.data.priorities = this.data.priorities.filter(p => p.id !== priorityData.id);
@@ -1069,71 +1009,6 @@ class CapacityManager {
     this.updateLastSaved();
   }
 
-  async saveDailyLog(logData) {
-    await DB.put(DB.STORES.DAILY_LOGS, logData);
-    this.data.dailyLogs = this.data.dailyLogs.filter(l => l.id !== logData.id);
-    this.data.dailyLogs.push(logData);
-    this.updateLastSaved();
-  }
-
-  editWeek(id) {
-    const week = this.data.calendar.find(w => w.id === id);
-    if (!week) return;
-
-    if (week.archived) {
-      const restore = confirm(
-        'This week is archived. Restore it to edit?\n\n' +
-        'Click OK to restore and edit, or Cancel to edit without restoring.'
-      );
-
-      if (restore) {
-        week.archived = false;
-        week.archivedAt = null;
-        this.saveWeek(week);
-      }
-    }
-
-    // Populate the form with the week's data
-    document.getElementById('planMonth').value = week.month;
-    document.getElementById('planYear').value = week.year;
-    document.getElementById('weekNum').value = week.week;
-    document.getElementById('country').value = week.country || '';
-    document.getElementById('city').value = week.city || '';
-    document.getElementById('capstone').value = week.capstone || '';
-
-    // Day types
-    if (week.dayTypes) {
-      document.getElementById('travelDays').value = week.dayTypes.travel || 0;
-      document.getElementById('bufferDays').value = week.dayTypes.buffer || 0;
-      document.getElementById('stableDays').value = week.dayTypes.stable || 0;
-      document.getElementById('projectDays').value = week.dayTypes.project || 0;
-      document.getElementById('socialDays').value = week.dayTypes.social || 0;
-    }
-
-    // Focuses
-    if (week.focuses) {
-      document.getElementById('primaryFocus').value = week.focuses.primary || '';
-      document.getElementById('secondary1Focus').value = week.focuses.secondary1 || '';
-      document.getElementById('secondary2Focus').value = week.focuses.secondary2 || '';
-      document.getElementById('floorFocus').value = week.focuses.floor || '';
-    }
-
-    this.updateCapacityPreview();
-    this.switchTab('calendar');
-
-    // Scroll to top of form
-    document.getElementById('calendar').scrollIntoView({ behavior: 'smooth' });
-    this.showNotification('Week loaded for editing', 'info');
-  }
-
-  async deleteWeek(id) {
-    if (!confirm('Delete this week?')) return;
-    await DB.delete(DB.STORES.CALENDAR, id);
-    this.data.calendar = this.data.calendar.filter(w => w.id !== id);
-    this.renderCalendarTable();
-    this.showNotification('Week deleted', 'success');
-  }
-
   async deleteEpic(id) {
     if (!confirm('Delete this epic and all its stories?')) return;
     await DB.delete(DB.STORES.EPICS, id);
@@ -1144,9 +1019,7 @@ class CapacityManager {
       await DB.delete(DB.STORES.STORIES, story.id);
     }
     this.data.stories = this.data.stories.filter(s => s.epicId !== id);
-    this.renderEpicsList();
-    this.renderEpicArchive();
-    this.renderStoriesList();
+
     this.showNotification('Epic deleted', 'success');
   }
 
@@ -1166,7 +1039,7 @@ class CapacityManager {
     if (!confirm('Delete this sub-focus?')) return;
     await DB.delete(DB.STORES.SUB_FOCUSES, id);
     this.data.subFocuses = this.data.subFocuses.filter(sf => sf.id !== id);
-    this.renderSubFocusList();
+
     this.showNotification('Sub-focus deleted', 'success');
   }
 
@@ -1286,8 +1159,7 @@ class CapacityManager {
     if (!confirm('Delete this story?')) return;
     await DB.delete(DB.STORES.STORIES, id);
     this.data.stories = this.data.stories.filter(s => s.id !== id);
-    this.renderStoriesList();
-    this.renderCapacityOverview();
+
     this.showNotification('Story deleted', 'success');
   }
 
@@ -1299,14 +1171,6 @@ class CapacityManager {
     this.showNotification('Priority deleted', 'success');
   }
 
-  async deleteDailyLog(id) {
-    if (!confirm('Delete this daily log?')) return;
-    await DB.delete(DB.STORES.DAILY_LOGS, id);
-    this.data.dailyLogs = this.data.dailyLogs.filter(l => l.id !== id);
-    this.renderDailyLogHistory();
-    this.showNotification('Daily log deleted', 'success');
-  }
-
   // Navigation
   setupNavigation() {
     document.querySelectorAll('.nav-tab').forEach(tab => {
@@ -1315,50 +1179,58 @@ class CapacityManager {
   }
 
   switchTab(tabName) {
-    document.querySelectorAll('.nav-tab').forEach(t => t.classList.remove('active'));
-    document.querySelector(`[data-tab="${tabName}"]`).classList.add('active');
-    document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
-    document.getElementById(tabName).classList.add('active');
+    const tabs = document.querySelectorAll('.nav-tab');
+    tabs.forEach(t => t.classList.remove('active'));
+    const btn = document.querySelector(`.nav-tab[data-tab="${tabName}"]`);
+    if (btn) btn.classList.add('active');
+
+    const contents = document.querySelectorAll('.tab-content');
+    contents.forEach(c => c.classList.remove('active'));
 
     this.currentTab = tabName;
-    this.updateSidebarLinks();
 
     if (tabName === 'calendar') {
-      this.updateCapacityPreview();
-      this.populateFocusSelects();
-      if (window.epicSelection) window.epicSelection.initEpicSelection();
+      const el = document.getElementById('calendar');
+      if (el) el.classList.add('active');
+      // Render calendar into dedicated container
+      if (window.calendarView) {
+        const container = document.getElementById('calendar-root');
+        window.calendarView.render({ container });
+      }
+      return;
     }
-    if (tabName === 'portfolio') {
-      if (window.portfolioView) window.portfolioView.render();
+
+    if (tabName === 'focus') {
+      const el = document.getElementById('backlog');
+      if (el) el.classList.add('active');
+      if (window.backlogView) window.backlogView._setGroupBy('focus');
+      return;
     }
-    if (tabName === 'epics') {
-      DB.getAll(DB.STORES.MONTHLY_PLANS).then(plans => {
-        this.data.monthlyPlans = plans;
-        this.renderEpicsList();
-      });
+
+    if (tabName === 'sprints') {
+      const el = document.getElementById('backlog');
+      if (el) el.classList.add('active');
+      if (window.backlogView) window.backlogView._setGroupBy('sprint');
+      return;
     }
-    if (tabName === 'stories') {
-      this.populateEpicDropdown();
-      this.renderCapacityOverview();
-      this.renderStoriesList();
+
+    if (tabName === 'storymap') {
+      const el = document.getElementById('backlog');
+      if (el) el.classList.add('active');
+      if (window.backlogView) window.backlogView._setGroupBy('storymap');
+      return;
     }
-    if (tabName === 'daily') {
-      this.refreshDailyView();
-    }
-    if (tabName === 'backlog') {
-      if (window.backlogView) window.backlogView.render();
+
+    if (tabName === 'analytics') {
+      const el = document.getElementById('analytics');
+      if (el) el.classList.add('active');
+      if (window.app?.renderAnalytics) window.app.renderAnalytics();
+      return;
     }
   }
 
   // Event Listeners
   setupEventListeners() {
-    // Calendar - save and day type listeners handled via inline onclick/onchange in HTML
-
-    // Daily Log
-    document.getElementById('saveDailyLog').addEventListener('click', () => this.handleSaveDailyLog());
-    document.getElementById('actualCapacity').addEventListener('input', () => this.updateDailyCapacity());
-    document.getElementById('logDate').addEventListener('change', () => this.refreshDailyView());
-
     // Analytics
     document.getElementById('generateAnalytics').addEventListener('click', () => this.generateAnalytics());
 
@@ -1393,15 +1265,6 @@ class CapacityManager {
       if (e.key === 'Escape') this.modal?.close();
     });
 
-    // F-3: Effort input delegation — writes to draftEffort (§6.6)
-    document.getElementById('dailyStories')?.addEventListener('input', (e) => {
-      const input = e.target.closest('.story-effort-input');
-      if (!input) return;
-      const storyId = input.dataset.storyId;
-      this.draftEffort[storyId] = parseFloat(input.value) || 0;
-      this.updateDailyCapacity();
-    });
-
     // F-2: Story creation form action item wiring (§5.4)
     document.getElementById('addCreateActionItem')?.addEventListener('click', () => this.addCreateActionItem());
     document.getElementById('createActionItemInput')?.addEventListener('keydown', (e) => {
@@ -1414,753 +1277,21 @@ class CapacityManager {
     const month = String(today.getMonth() + 1).padStart(2, '0');
     const year = today.getFullYear();
 
-    document.getElementById('planMonth').value = month;
-    document.getElementById('planYear').value = year;
-    document.getElementById('analyticsMonth').value = month;
-    document.getElementById('logDate').valueAsDate = today;
-  }
-
-  // Capacity Calculations (CORRECT FORMULA)
-  calculateCapacity(dayTypes) {
-    const { travel = 0, buffer = 0, stable = 0, project = 0, social = 0 } = dayTypes;
-
-    const priority = stable * DAY_CAPACITY.stable.priority + project * DAY_CAPACITY.project.priority;
-    const secondary1 = buffer * DAY_CAPACITY.buffer.secondary1 +
-                        stable * DAY_CAPACITY.stable.secondary1 +
-                        project * DAY_CAPACITY.project.secondary1;
-    const secondary2 = stable * DAY_CAPACITY.stable.secondary2;
-
-    const total = travel * DAY_CAPACITY.travel.total +
-                  buffer * DAY_CAPACITY.buffer.total +
-                  stable * DAY_CAPACITY.stable.total +
-                  project * DAY_CAPACITY.project.total +
-                  social * DAY_CAPACITY.social.total;
-
-    return { total, priority, secondary1, secondary2 };
-  }
-
-  updateCapacityPreview() {
-    const dayTypes = {
-      travel: parseInt(document.getElementById('travelDays').value) || 0,
-      buffer: parseInt(document.getElementById('bufferDays').value) || 0,
-      stable: parseInt(document.getElementById('stableDays').value) || 0,
-      project: parseInt(document.getElementById('projectDays').value) || 0,
-      social: parseInt(document.getElementById('socialDays').value) || 0
-    };
-
-    const totalDays = Object.values(dayTypes).reduce((a, b) => a + b, 0);
-    const cap = this.calculateCapacity(dayTypes);
-
-    document.getElementById('totalDays').textContent = totalDays;
-    document.getElementById('totalCapacity').textContent = cap.total.toFixed(1);
-    document.getElementById('primaryCapacity').textContent = cap.priority;
-    document.getElementById('secondary1Capacity').textContent = cap.secondary1;
-    document.getElementById('secondary2Capacity').textContent = cap.secondary2;
-
-    document.getElementById('primaryCapacityLabel').textContent = `${cap.priority} blocks`;
-    document.getElementById('secondary1CapacityLabel').textContent = `${cap.secondary1} blocks`;
-    document.getElementById('secondary2CapacityLabel').textContent = `${cap.secondary2} blocks`;
-  }
-
-  // Calendar: Save Week with Focus Allocation
-  async saveWeekWithFocus() {
-    const month = document.getElementById('planMonth').value;
-    const year = parseInt(document.getElementById('planYear').value);
-    const week = parseInt(document.getElementById('weekNum').value);
-    const country = document.getElementById('country').value;
-    const city = document.getElementById('city').value;
-    const capstone = document.getElementById('capstone').value;
-
-    if (!week) {
-      this.showNotification('Please enter a week number', 'warning');
-      return;
-    }
-
-    const dayTypes = {
-      travel: parseInt(document.getElementById('travelDays').value) || 0,
-      buffer: parseInt(document.getElementById('bufferDays').value) || 0,
-      stable: parseInt(document.getElementById('stableDays').value) || 0,
-      project: parseInt(document.getElementById('projectDays').value) || 0,
-      social: parseInt(document.getElementById('socialDays').value) || 0
-    };
-
-    const capacities = this.calculateCapacity(dayTypes);
-
-    const primaryFocus = document.getElementById('primaryFocus').value;
-    const secondary1Focus = document.getElementById('secondary1Focus').value;
-    const secondary2Focus = document.getElementById('secondary2Focus').value;
-    const floorFocus = document.getElementById('floorFocus').value;
-
-    const weekId = `${year}-${month}-W${week}`;
-    const existing = this.data.calendar.find(w => w.id === weekId);
-
-    const weekData = {
-      id: weekId,
-      month,
-      year,
-      week,
-      country,
-      city,
-      dayTypes,
-      capacities,
-      focuses: {
-        primary: primaryFocus,
-        secondary1: secondary1Focus,
-        secondary2: secondary2Focus,
-        floor: floorFocus
-      },
-      capstone,
-      archived: existing?.archived || false,
-      archivedAt: existing?.archivedAt || null,
-      pinned: existing?.pinned || false,
-      pinnedAt: existing?.pinnedAt || null
-    };
-
-    await this.saveWeek(weekData);
-    this.renderCalendarTable();
-    this.showNotification('Week saved successfully', 'success');
-  }
-
-  getWeekDateRange(year, month, week) {
-    const firstDay = new Date(year, parseInt(month) - 1, 1);
-    const dayOfWeek = firstDay.getDay();
-    const mondayOffset = dayOfWeek === 0 ? 1 : 8 - dayOfWeek;
-
-    const weekStart = new Date(year, parseInt(month) - 1, mondayOffset + (week - 1) * 7);
-    const weekEnd = new Date(weekStart);
-    weekEnd.setDate(weekStart.getDate() + 6);
-
-    return {
-      startDate: weekStart.toISOString().split('T')[0],
-      endDate: weekEnd.toISOString().split('T')[0]
-    };
-  }
-
-  calculateWeekExecution(weekId) {
-    const week = this.data.calendar.find(w => w.id === weekId);
-    if (!week) return null;
-
-    const { startDate, endDate } = this.getWeekDateRange(week.year, week.month, week.week);
-
-    const weekLogs = this.data.dailyLogs.filter(log =>
-      log.date >= startDate && log.date <= endDate
-    );
-
-    if (weekLogs.length === 0) return null;
-
-    const focusTime = {};
-
-    weekLogs.forEach(log => {
-      if (!log.stories) return;
-
-      log.stories.forEach(storyEntry => {
-        const story = this.data.stories.find(s => s.id === storyEntry.id);
-        if (!story) return;
-
-        const focus = story.focus;
-        if (!focusTime[focus]) {
-          focusTime[focus] = 0;
-        }
-        focusTime[focus] += storyEntry.timeSpent || 0;
-      });
-    });
-
-    const execution = {
-      primaryActual: focusTime[week.focuses.primary] || 0,
-      secondary1Actual: focusTime[week.focuses.secondary1] || 0,
-      secondary2Actual: focusTime[week.focuses.secondary2] || 0,
-      otherFocus: {}
-    };
-
-    const plannedTotal = week.capacities.priority +
-                         week.capacities.secondary1 +
-                         week.capacities.secondary2;
-    const alignedTotal = execution.primaryActual +
-                         execution.secondary1Actual +
-                         execution.secondary2Actual;
-
-    execution.alignment = plannedTotal > 0
-      ? Math.round((alignedTotal / plannedTotal) * 100)
-      : 0;
-
-    Object.entries(focusTime).forEach(([focus, time]) => {
-      if (focus !== week.focuses.primary &&
-          focus !== week.focuses.secondary1 &&
-          focus !== week.focuses.secondary2) {
-        execution.otherFocus[focus] = time;
-      }
-    });
-
-    return execution;
-  }
-
-  // Week filtering & grouping
-  getVisibleWeeks(view = null) {
-    const currentView = view || this.calendarView;
-
-    if (currentView === 'archived') {
-      return this.data.calendar.filter(w => w.archived);
-    }
-
-    if (currentView === 'all') {
-      return this.data.calendar.filter(w => !w.archived);
-    }
-
-    // Default: Smart filtering (2 weeks past, 4 weeks future)
-    const now = new Date();
-
-    return this.data.calendar.filter(week => {
-      if (week.archived) return false;
-      if (week.pinned) return true;
-
-      const { startDate } = this.getWeekDateRange(week.year, week.month, week.week);
-      const weekDate = new Date(startDate);
-      const daysFromNow = Math.floor((weekDate - now) / (1000 * 60 * 60 * 24));
-
-      return daysFromNow >= -14 && daysFromNow <= 28;
-    });
-  }
-
-  isCurrentWeek(week) {
-    const now = new Date();
-    const currentYear = now.getFullYear();
-    const currentWeek = this.getWeekNumber(now);
-    return week.year === currentYear && parseInt(week.week) === currentWeek;
-  }
-
-  isWeekInPast(week) {
-    const { startDate } = this.getWeekDateRange(week.year, week.month, week.week);
-    return new Date(startDate) < new Date();
-  }
-
-  groupWeeksByTime(weeks) {
-    const now = new Date();
-
-    const upcoming = weeks.filter(week => {
-      const { startDate } = this.getWeekDateRange(week.year, week.month, week.week);
-      return new Date(startDate) >= now;
-    }).sort((a, b) => this.compareWeeks(a, b));
-
-    const past = weeks.filter(week => {
-      const { startDate } = this.getWeekDateRange(week.year, week.month, week.week);
-      return new Date(startDate) < now;
-    }).sort((a, b) => this.compareWeeks(b, a));
-
-    return { upcoming, past };
-  }
-
-  compareWeeks(a, b) {
-    if (a.year !== b.year) return a.year - b.year;
-    if (a.month !== b.month) return a.month.localeCompare(b.month);
-    return a.week - b.week;
-  }
-
-  // Week archive/pin management
-  async archiveWeek(weekId) {
-    const week = this.data.calendar.find(w => w.id === weekId);
-    if (!week) return;
-
-    const monthName = new Date(week.year, parseInt(week.month) - 1)
-      .toLocaleString('default', { month: 'long' });
-    const confirm = window.confirm(
-      `Archive ${monthName} ${week.year} - Week ${week.week}?\n\n` +
-      `This will hide it from your planning view.\n` +
-      `Data will still be available in analytics.`
-    );
-
-    if (!confirm) return;
-
-    week.archived = true;
-    week.archivedAt = new Date().toISOString();
-    week.pinned = false;
-    week.pinnedAt = null;
-
-    await this.saveWeek(week);
-    this.renderCalendarTable();
-    this.showNotification('Week archived', 'success');
-  }
-
-  async unarchiveWeek(weekId) {
-    const week = this.data.calendar.find(w => w.id === weekId);
-    if (!week) return;
-
-    week.archived = false;
-    week.archivedAt = null;
-
-    await this.saveWeek(week);
-    this.renderCalendarTable();
-    this.showNotification('Week restored', 'success');
-  }
-
-  async pinWeek(weekId) {
-    const week = this.data.calendar.find(w => w.id === weekId);
-    if (!week) return;
-
-    week.pinned = !week.pinned;
-    week.pinnedAt = week.pinned ? new Date().toISOString() : null;
-
-    await this.saveWeek(week);
-    this.renderCalendarTable();
-    this.showNotification(
-      week.pinned ? 'Week pinned to view' : 'Week unpinned',
-      'success'
-    );
-  }
-
-  setCalendarView(view) {
-    this.calendarView = view;
-    localStorage.setItem('calendarView', view);
-    this.renderCalendarTable();
-  }
-
-  togglePastWeeks() {
-    const content = document.getElementById('pastWeeksContent');
-    const icon = document.getElementById('pastWeeksIcon');
-
-    if (content.style.display === 'none') {
-      content.style.display = 'block';
-      icon.textContent = '▲';
-    } else {
-      content.style.display = 'none';
-      icon.textContent = '▼';
-    }
-  }
-
-  renderCalendarTable() {
-    const container = document.getElementById('calendarTable');
-
-    // Update view button states
-    document.querySelectorAll('.btn-view').forEach(btn => btn.classList.remove('active'));
-    const viewKey = this.calendarView.charAt(0).toUpperCase() + this.calendarView.slice(1);
-    const activeBtn = document.getElementById(`view${viewKey}`);
-    if (activeBtn) activeBtn.classList.add('active');
-
-    // Update archived count badge
-    const archivedCount = this.data.calendar.filter(w => w.archived).length;
-    const countBadge = document.getElementById('archivedCount');
-    if (countBadge) {
-      countBadge.textContent = archivedCount;
-      countBadge.style.display = archivedCount > 0 ? 'inline' : 'none';
-    }
-
-    // Get visible weeks based on current view
-    const visibleWeeks = this.getVisibleWeeks();
-
-    if (visibleWeeks.length === 0) {
-      const emptyMessage = this.calendarView === 'archived'
-        ? 'No archived weeks.'
-        : 'No weeks planned yet.';
-      container.innerHTML = `<p class="empty-state">${emptyMessage}</p>`;
-      if (this.currentTab === 'calendar') this.updateSidebarLinks();
-      return;
-    }
-
-    if (this.calendarView === 'archived') {
-      this.renderArchivedWeeks(container, visibleWeeks);
-    } else {
-      this.renderActiveWeeks(container, visibleWeeks);
-    }
-
-    if (this.currentTab === 'calendar') {
-      this.updateSidebarLinks();
-    }
-  }
-
-  renderActiveWeeks(container, weeks) {
-    const { upcoming, past } = this.groupWeeksByTime(weeks);
-
-    // Pull pinned weeks out of past into their own top section
-    const pinned = past.filter(w => w.pinned);
-    const unpinnedPast = past.filter(w => !w.pinned);
-
-    let html = '';
-
-    // Pinned weeks always at the very top
-    if (pinned.length > 0) {
-      html += `
-        <div class="weeks-section">
-          <h3 class="section-header">Pinned Weeks</h3>
-          <div class="calendar-timeline">
-      `;
-      for (const week of pinned) {
-        html += this.renderWeekCard(week);
-      }
-      html += '</div></div>';
-    }
-
-    if (upcoming.length > 0) {
-      html += `
-        <div class="weeks-section">
-          <h3 class="section-header">Upcoming Weeks</h3>
-          <div class="calendar-timeline">
-      `;
-      for (const week of upcoming) {
-        html += this.renderWeekCard(week);
-      }
-      html += '</div></div>';
-    }
-
-    if (unpinnedPast.length > 0) {
-      html += `
-        <div class="weeks-section">
-          <div class="section-header-collapsible" onclick="app.togglePastWeeks()">
-            <div class="section-header-content">
-              <h3>Past Weeks</h3>
-              <span class="count-badge">${unpinnedPast.length} week${unpinnedPast.length !== 1 ? 's' : ''}</span>
-            </div>
-            <span class="collapse-icon" id="pastWeeksIcon">▼</span>
-          </div>
-          <div class="calendar-timeline" id="pastWeeksContent" style="display: none;">
-      `;
-      for (const week of unpinnedPast) {
-        html += this.renderWeekCard(week);
-      }
-      html += '</div></div>';
-    }
-
-    container.innerHTML = html;
-  }
-
-  renderArchivedWeeks(container, weeks) {
-    const sorted = [...weeks].sort((a, b) => {
-      const dateA = new Date(a.archivedAt || 0);
-      const dateB = new Date(b.archivedAt || 0);
-      return dateB - dateA;
-    });
-
-    let html = `
-      <div class="weeks-section">
-        <div class="archive-info">
-          <p>Showing ${weeks.length} archived week${weeks.length !== 1 ? 's' : ''}. Data is still included in analytics.</p>
-        </div>
-        <div class="calendar-timeline">
-    `;
-
-    for (const week of sorted) {
-      html += this.renderArchivedWeekCard(week);
-    }
-
-    html += '</div></div>';
-    container.innerHTML = html;
-  }
-
-  renderWeekCard(week) {
-    const monthName = new Date(week.year, parseInt(week.month) - 1)
-      .toLocaleString('default', { month: 'long' });
-    const location = `${week.city || ''}${week.city && week.country ? ', ' : ''}${week.country || ''}`;
-
-    const execution = this.calculateWeekExecution(week.id);
-    const hasExecution = execution && execution.alignment > 0;
-
-    const isCurrent = this.isCurrentWeek(week);
-    const isPast = this.isWeekInPast(week);
-
-    const weekCardId = `week-${week.year}-W${week.week}`;
-    return `
-      <div class="week-card ${hasExecution ? 'has-execution' : ''} ${isCurrent ? 'current-week' : ''} ${isPast ? 'past-week' : ''} ${week.pinned ? 'pinned-week' : ''}" id="${weekCardId}">
-        ${isCurrent ? '<div class="current-week-badge">Current Week</div>' : ''}
-        ${week.pinned ? '<div class="pinned-week-badge">Pinned</div>' : ''}
-        <div class="week-header">
-          <div class="week-title">
-            <h4>${monthName} ${week.year} - Week ${week.week}</h4>
-            ${location ? `<span class="week-location">${this.escapeHtml(location)}</span>` : ''}
-          </div>
-          <div class="week-capacity">
-            <span class="capacity-badge">${week.capacities.total.toFixed(1)} blocks</span>
-          </div>
-        </div>
-
-        <div class="week-focus-allocation">
-          ${this.renderFocusTrack('Primary', week.focuses.primary, week.capacities.priority,
-                                 hasExecution ? execution.primaryActual : null, 'priority')}
-          ${this.renderFocusTrack('Secondary 1', week.focuses.secondary1, week.capacities.secondary1,
-                                 hasExecution ? execution.secondary1Actual : null, 'secondary')}
-          ${this.renderFocusTrack('Secondary 2', week.focuses.secondary2, week.capacities.secondary2,
-                                 hasExecution ? execution.secondary2Actual : null, 'secondary')}
-        </div>
-
-        ${hasExecution ? `
-          <div class="week-alignment">
-            <div class="alignment-indicator ${
-              execution.alignment >= 80 ? 'excellent' :
-              execution.alignment >= 60 ? 'good' :
-              execution.alignment >= 40 ? 'fair' : 'poor'
-            }">
-              <span class="alignment-label">Focus Alignment:</span>
-              <span class="alignment-value">${execution.alignment}%</span>
-            </div>
-
-            ${Object.keys(execution.otherFocus).length > 0 ? `
-              <div class="unplanned-work">
-                <span class="unplanned-label">Unplanned:</span>
-                ${Object.entries(execution.otherFocus).map(([focus, time]) =>
-                  `<span class="unplanned-item">${this.escapeHtml(focus)}: ${time.toFixed(1)}b</span>`
-                ).join(' ')}
-              </div>
-            ` : ''}
-          </div>
-        ` : `
-          <div class="week-status">
-            <span class="status-pending">Week not yet executed</span>
-          </div>
-        `}
-
-        ${week.capstone ? `
-          <div class="week-capstone">
-            <span class="capstone-text">${this.escapeHtml(week.capstone)}</span>
-          </div>
-        ` : ''}
-
-        <div class="week-actions">
-          <button class="btn-secondary btn-sm" onclick="app.editWeek('${week.id}')">
-            Edit
-          </button>
-
-          ${isPast && !week.pinned ? `
-            <button class="btn-secondary btn-sm" onclick="app.pinWeek('${week.id}')" title="Keep visible">
-              Pin
-            </button>
-          ` : ''}
-
-          ${week.pinned ? `
-            <button class="btn-secondary btn-sm" onclick="app.pinWeek('${week.id}')" title="Unpin">
-              Unpin
-            </button>
-          ` : ''}
-
-          <button class="btn-secondary btn-sm" onclick="app.archiveWeek('${week.id}')" title="Hide from view">
-            Archive
-          </button>
-
-          <button class="btn-danger btn-sm" onclick="app.deleteWeek('${week.id}')">
-            Delete
-          </button>
-        </div>
-      </div>
-    `;
-  }
-
-  renderArchivedWeekCard(week) {
-    const monthName = new Date(week.year, parseInt(week.month) - 1)
-      .toLocaleString('default', { month: 'long' });
-    const location = `${week.city || ''}${week.city && week.country ? ', ' : ''}${week.country || ''}`;
-
-    const archivedDate = week.archivedAt
-      ? new Date(week.archivedAt).toLocaleDateString()
-      : 'Unknown';
-
-    return `
-      <div class="week-card archived-week">
-        <div class="archived-badge">Archived ${archivedDate}</div>
-
-        <div class="week-header">
-          <div class="week-title">
-            <h4>${monthName} ${week.year} - Week ${week.week}</h4>
-            ${location ? `<span class="week-location">${this.escapeHtml(location)}</span>` : ''}
-          </div>
-          <div class="week-capacity">
-            <span class="capacity-badge">${week.capacities.total.toFixed(1)} blocks</span>
-          </div>
-        </div>
-
-        ${week.capstone ? `
-          <div class="week-capstone">
-            <span class="capstone-text">${this.escapeHtml(week.capstone)}</span>
-          </div>
-        ` : ''}
-
-        <div class="week-meta-summary">
-          <span>Primary: ${week.focuses.primary || 'None'}</span>
-          <span>Secondary 1: ${week.focuses.secondary1 || 'None'}</span>
-          <span>Secondary 2: ${week.focuses.secondary2 || 'None'}</span>
-        </div>
-
-        <div class="week-actions">
-          <button class="btn-primary btn-sm" onclick="app.unarchiveWeek('${week.id}')">
-            Restore
-          </button>
-          <button class="btn-danger btn-sm" onclick="app.deleteWeek('${week.id}')">
-            Delete
-          </button>
-        </div>
-      </div>
-    `;
-  }
-
-  renderFocusTrack(label, focusName, planned, actual, type) {
-    if (!focusName) return '';
-
-    let html = `
-      <div class="focus-track ${type}">
-        <div class="focus-label">
-          <span class="focus-name">${label}: ${this.escapeHtml(focusName)}</span>
-          <span class="focus-capacity">${planned} blocks</span>
-        </div>
-    `;
-
-    if (actual !== null) {
-      const percentage = planned > 0 ? (actual / planned * 100) : 0;
-      html += `
-        <div class="focus-progress">
-          <div class="progress-bar">
-            <div class="progress-planned" style="width: 100%"></div>
-            <div class="progress-actual" style="width: ${Math.min(percentage, 100)}%"></div>
-          </div>
-          <span class="focus-actual">${actual.toFixed(1)} actual</span>
-        </div>
-      `;
-    }
-
-    html += `</div>`;
-    return html;
+    const planMonth = document.getElementById('planMonth');
+    if (planMonth) planMonth.value = month;
+    const planYear = document.getElementById('planYear');
+    if (planYear) planYear.value = year;
+    const analyticsMonth = document.getElementById('analyticsMonth');
+    if (analyticsMonth) analyticsMonth.value = month;
   }
 
   // Epic Timeline
 
-  setTimelineWeeks(weeks) {
-    this.timelineWeeks = weeks;
-    this.renderEpicTimeline();
-  }
-
-  renderEpicTimeline() {
-    const container = document.getElementById('epicTimeline');
-    if (!container) return;
-
-    const activeEpics = this.data.epics.filter(e =>
-      e.status === EPIC_STATUS.ACTIVE || e.status === EPIC_STATUS.PLANNING
-    );
-
-    if (activeEpics.length === 0) {
-      container.innerHTML = '<p class="empty-state">No active epics to display.</p>';
-      return;
-    }
-
-    const byFocus = {};
-    activeEpics.forEach(epic => {
-      const focusName = this.getFocusName(epic.focusId);
-      if (!byFocus[focusName]) {
-        byFocus[focusName] = [];
-      }
-      byFocus[focusName].push(epic);
-    });
-
-    let html = `<div class="timeline-view" style="--timeline-cols: ${this.timelineWeeks}">`;
-    html += this.renderTimelineHeader();
-
-    Object.entries(byFocus).forEach(([focus, epics]) => {
-      html += this.renderFocusLane(focus, epics);
-    });
-
-    html += '</div>';
-    container.innerHTML = html;
-  }
-
-  renderTimelineHeader() {
-    const today = new Date();
-    let html = '<div class="timeline-header"><div class="timeline-label">Focus Area</div>';
-
-    for (let i = 0; i < this.timelineWeeks; i++) {
-      const weekDate = new Date(today);
-      weekDate.setDate(today.getDate() + (i * 7));
-      const weekNum = this.getWeekNumber(weekDate);
-      const month = weekDate.toLocaleDateString('default', { month: 'short' });
-
-      html += `<div class="timeline-week-header">W${weekNum}<br><span class="week-month">${month}</span></div>`;
-    }
-
-    html += '</div>';
-    return html;
-  }
-
-  renderFocusLane(focus, epics) {
-    let html = `
-      <div class="timeline-lane">
-        <div class="timeline-lane-header">
-          <h4>${this.escapeHtml(focus)}</h4>
-          <span class="epic-count">${epics.length} epic${epics.length !== 1 ? 's' : ''}</span>
-        </div>
-        <div class="timeline-lane-content">
-    `;
-
-    epics.forEach(epic => {
-      html += this.renderEpicBar(epic);
-    });
-
-    html += '</div></div>';
-    return html;
-  }
-
-  renderEpicBar(epic) {
-    const stories = this.data.stories.filter(s => s.epicId === epic.id);
-    const completed = stories.filter(s => s.status === 'completed').length;
-    const total = stories.length;
-    const progress = total > 0 ? Math.round((completed / total) * 100) : 0;
-
-    const totalEstimate = stories.reduce((sum, s) => sum + (s.estimatedBlocks || 0), 0);
-    const weeksEstimate = Math.max(1, Math.ceil(totalEstimate / 10));
-
-    const barWidth = Math.min((weeksEstimate / this.timelineWeeks) * 100, 100);
-
-    return `
-      <div class="epic-bar-container">
-        <div class="epic-bar ${epic.status}"
-             style="width: ${barWidth}%"
-             title="${this.escapeHtml(epic.name)}: ${progress}% complete, ${weeksEstimate}w estimated">
-          <div class="epic-bar-fill" style="width: ${progress}%"></div>
-          <div class="epic-bar-label">
-            <span class="epic-bar-name">${this.escapeHtml(epic.name)}</span>
-            <span class="epic-bar-progress">${progress}%</span>
-          </div>
-        </div>
-      </div>
-    `;
-  }
-
-  getWeekNumber(date) {
-    const d = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
-    const dayNum = d.getUTCDay() || 7;
-    d.setUTCDate(d.getUTCDate() + 4 - dayNum);
-    const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
-    return Math.ceil((((d - yearStart) / 86400000) + 1) / 7);
-  }
-
   // Priority Hierarchy
-  async handleSavePriorities() {
-    const periodType = document.getElementById('periodType').value;
-    const month = document.getElementById('periodMonth').value;
-    const week = document.getElementById('periodWeek').value;
-    const year = parseInt(document.getElementById('planYear').value) || new Date().getFullYear();
-
-    const primary = document.getElementById('primaryFocus').value;
-    if (!primary) {
-      this.showNotification('Please select a primary focus', 'warning');
-      return;
-    }
-
-    const id = `${year}-${month}-priorities${week ? '-W' + week : ''}`;
-
-    const priorityData = {
-      id,
-      month,
-      year,
-      period: periodType,
-      focuses: {
-        primary,
-        secondary1: document.getElementById('secondary1Focus').value,
-        secondary2: document.getElementById('secondary2Focus').value,
-        floor: document.getElementById('floorFocus').value
-      },
-      timestamp: new Date().toISOString()
-    };
-
-    await this.savePriority(priorityData);
-    this.renderPriorityHistory();
-    this.showNotification('Priorities saved', 'success');
-  }
-
   renderPriorityHistory() {
     const container = document.getElementById('priorityHistory');
 
+    if (!container) return;
     if (this.data.priorities.length === 0) {
       container.innerHTML = '<p class="empty-state">No priority history yet.</p>';
       return;
@@ -2205,93 +1336,6 @@ class CapacityManager {
   }
 
   // Sub-Focus Management
-  async addSubFocus() {
-    const focusId = document.getElementById('subFocusParent')?.value;
-    const name = document.getElementById('subFocusName').value.trim();
-    const description = document.getElementById('subFocusDescription').value.trim();
-    const icon = document.getElementById('subFocusIcon').value.trim();
-    const color = document.getElementById('subFocusColor').value;
-
-    if (!focusId || !name) {
-      this.showNotification('Please select a parent focus and enter a name', 'warning');
-      return;
-    }
-
-    const month = document.getElementById('epicPeriodMonth')?.value ||
-      String(new Date().getMonth() + 1).padStart(2, '0');
-
-    const sf = {
-      id: `sf-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`,
-      name,
-      description,
-      focusId,
-      icon,
-      color,
-      month,
-      createdAt: new Date().toISOString()
-    };
-
-    await this.saveSubFocus(sf);
-    this.notifyDataChange('subFocus');
-
-    document.getElementById('subFocusName').value = '';
-    document.getElementById('subFocusDescription').value = '';
-    document.getElementById('subFocusIcon').value = '';
-    document.getElementById('subFocusColor').value = '#6d6e6f';
-    this.showNotification('Sub-focus added', 'success');
-  }
-
-  renderSubFocusList() {
-    const container = document.getElementById('subFocusList');
-    if (!container) return;
-
-    const filterFocus = document.getElementById('subFocusFilterFocus').value;
-    const filtered = filterFocus
-      ? this.data.subFocuses.filter(sf => this.getFocusName(sf.focusId) === filterFocus)
-      : this.data.subFocuses;
-
-    if (filtered.length === 0) {
-      container.innerHTML = '<p class="empty-state">No sub-focuses yet.</p>';
-      return;
-    }
-
-    // Group by focus name
-    const grouped = {};
-    filtered.forEach(sf => {
-      const key = this.getFocusName(sf.focusId);
-      if (!grouped[key]) grouped[key] = [];
-      grouped[key].push(sf);
-    });
-
-    let html = '';
-    Object.keys(grouped).sort().forEach(focus => {
-      const subs = grouped[focus];
-      html += `<div class="sub-focus-group">
-        <div class="sub-focus-group-header">${focus}</div>`;
-
-      subs.forEach(sf => {
-        const epicCount = this.data.epics.filter(e => e.subFocusId === sf.id).length;
-        html += `<div class="sub-focus-card" data-subfocus-id="${sf.id}" style="border-left-color: ${sf.color || '#6d6e6f'}">
-          <div class="sub-focus-header">
-            <span class="sub-focus-title">
-              ${sf.icon ? `<span class="sub-focus-icon">${this.escapeHtml(sf.icon)}</span>` : ''}
-              <span class="sub-focus-name">${this.escapeHtml(sf.name)}</span>
-            </span>
-            <div class="sub-focus-actions">
-              <button class="btn-danger" onclick="event.stopPropagation(); app.deleteSubFocus('${sf.id}')">Delete</button>
-            </div>
-          </div>
-          ${sf.description ? `<div class="sub-focus-description">${this.escapeHtml(sf.description)}</div>` : ''}
-          <div class="sub-focus-meta">${epicCount} epic${epicCount !== 1 ? 's' : ''}</div>
-        </div>`;
-      });
-
-      html += '</div>';
-    });
-
-    container.innerHTML = html;
-  }
-
   loadSubFocusesForEpic() {
     const focusId = document.getElementById('epicFocus')?.value;
     const select = document.getElementById('epicSubFocus');
@@ -2318,262 +1362,8 @@ class CapacityManager {
   }
 
   // Epic Management
-  async handleAddEpic() {
-    const focusId = document.getElementById('epicFocus')?.value;
-    const subFocusId = document.getElementById('epicSubFocus')?.value;
-    const name = document.getElementById('epicName').value.trim();
-    const vision = document.getElementById('epicVision').value.trim();
-
-    if (!focusId || !name) {
-      this.showNotification('Please fill in focus and epic name', 'warning');
-      return;
-    }
-
-    const epic = {
-      id: `epic-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`,
-      name,
-      vision,
-      focusId,
-      subFocusId: subFocusId || '',
-      status: EPIC_STATUS.ACTIVE,
-      createdAt: new Date().toISOString()
-    };
-
-    await this.saveEpic(epic);
-    this.notifyDataChange('epic');
-
-    document.getElementById('epicName').value = '';
-    document.getElementById('epicVision').value = '';
-    document.getElementById('epicSubFocus').innerHTML = '<option value="">Select Focus first</option>';
-    this.showNotification('Epic added', 'success');
-  }
-
-  renderEpicsList() {
-    const container = document.getElementById('epicsList');
-    if (!container) return;
-    const statusFilter = document.getElementById('epic-status-filter')?.value || 'all';
-    const schedulingFilter = document.getElementById('epic-scheduling-filter')?.value || 'all';
-
-    // Build scheduling map from monthlyPlans
-    const schedulingMap = new Map();
-    (this.data.monthlyPlans || []).forEach(plan => {
-      plan.epics.forEach(ref => {
-        if (!schedulingMap.has(ref.epicId)) schedulingMap.set(ref.epicId, []);
-        schedulingMap.get(ref.epicId).push({ year: plan.year, month: plan.month, priority: ref.priorityLevel });
-      });
-    });
-
-    let filtered = this.data.epics.filter(e => e.status !== EPIC_STATUS.ARCHIVED);
-
-    if (statusFilter !== 'all') {
-      filtered = filtered.filter(e => e.status === statusFilter);
-    }
-    if (schedulingFilter === 'scheduled') {
-      filtered = filtered.filter(e => schedulingMap.has(e.id));
-    } else if (schedulingFilter === 'unscheduled') {
-      filtered = filtered.filter(e => !schedulingMap.has(e.id) && e.status !== EPIC_STATUS.COMPLETED);
-    }
-
-    if (filtered.length === 0) {
-      container.innerHTML = '<p class="empty-state">No epics match the current filters.</p>';
-      return;
-    }
-
-    let html = '';
-    filtered.forEach(epic => {
-      const statusTagClass = epic.status === EPIC_STATUS.COMPLETED ? 'tag-completed' :
-                              epic.status === EPIC_STATUS.ACTIVE ? 'tag-active' :
-                              epic.status === EPIC_STATUS.ARCHIVED ? 'tag-abandoned' : 'tag-backlog';
-
-      // Sub-focus lookup
-      const subFocus = epic.subFocusId
-        ? this.data.subFocuses.find(sf => sf.id === epic.subFocusId)
-        : null;
-      const subFocusLabel = subFocus
-        ? (subFocus.icon ? `${subFocus.icon} ${subFocus.name}` : subFocus.name)
-        : '';
-
-      // Scheduling badge
-      const scheduling = schedulingMap.get(epic.id);
-      let schedulingBadge = '';
-      if (scheduling && scheduling.length > 0) {
-        const latest = scheduling[scheduling.length - 1];
-        schedulingBadge = `<span class="epic-scheduling-badge scheduled" title="Scheduled in ${latest.year}-${latest.month}">${latest.year}-${latest.month}</span>`;
-      } else if (epic.status !== EPIC_STATUS.COMPLETED && epic.status !== EPIC_STATUS.ARCHIVED) {
-        schedulingBadge = '<span class="epic-scheduling-badge unscheduled">Unscheduled</span>';
-      }
-
-      // Story progress
-      const epicStories = this.data.stories.filter(s => s.epicId === epic.id);
-      const totalStories = epicStories.length;
-      const completedStories = epicStories.filter(s =>
-        s.status === STORY_STATUS.COMPLETED || s.status === STORY_STATUS.ABANDONED
-      ).length;
-      const activeStories = epicStories.filter(s => s.status === STORY_STATUS.ACTIVE).length;
-      const progressPct = totalStories > 0 ? (completedStories / totalStories * 100) : 0;
-
-      html += `<div class="epic-card" data-epic-id="${epic.id}">
-        <div class="epic-header">
-          <span class="epic-title">${this.escapeHtml(epic.name)}${schedulingBadge}</span>
-          <button class="btn-danger" onclick="event.stopPropagation(); app.deleteEpic('${epic.id}')">Delete</button>
-        </div>
-        <div class="epic-meta">
-          <div class="meta-item">
-            <span class="meta-label">Focus:</span>
-            <span class="meta-value">${this.getFocusName(epic.focusId)}</span>
-          </div>
-          ${subFocusLabel ? `<div class="meta-item">
-            <span class="meta-label">Sub:</span>
-            <span class="meta-value">${this.escapeHtml(subFocusLabel)}</span>
-          </div>` : ''}
-          <div class="meta-item">
-            <span class="tag ${statusTagClass}">${epic.status}</span>
-          </div>
-        </div>
-        ${epic.vision ? `<p style="margin-top:8px;font-size:12px;color:var(--text-muted)">${this.escapeHtml(epic.vision)}</p>` : ''}
-        ${totalStories > 0 ? `
-        <div class="epic-progress">
-          <div class="epic-progress-label">
-            <span>${completedStories}/${totalStories} stories done</span>
-            <span>${activeStories} active</span>
-          </div>
-          <div class="progress-bar progress-bar-sm">
-            <div class="progress-fill" style="width:${progressPct}%"></div>
-          </div>
-        </div>` : '<div class="epic-progress"><span style="font-size:11px;color:var(--text-muted)">No stories yet</span></div>'}
-      </div>`;
-    });
-
-    container.innerHTML = html;
-  }
-
   // User Stories
-  renderCapacityOverview() {
-    const container = document.getElementById('capacityOverview');
-    if (!container) return;
-    const month = document.getElementById('storyPeriodMonth')?.value;
-
-    const calendarData = this.data.calendar.filter(c => c.month === month);
-
-    const locPeriods    = this.data.locationPeriods || [];
-    const overrides     = this.data.dayTypeOverrides || [];
-    const year          = new Date().getFullYear();
-    const monthStart    = `${year}-${String(month).padStart(2, '0')}-01`;
-    const [y, m]        = monthStart.split('-').map(Number);
-    const monthEndDate  = new Date(Date.UTC(y, m, 0));
-    const monthEnd      = monthEndDate.toISOString().slice(0, 10);
-
-    const periodsInMonth = locPeriods.filter(p =>
-      p.startDate <= monthEnd && p.endDate >= monthStart
-    );
-
-    let totals;
-    if (periodsInMonth.length > 0) {
-      const derived = deriveCapacityForDateRange(monthStart, monthEnd, locPeriods, overrides);
-      totals = {
-        total:      derived.total,
-        priority:   derived.priority,
-        secondary1: derived.secondary1,
-        secondary2: derived.secondary2,
-      };
-    } else {
-      totals = calendarData.reduce((acc, w) => ({
-        total:      acc.total      + w.capacities.total,
-        priority:   acc.priority   + w.capacities.priority,
-        secondary1: acc.secondary1 + w.capacities.secondary1,
-        secondary2: acc.secondary2 + w.capacities.secondary2,
-      }), { total: 0, priority: 0, secondary1: 0, secondary2: 0 });
-    }
-
-    if (totals.total === 0 && periodsInMonth.length === 0 && calendarData.length === 0) {
-      container.innerHTML = '<div class="alert alert-info">No capacity data for this month. Add calendar weeks first.</div>';
-      return;
-    }
-
-    const stories = this.data.stories.filter(s => s.month === month);
-    const allocated = stories.reduce((sum, s) => sum + (s.weight || 0), 0);
-    const remaining = totals.total - allocated;
-    const pct = totals.total > 0 ? (allocated / totals.total * 100) : 0;
-
-    container.innerHTML = `
-      <h3>Capacity Overview</h3>
-      <div class="capacity-breakdown">
-        <div class="capacity-item"><div class="capacity-label">Total</div><div class="capacity-value">${totals.total}</div></div>
-        <div class="capacity-item"><div class="capacity-label">Priority</div><div class="capacity-value">${totals.priority}</div></div>
-        <div class="capacity-item"><div class="capacity-label">Sec 1</div><div class="capacity-value">${totals.secondary1}</div></div>
-        <div class="capacity-item"><div class="capacity-label">Sec 2</div><div class="capacity-value">${totals.secondary2}</div></div>
-        <div class="capacity-item"><div class="capacity-label">Allocated</div><div class="capacity-value">${allocated}</div></div>
-        <div class="capacity-item"><div class="capacity-label">Remaining</div><div class="capacity-value">${remaining}</div></div>
-      </div>
-      <div class="progress-bar">
-        <div class="progress-fill" style="width:${Math.min(pct, 100)}%">${pct.toFixed(0)}%</div>
-      </div>`;
-  }
-
-  async handleAddStory() {
-    const epicId = document.getElementById('storyEpic').value;
-    const name = document.getElementById('storyName').value.trim();
-    const description = document.getElementById('storyDescription').value.trim();
-    const weight = parseFloat(document.getElementById('storyWeight').value) || 1;
-    const fibSize = document.getElementById('storyFibSize').value;
-    const estimatedBlocks = parseFloat(document.getElementById('storyEstimate').value) || null;
-    const status = document.getElementById('storyStatus').value;
-
-    if (!epicId || !name) {
-      this.showNotification('Please select an epic and enter a story name', 'warning');
-      return;
-    }
-
-    // Check epic status before saving
-    const canProceed = await this.checkEpicStatusBeforeSave(epicId);
-    if (!canProceed) return;
-
-    const epic = this.data.epics.find(e => e.id === epicId);
-
-    const storyMonth = document.getElementById('storyPeriodMonth').value;
-
-    const story = {
-      id: `story-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`,
-      epicId,
-      name,
-      description,
-      month: storyMonth,
-      focus: this.getFocusName(epic.focusId),
-      weight,
-      status: status || STORY_STATUS.BACKLOG,
-      fibonacciSize: fibSize ? parseInt(fibSize) : null,
-      estimatedBlocks,
-      timeSpent: 0,
-      actionItems: [],
-      blocked: false,
-      unblockedBy: null,
-      estimateVariance: null,
-      estimateAccuracy: null,
-      createdAt: new Date().toISOString(),
-      activatedAt: status === STORY_STATUS.ACTIVE ? new Date().toISOString() : null,
-      completedAt: null,
-      abandonedAt: null,
-      abandonReason: '',
-      completed: false
-    };
-
-    await this.saveStory(story);
-    this._createActionItemDraft = [];
-    this.renderCreateActionItemList();
-    this.notifyDataChange('story');
-
-    document.getElementById('storyName').value = '';
-    document.getElementById('storyDescription').value = '';
-    document.getElementById('storyWeight').value = '1';
-    document.getElementById('storyFibSize').value = '';
-    document.getElementById('storyEstimate').value = '';
-    document.getElementById('storyStatus').value = 'backlog';
-    this.showNotification('Story added', 'success');
-  }
-
-  renderStoriesList() {
-    this.renderStoryMap();
-  }
+  // Story rendering is handled by backlogView.js
 
   // F-2: Story creation form action item draft (§5.3)
   renderCreateActionItemList() {
@@ -2613,335 +1403,7 @@ class CapacityManager {
 
   // Story Map
 
-  renderStoryMap() {
-    const container = document.getElementById('storyMap');
-    if (!container) return;
-
-    if (this.data.epics.length === 0) {
-      container.innerHTML = `
-        <p class="empty-state">
-          No epics yet. Create epics in the <a href="#" onclick="app.switchTab('epics'); return false;">Epics tab</a> first.
-        </p>
-      `;
-      return;
-    }
-
-    const byFocus = {};
-    this.data.epics.forEach(epic => {
-      const focusName = this.getFocusName(epic.focusId);
-      if (!byFocus[focusName]) {
-        byFocus[focusName] = [];
-      }
-      byFocus[focusName].push(epic);
-    });
-
-    let html = '<div class="story-map-container">';
-
-    Object.entries(byFocus).forEach(([focus, epics]) => {
-      html += this.renderFocusGroup(focus, epics);
-    });
-
-    html += '</div>';
-    container.innerHTML = html;
-  }
-
-  renderFocusGroup(focus, epics) {
-    const activeEpics = epics.filter(e =>
-      e.status === EPIC_STATUS.ACTIVE || e.status === EPIC_STATUS.PLANNING
-    );
-
-    if (activeEpics.length === 0) return '';
-
-    const focusId = `focus-${focus.toLowerCase().replace(/\s+/g, '-')}`;
-
-    let html = `
-      <div class="story-map-focus">
-        <div class="story-map-focus-header" onclick="app.toggleFocusGroup('${focusId}')">
-          <span class="collapse-icon" id="${focusId}-icon">&#9660;</span>
-          <h3>${this.escapeHtml(focus)}</h3>
-          <span class="epic-count">${activeEpics.length} epic${activeEpics.length !== 1 ? 's' : ''}</span>
-        </div>
-        <div class="story-map-focus-content" id="${focusId}">
-    `;
-
-    const bySubFocus = {};
-    activeEpics.forEach(epic => {
-      const subFocusKey = epic.subFocusId || 'general';
-      if (!bySubFocus[subFocusKey]) {
-        bySubFocus[subFocusKey] = [];
-      }
-      bySubFocus[subFocusKey].push(epic);
-    });
-
-    Object.entries(bySubFocus).forEach(([subFocusId, subFocusEpics]) => {
-      const subFocus = this.data.subFocuses.find(sf => sf.id === subFocusId);
-      const subFocusName = subFocus ? subFocus.name : 'General';
-
-      html += `
-        <div class="story-map-subfocus">
-          <h4 class="story-map-subfocus-header">${this.escapeHtml(subFocusName)}</h4>
-      `;
-
-      subFocusEpics.forEach(epic => {
-        html += this.renderEpicRow(epic);
-      });
-
-      html += '</div>';
-    });
-
-    html += '</div></div>';
-    return html;
-  }
-
-  renderEpicRow(epic) {
-    const stories = this.data.stories.filter(s => s.epicId === epic.id);
-    const activeStories = stories.filter(s => s.status === 'active');
-    const completedStories = stories.filter(s => s.status === 'completed');
-    const backlogStories = stories.filter(s => s.status === 'backlog' || !s.status);
-    const blockedStories = stories.filter(s => s.status === 'blocked');
-
-    let html = `
-      <div class="story-map-epic" data-epic-id="${epic.id}">
-        <div class="story-map-epic-header">
-          <div class="epic-info">
-            <span class="epic-name">${this.escapeHtml(epic.name)}</span>
-            <span class="epic-status-badge ${epic.status}">${epic.status}</span>
-          </div>
-          <div class="epic-stats">
-            <span class="story-count">${stories.length} stories</span>
-            ${completedStories.length > 0 ? `
-              <span class="progress-text">${completedStories.length}/${stories.length} done</span>
-            ` : ''}
-          </div>
-        </div>
-        <div class="story-map-stories">
-    `;
-
-    // Active stories
-    if (activeStories.length > 0) {
-      html += '<div class="story-row">';
-      activeStories.forEach(story => {
-        html += this.renderStoryCard(story);
-      });
-      html += '</div>';
-    }
-
-    // Blocked stories
-    if (blockedStories.length > 0) {
-      html += '<div class="story-row">';
-      blockedStories.forEach(story => {
-        html += this.renderStoryCard(story);
-      });
-      html += '</div>';
-    }
-
-    // Backlog stories
-    if (backlogStories.length > 0) {
-      html += '<div class="story-row backlog">';
-      backlogStories.forEach(story => {
-        html += this.renderStoryCard(story);
-      });
-      html += '</div>';
-    }
-
-    // Completed stories (collapsed by default)
-    if (completedStories.length > 0) {
-      const collapsedId = `completed-${epic.id}`;
-      html += `
-        <div class="completed-stories-section">
-          <button class="btn-secondary btn-sm" onclick="app.toggleCompletedStories('${collapsedId}')">
-            Show ${completedStories.length} completed
-          </button>
-          <div class="story-row completed" id="${collapsedId}" style="display: none;">
-      `;
-      completedStories.forEach(story => {
-        html += this.renderStoryCard(story);
-      });
-      html += '</div></div>';
-    }
-
-    html += '</div></div>';
-    return html;
-  }
-
-  renderStoryCard(story) {
-    const statusIcon = {
-      'backlog': '&#9633;',
-      'active': '&#8594;',
-      'completed': '&#10003;',
-      'blocked': '&#9888;',
-      'abandoned': '&#10007;'
-    };
-
-    const icon = statusIcon[story.status] || '&#9633;';
-    const timeSpent = this.getStoryTimeSpent(story.id);
-    const status = story.status || 'backlog';
-
-    const ai = story.actionItems || [];
-    const aiDone = ai.filter(a => a.done).length;
-    const aiBadge = ai.length > 0
-      ? `<span class="ai-badge ${aiDone === ai.length ? 'ai-all-done' : ''}">${aiDone}/${ai.length}</span>`
-      : '';
-
-    let html = `
-      <div class="sm-story-card sm-${status} ${story.blocked ? 'sm-blocked' : ''}" data-story-id="${story.id}">
-        <div class="sm-story-header">
-          <span class="sm-status-icon">${icon}</span>
-          <span class="sm-story-name">${this.escapeHtml(story.name)}</span>${aiBadge}
-        </div>
-        <div class="sm-story-meta">
-          ${story.fibonacciSize ? `<span class="sm-meta-item">Size: ${story.fibonacciSize}</span>` : ''}
-          ${story.estimatedBlocks ? `<span class="sm-meta-item">Est: ${story.estimatedBlocks}b</span>` : ''}
-          ${timeSpent > 0 ? `<span class="sm-meta-item">Spent: ${timeSpent.toFixed(1)}b</span>` : ''}
-        </div>
-    `;
-
-    if (story.blocked) {
-      html += '<div class="sm-blocked-notice">Blocked</div>';
-    }
-
-    html += '<div class="sm-story-actions">';
-
-    if (status === 'backlog') {
-      html += `<button class="btn-action" onclick="event.stopPropagation(); app.activateStoryUI('${story.id}')" title="Activate">&#9654;</button>`;
-    }
-    if (status === 'active' && !story.blocked) {
-      html += `<button class="btn-action" onclick="event.stopPropagation(); app.completeStoryUI('${story.id}')" title="Complete">&#10003;</button>`;
-      html += `<button class="btn-action" onclick="event.stopPropagation(); app.blockStoryUI('${story.id}')" title="Block">&#9888;</button>`;
-    }
-    if (story.blocked) {
-      html += `<button class="btn-action" onclick="event.stopPropagation(); app.unblockStoryUI('${story.id}')" title="Unblock">&#10003;</button>`;
-    }
-    if (status === 'active') {
-      html += `<button class="btn-action" onclick="event.stopPropagation(); app.abandonStoryUI('${story.id}')" title="Abandon">&#10007;</button>`;
-    }
-    html += `<button class="btn-action" onclick="event.stopPropagation(); app.modal.open('story', '${story.id}')" title="Edit">&#9998;</button>`;
-    html += `<button class="btn-action danger" onclick="event.stopPropagation(); app.deleteStory('${story.id}')" title="Delete">&#128465;</button>`;
-    html += '</div></div>';
-    return html;
-  }
-
   // R5: Edit Story + Action Items
-
-  editStoryUI(storyId) {
-    const story = this.data.stories.find(s => s.id === storyId);
-    if (!story) return;
-
-    document.getElementById('editStoryId').value = story.id;
-    document.getElementById('editStoryName').value = story.name;
-    document.getElementById('editStoryDescription').value = story.description || '';
-    document.getElementById('editStorySize').value = story.fibonacciSize || '';
-    document.getElementById('editStoryEstimate').value = story.estimatedBlocks || '';
-
-    this.renderActionItems(story.actionItems || []);
-
-    document.getElementById('editStoryModal').style.display = 'flex';
-  }
-
-  closeEditStoryModal() {
-    document.getElementById('editStoryModal').style.display = 'none';
-    document.getElementById('newActionItemText').value = '';
-  }
-
-  renderActionItems(actionItems) {
-    const container = document.getElementById('actionItemsList');
-
-    if (actionItems.length === 0) {
-      container.innerHTML = '<p class="text-muted">No action items yet.</p>';
-      return;
-    }
-
-    let html = '<div class="action-items-list">';
-
-    actionItems.forEach(item => {
-      html += `
-        <div class="action-item">
-          <input type="checkbox"
-                 ${item.completed ? 'checked' : ''}
-                 onchange="app.toggleActionItem('${item.id}', this.checked)">
-          <span class="${item.completed ? 'completed' : ''}">${this.escapeHtml(item.text)}</span>
-          <button class="btn-action danger" onclick="app.deleteActionItem('${item.id}')" title="Remove">&#128465;</button>
-        </div>
-      `;
-    });
-
-    html += '</div>';
-    container.innerHTML = html;
-  }
-
-  addActionItem() {
-    const input = document.getElementById('newActionItemText');
-    const text = input.value.trim();
-    if (!text) return;
-
-    const storyId = document.getElementById('editStoryId').value;
-    const story = this.data.stories.find(s => s.id === storyId);
-    if (!story) return;
-
-    if (!story.actionItems) {
-      story.actionItems = [];
-    }
-
-    story.actionItems.push({
-      id: `ai-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
-      text: text,
-      completed: false
-    });
-
-    this.renderActionItems(story.actionItems);
-    input.value = '';
-  }
-
-  toggleActionItem(itemId, completed) {
-    const storyId = document.getElementById('editStoryId').value;
-    const story = this.data.stories.find(s => s.id === storyId);
-    if (!story || !story.actionItems) return;
-
-    const item = story.actionItems.find(ai => ai.id === itemId);
-    if (item) {
-      item.completed = completed;
-      this.renderActionItems(story.actionItems);
-    }
-  }
-
-  deleteActionItem(itemId) {
-    const storyId = document.getElementById('editStoryId').value;
-    const story = this.data.stories.find(s => s.id === storyId);
-    if (!story || !story.actionItems) return;
-
-    story.actionItems = story.actionItems.filter(ai => ai.id !== itemId);
-    this.renderActionItems(story.actionItems);
-  }
-
-  async saveStoryEdit() {
-    const storyId = document.getElementById('editStoryId').value;
-    const story = this.data.stories.find(s => s.id === storyId);
-    if (!story) return;
-
-    story.name = document.getElementById('editStoryName').value.trim();
-    story.description = document.getElementById('editStoryDescription').value.trim();
-    story.fibonacciSize = parseInt(document.getElementById('editStorySize').value) || null;
-    story.estimatedBlocks = parseFloat(document.getElementById('editStoryEstimate').value) || null;
-
-    await this.saveStory(story);
-    this.closeEditStoryModal();
-    this.renderStoryMap();
-    this.showNotification('Story updated', 'success');
-  }
-
-  toggleFocusGroup(focusId) {
-    const content = document.getElementById(focusId);
-    const icon = document.getElementById(`${focusId}-icon`);
-    if (!content || !icon) return;
-
-    if (content.style.display === 'none') {
-      content.style.display = 'block';
-      icon.innerHTML = '&#9660;';
-    } else {
-      content.style.display = 'none';
-      icon.innerHTML = '&#9654;';
-    }
-  }
 
   toggleCompletedStories(id) {
     const container = document.getElementById(id);
@@ -3075,8 +1537,7 @@ class CapacityManager {
       epic.completedAt = new Date().toISOString();
       await this.saveEpic(epic);
       this.showNotification(`Epic "${epic.name}" auto-completed!`, 'success');
-      this.renderEpicsList();
-      this.renderEpicArchive();
+
     }
   }
 
@@ -3084,16 +1545,13 @@ class CapacityManager {
 
   async activateStoryUI(storyId) {
     await this.activateStory(storyId);
-    this.renderStoriesList();
-    this.renderEpicsList();
+
     this.showNotification('Story activated', 'success');
   }
 
   async completeStoryUI(storyId) {
     await this.completeStory(storyId);
-    this.renderStoriesList();
-    this.renderEpicsList();
-    this.renderCapacityOverview();
+
     this.showNotification('Story completed', 'success');
   }
 
@@ -3101,9 +1559,7 @@ class CapacityManager {
     const reason = prompt('Reason for abandoning (optional):');
     if (reason === null) return; // cancelled
     await this.abandonStory(storyId, reason);
-    this.renderStoriesList();
-    this.renderEpicsList();
-    this.renderCapacityOverview();
+
     this.showNotification('Story abandoned', 'success');
   }
 
@@ -3125,661 +1581,12 @@ class CapacityManager {
     }
 
     await this.blockStory(storyId, unblockedBy);
-    this.renderStoriesList();
     this.showNotification('Story blocked', 'warning');
   }
 
   async unblockStoryUI(storyId) {
     await this.unblockStory(storyId);
-    this.renderStoriesList();
     this.showNotification('Story unblocked', 'success');
-  }
-
-  // R3: Day Management
-
-  getDailyLog(date) {
-    return this.data.dailyLogs.find(l => l.date === date) || null;
-  }
-
-  createEmptyFloor() {
-    const floor = {};
-    for (const key of Object.keys(FLOOR_ITEMS)) {
-      floor[key] = { completed: false, notes: '', completedAt: null };
-    }
-    return floor;
-  }
-
-  async openDay(date) {
-    let log = this.getDailyLog(date);
-
-    if (log && log.openedAt) {
-      return log; // Already open
-    }
-
-    if (!log) {
-      log = {
-        id: `log-${date}`,
-        date,
-        month: date.substring(0, 7),
-        openedAt: new Date().toISOString(),
-        closedAt: null,
-        autoClosedAt: null,
-        manuallyOpened: true,
-        manuallyClosed: false,
-        dayType: 'Stable',
-        plannedCapacity: 3.5,
-        actualCapacity: 3.5,
-        floor: this.createEmptyFloor(),
-        floorCompletedCount: 0,
-        stories: [],
-        utilized: 0,
-        notes: ''
-      };
-    } else {
-      // Existing log without openedAt - add session fields
-      log.openedAt = new Date().toISOString();
-      log.manuallyOpened = true;
-      log.manuallyClosed = false;
-      log.closedAt = null;
-      log.autoClosedAt = null;
-      if (!log.floor) log.floor = this.createEmptyFloor();
-      if (log.floorCompletedCount === undefined) log.floorCompletedCount = 0;
-    }
-
-    await this.saveDailyLog(log);
-    return log;
-  }
-
-  async closeDay(date) {
-    const log = this.getDailyLog(date);
-    if (!log || !log.openedAt) return;
-    if (log.closedAt) return; // Already closed
-
-    log.closedAt = new Date().toISOString();
-    log.manuallyClosed = true;
-    log.floorCompletedCount = this.calculateFloorCompletion(log);
-    await this.saveDailyLog(log);
-  }
-
-  async checkAutoClose() {
-    const now = new Date();
-    const today = now.toISOString().split('T')[0];
-
-    const openDays = this.data.dailyLogs.filter(log =>
-      log.openedAt && !log.closedAt && log.date < today
-    );
-
-    for (const log of openDays) {
-      log.autoClosedAt = new Date(log.date + 'T23:59:00').toISOString();
-      log.closedAt = log.autoClosedAt;
-      log.manuallyClosed = false;
-      log.floorCompletedCount = this.calculateFloorCompletion(log);
-      await this.saveDailyLog(log);
-    }
-
-    if (openDays.length > 0) {
-      console.log(`Auto-closed ${openDays.length} day(s)`);
-    }
-  }
-
-  // R3: Floor Tracking
-
-  calculateFloorCompletion(log) {
-    if (!log || !log.floor) return 0;
-    return Object.values(log.floor).filter(item => item.completed).length;
-  }
-
-  async toggleFloorItem(date, item, checked) {
-    const log = this.getDailyLog(date);
-    if (!log || !log.floor) return;
-
-    log.floor[item].completed = checked;
-    log.floor[item].completedAt = checked ? new Date().toISOString() : null;
-    log.floorCompletedCount = this.calculateFloorCompletion(log);
-    await this.saveDailyLog(log);
-    this.renderFloorChecklist(date);
-    this.renderDayStatus(date);
-  }
-
-  async updateFloorNotes(date, item, notes) {
-    const log = this.getDailyLog(date);
-    if (!log || !log.floor) return;
-
-    log.floor[item].notes = notes;
-    await this.saveDailyLog(log);
-  }
-
-  // R3: Queries
-
-  getMissingDays() {
-    const today = new Date();
-    const todayStr = today.toISOString().split('T')[0];
-    const thirtyDaysAgo = new Date();
-    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
-
-    const missing = [];
-    for (let d = new Date(thirtyDaysAgo); d < new Date(todayStr); d.setDate(d.getDate() + 1)) {
-      const dateStr = d.toISOString().split('T')[0];
-      const log = this.data.dailyLogs.find(l => l.date === dateStr);
-      if (!log || !log.manuallyOpened) {
-        missing.push(dateStr);
-      }
-    }
-    return missing;
-  }
-
-  getFloorAdherence(startDate, endDate) {
-    const logs = this.data.dailyLogs.filter(l =>
-      l.date >= startDate && l.date <= endDate && l.openedAt
-    );
-    if (logs.length === 0) return 0;
-    const fullyCompleted = logs.filter(l => l.floorCompletedCount === 4).length;
-    return fullyCompleted / logs.length;
-  }
-
-  // R3: UI Rendering
-
-  renderDayStatus(date) {
-    const container = document.getElementById('dayStatus');
-    if (!container) return;
-    const log = this.getDailyLog(date);
-
-    if (!log || !log.openedAt) {
-      container.innerHTML = `
-        <button class="btn-primary" onclick="app.openDayUI('${date}')">
-          Start Day
-        </button>
-      `;
-      return;
-    }
-
-    if (!log.closedAt) {
-      const openedTime = new Date(log.openedAt);
-      const duration = Math.floor((new Date() - openedTime) / (1000 * 60));
-      const hours = Math.floor(duration / 60);
-      const mins = duration % 60;
-
-      container.innerHTML = `
-        <div class="alert alert-info" style="display:flex;justify-content:space-between;align-items:center">
-          <span>Day Open (${hours}h ${mins}m)</span>
-          <button class="btn-primary btn-sm" onclick="app.closeDayUI('${date}')">
-            Close Day
-          </button>
-        </div>
-      `;
-    } else {
-      const closeType = log.manuallyClosed ? 'Manually closed' : 'Auto-closed';
-      container.innerHTML = `
-        <div class="alert alert-success">
-          ${closeType} | Floor: ${log.floorCompletedCount || 0}/4
-        </div>
-      `;
-    }
-  }
-
-  renderFloorChecklist(date) {
-    const container = document.getElementById('floorChecklist');
-    if (!container) return;
-    const log = this.getDailyLog(date);
-
-    if (!log || !log.openedAt) {
-      container.innerHTML = `
-        <p class="empty-state">Open the day to track your floor items.</p>
-      `;
-      return;
-    }
-
-    // Ensure floor exists (backward compat)
-    if (!log.floor) {
-      log.floor = this.createEmptyFloor();
-      log.floorCompletedCount = 0;
-    }
-
-    const floorItems = Object.entries(FLOOR_ITEMS).map(([key, label]) => ({ key, label }));
-
-    const count = log.floorCompletedCount || 0;
-    const pct = Math.round((count / 4) * 100);
-
-    let html = `
-      <div class="floor-progress">
-        <div style="display:flex;justify-content:space-between;margin-bottom:6px">
-          <strong>Progress: ${count}/4</strong>
-          <span class="text-muted">${pct}%</span>
-        </div>
-        <div class="progress-bar progress-bar-sm">
-          <div class="progress-fill" style="width:${pct}%"></div>
-        </div>
-      </div>
-      <div class="floor-items">
-    `;
-
-    floorItems.forEach(item => {
-      const floorItem = log.floor[item.key] || { completed: false, notes: '' };
-      const checked = floorItem.completed ? 'checked' : '';
-      const completedClass = floorItem.completed ? 'floor-item-done' : '';
-
-      html += `
-        <div class="floor-item ${completedClass}">
-          <label class="floor-item-label">
-            <input type="checkbox" ${checked}
-                   onchange="app.toggleFloorItem('${date}', '${item.key}', this.checked)">
-            <span class="floor-item-name">${item.label}</span>
-          </label>
-          <input type="text"
-                 class="floor-item-notes"
-                 placeholder="Quick notes..."
-                 value="${this.escapeHtml(floorItem.notes || '')}"
-                 onchange="app.updateFloorNotes('${date}', '${item.key}', this.value)">
-        </div>
-      `;
-    });
-
-    html += '</div>';
-
-    // Close button or closed status
-    if (!log.closedAt) {
-      html += `
-        <button class="btn-primary" style="margin-top:12px" onclick="app.closeDayUI('${date}')">
-          Close Day
-        </button>
-      `;
-    } else {
-      const closeTime = new Date(log.closedAt).toLocaleTimeString();
-      const closeType = log.manuallyClosed ? 'Manually' : 'Auto';
-      html += `<p class="text-muted" style="margin-top:12px">${closeType} closed at ${closeTime}</p>`;
-    }
-
-    container.innerHTML = html;
-  }
-
-  renderMissingDays() {
-    const container = document.getElementById('missingDaysAlert');
-    if (!container) return;
-    const missing = this.getMissingDays();
-
-    if (missing.length === 0) {
-      container.innerHTML = `
-        <div class="alert alert-success">
-          No missing days! You're all caught up.
-        </div>
-      `;
-      return;
-    }
-
-    const recent = missing.slice(-10);
-
-    let html = `
-      <div class="alert alert-warning">
-        <p><strong>${missing.length} day(s) not logged</strong></p>
-        ${missing.length > 10 ? '<p class="text-muted">Showing 10 most recent</p>' : ''}
-      </div>
-      <div class="missing-days-grid">
-    `;
-
-    recent.forEach(date => {
-      const daysAgo = Math.floor((new Date() - new Date(date)) / (1000 * 60 * 60 * 24));
-      const dateObj = new Date(date + 'T00:00:00');
-      const formattedDate = dateObj.toLocaleDateString('default', {
-        weekday: 'short', month: 'short', day: 'numeric'
-      });
-
-      html += `
-        <div class="missing-day-card">
-          <div class="missing-day-date">${formattedDate}</div>
-          <div class="missing-day-ago">${daysAgo} day${daysAgo !== 1 ? 's' : ''} ago</div>
-          <button class="btn-secondary btn-sm"
-                  onclick="app.logRetroactively('${date}')">
-            Log Now
-          </button>
-        </div>
-      `;
-    });
-
-    html += '</div>';
-    container.innerHTML = html;
-  }
-
-  // R3: UI Actions
-
-  async openDayUI(date) {
-    await this.openDay(date);
-    this.renderDayStatus(date);
-    this.renderFloorChecklist(date);
-    this.renderDailyStories();
-    this.showNotification('Day opened', 'success');
-  }
-
-  async closeDayUI(date) {
-    await this.closeDay(date);
-    this.renderDayStatus(date);
-    this.renderFloorChecklist(date);
-    this.renderDailyLogHistory();
-    this.showNotification('Day closed', 'success');
-  }
-
-  async logRetroactively(date) {
-    await this.openDay(date);
-    document.getElementById('logDate').value = date;
-    this.renderDayStatus(date);
-    this.renderFloorChecklist(date);
-    this.renderDailyStories();
-    this.renderMissingDays();
-    this.showNotification('Logging retroactively - mark what you remember', 'info');
-  }
-
-  refreshDailyView() {
-    const date = document.getElementById('logDate').value;
-    if (!date) return;
-    this.renderDayStatus(date);
-    this.renderFloorChecklist(date);
-    this.renderDailyStories();
-    this.renderMissingDays();
-  }
-
-  // F-3: Toggle story priority + auto-save (OQ-3)
-  async toggleStoryPriority(storyId) {
-    if (this._prioritisedStoryIds.has(storyId)) {
-      this._prioritisedStoryIds.delete(storyId);
-    } else {
-      this._prioritisedStoryIds.add(storyId);
-    }
-    const date = document.getElementById('logDate').value;
-    if (date) {
-      const existing = this.data.dailyLogs.find(l => l.date === date) || {
-        id: `log-${date}`, date, dayType: '', actualCapacity: 0, stories: [], notes: '',
-      };
-      const updated = { ...existing, prioritisedStoryIds: [...this._prioritisedStoryIds] };
-      await this.saveDailyLog(updated);
-    }
-    this.renderDailyStories();
-  }
-
-  toggleDailyExpander() {
-    this._expanderOpen = !this._expanderOpen;
-    this.renderDailyStories();
-  }
-
-  _getStoriesForDate(dateStr) {
-    const { sprints, stories } = this.data;
-
-    if (sprints === null) {
-      const month = dateStr.slice(5, 7);
-      return stories.filter(s =>
-        s.month === month &&
-        s.status !== STORY_STATUS.COMPLETED &&
-        s.status !== STORY_STATUS.ABANDONED
-      );
-    }
-
-    if (sprints.length > 0) {
-      const { addDays } = window._locationCapacityUtils || {};
-      const sprint = sprints.find(s => {
-        const endDate = addDays
-          ? addDays(s.startDate, s.durationWeeks * 7 - 1)
-          : (() => {
-              const [y, m, d] = s.startDate.split('-').map(Number);
-              return new Date(Date.UTC(y, m - 1, d + s.durationWeeks * 7 - 1))
-                .toISOString().slice(0, 10);
-            })();
-        return dateStr >= s.startDate && dateStr <= endDate;
-      });
-
-      if (sprint) {
-        return stories.filter(s =>
-          s.sprintId === sprint.id ||
-          (!s.sprintId && (s.status === STORY_STATUS.ACTIVE || s.status === STORY_STATUS.BLOCKED))
-        );
-      }
-
-      return stories.filter(s =>
-        !s.sprintId &&
-        (s.status === STORY_STATUS.ACTIVE || s.status === STORY_STATUS.BLOCKED)
-      );
-    }
-
-    const month = dateStr.slice(5, 7);
-    return stories.filter(s =>
-      s.month === month &&
-      s.status !== STORY_STATUS.COMPLETED &&
-      s.status !== STORY_STATUS.ABANDONED
-    );
-  }
-
-  // Daily Log — two-phase layout (§6.3)
-  renderDailyStories() {
-    const container = document.getElementById('dailyStories');
-    if (!container) return;
-    const date = document.getElementById('logDate').value;
-
-    if (!date) {
-      container.innerHTML = '<p class="empty-state">Please select a date</p>';
-      return;
-    }
-
-    const month = date.substring(5, 7);
-    const existingLog = this.data.dailyLogs.find(l => l.date === date);
-
-    // Restore prioritised IDs from existing log on date change (§6.3)
-    if (existingLog?.prioritisedStoryIds) {
-      this._prioritisedStoryIds = new Set(existingLog.prioritisedStoryIds);
-    } else {
-      this._prioritisedStoryIds = new Set();
-    }
-    // Reset expander on date change
-    this._expanderOpen = false;
-
-    // Pre-fill form fields from existing log
-    if (existingLog) {
-      document.getElementById('actualDayType').value = existingLog.dayType || 'Stable';
-      document.getElementById('actualCapacity').value = existingLog.actualCapacity || existingLog.plannedCapacity || 0;
-      document.getElementById('dailyNotes').value = existingLog.notes || '';
-    }
-
-    const loggedStoryIds = new Set(
-      (existingLog?.stories || existingLog?.storyEfforts || []).map(s => s.id || s.storyId)
-    );
-
-    // All eligible stories for this date
-    const allStories = date
-      ? this._getStoriesForDate(date)
-      : this.data.stories.filter(s =>
-          s.month === month &&
-          s.status !== STORY_STATUS.COMPLETED &&
-          s.status !== STORY_STATUS.ABANDONED
-        );
-
-    if (allStories.length === 0) {
-      container.innerHTML = '<p class="empty-state">No active stories for this month</p>';
-      this.updateDailyCapacity();
-      return;
-    }
-
-    const getEffort = (storyId) => {
-      if (this.draftEffort[storyId] !== undefined) return this.draftEffort[storyId];
-      if (existingLog) {
-        const e = (existingLog.stories || existingLog.storyEfforts || []).find(s => (s.id || s.storyId) === storyId);
-        return e ? (e.timeSpent || e.effort || 0) : 0;
-      }
-      return 0;
-    };
-
-    const renderStoryRow = (story) => {
-      const epic = this.data.epics.find(e => e.id === story.epicId);
-      const epicName = epic ? epic.name : 'Unknown';
-      const isPinned = this._prioritisedStoryIds.has(story.id);
-      const effort = getEffort(story.id);
-
-      return `<div class="daily-story-item ${isPinned ? 'priority-pinned' : ''}" data-story-id="${story.id}">
-        <button class="story-priority-pin ${isPinned ? 'pinned' : ''}"
-                onclick="event.stopPropagation(); app.toggleStoryPriority('${story.id}')"
-                title="${isPinned ? 'Unpin' : 'Pin for today'}">📌</button>
-        <div class="daily-story-info" onclick="app.modal.open('story', '${story.id}')">
-          <div class="daily-story-name">${this.escapeHtml(story.name)}</div>
-          <div class="daily-story-epic">${this.escapeHtml(epicName)}</div>
-        </div>
-        <div class="daily-story-weight">
-          <input type="number" min="0" step="0.25" value="${effort}"
-                 data-story-id="${story.id}" class="story-effort-input"
-                 onclick="event.stopPropagation()">
-          <span>/ ${story.weight}</span>
-        </div>
-      </div>`;
-    };
-
-    // ── Plan My Day section ──────────────────────────────────────────────────
-    let html = '<div class="daily-section"><h4>Plan My Day</h4>';
-    allStories.forEach(story => {
-      html += renderStoryRow(story);
-    });
-    html += '</div>';
-
-    // ── Story Work section ───────────────────────────────────────────────────
-    const pinnedStories = allStories.filter(s => this._prioritisedStoryIds.has(s.id));
-    html += '<div class="daily-section"><h4>Story Work</h4>';
-
-    if (pinnedStories.length === 0) {
-      html += '<p class="empty-state small">Pin stories above to track effort</p>';
-    } else {
-      pinnedStories.forEach(story => {
-        html += renderStoryRow(story);
-      });
-    }
-
-    // Expander for all other stories
-    html += `<button class="daily-expander-toggle" onclick="app.toggleDailyExpander()">
-      ${this._expanderOpen ? '▲' : '▼'} Add Other Story
-    </button>`;
-
-    if (this._expanderOpen) {
-      const unpinnedStories = allStories.filter(s => !this._prioritisedStoryIds.has(s.id));
-      unpinnedStories.forEach(story => {
-        html += renderStoryRow(story);
-      });
-    }
-
-    html += '</div>';
-    container.innerHTML = html;
-    this.updateDailyCapacity();
-  }
-
-  updateDailyCapacity() {
-    const available = parseFloat(document.getElementById('actualCapacity').value) || 0;
-    const utilized = Object.values(this.draftEffort).reduce((a, b) => a + b, 0);
-
-    document.getElementById('dailyAvailable').textContent = available;
-    document.getElementById('dailyUtilized').textContent = utilized.toFixed(2).replace(/\.?0+$/, '');
-    document.getElementById('dailyRemaining').textContent = (available - utilized).toFixed(1);
-  }
-
-  async handleSaveDailyLog() {
-    const date = document.getElementById('logDate').value;
-    const dayType = document.getElementById('actualDayType').value;
-    const actualCapacity = parseFloat(document.getElementById('actualCapacity').value) || 0;
-    const notes = document.getElementById('dailyNotes').value;
-
-    if (!date) {
-      this.showNotification('Please select a date', 'warning');
-      return;
-    }
-
-    // Read effort from draftEffort (§6.7) — not from DOM
-    const stories = Object.entries(this.draftEffort)
-      .filter(([, v]) => v > 0)
-      .map(([id, timeSpent]) => ({ id, timeSpent }));
-
-    const utilized = Object.values(this.draftEffort).reduce((a, b) => a + b, 0);
-
-    // Determine planned capacity from day type
-    const dayTypeKey = dayType.toLowerCase();
-    const plannedCapacity = DAY_CAPACITY[dayTypeKey] ? DAY_CAPACITY[dayTypeKey].total : 0;
-
-    // Merge with existing log to preserve floor/session data
-    const existing = this.getDailyLog(date);
-    const logData = {
-      ...(existing || {}),
-      id: `log-${date}`,
-      date,
-      month: date.substring(0, 7),
-      dayType,
-      plannedCapacity,
-      actualCapacity,
-      stories,
-      utilized,
-      notes,
-      prioritisedStoryIds: [...this._prioritisedStoryIds],
-    };
-
-    // Ensure floor and session fields exist
-    if (!logData.floor) logData.floor = this.createEmptyFloor();
-    if (logData.floorCompletedCount === undefined) logData.floorCompletedCount = 0;
-
-    await this.saveDailyLog(logData);
-    // Clear draft state after successful save (§6.7)
-    this.draftEffort = {};
-    this._prioritisedStoryIds = new Set();
-    this._expanderOpen = false;
-    this.renderDailyLogHistory();
-    this.renderDailyStories();
-    this.showNotification('Daily log saved', 'success');
-  }
-
-  renderDailyLogHistory() {
-    const container = document.getElementById('dailyLogHistory');
-
-    if (this.data.dailyLogs.length === 0) {
-      container.innerHTML = '<p class="empty-state">No daily logs yet.</p>';
-      return;
-    }
-
-    const sorted = [...this.data.dailyLogs].sort((a, b) =>
-      new Date(b.date) - new Date(a.date)
-    );
-
-    let html = '';
-    sorted.slice(0, 14).forEach(log => {
-      const dateStr = new Date(log.date + 'T00:00:00').toLocaleDateString('en-US', {
-        month: 'short', day: 'numeric', weekday: 'short'
-      });
-
-      const logStories = log.stories || log.storyEfforts || [];
-      const utilized = log.utilized || logStories.reduce((s, e) => s + (e.timeSpent || e.effort || 0), 0);
-      const capacity = log.actualCapacity || log.plannedCapacity || 0;
-
-      html += `<div class="epic-card">
-        <div class="epic-header">
-          <span class="epic-title">${dateStr}</span>
-          <button class="btn-danger" onclick="app.deleteDailyLog('${log.id}')">Del</button>
-        </div>
-        <div class="epic-meta">
-          <div class="meta-item"><span class="meta-label">Type:</span><span class="meta-value">${log.dayType}</span></div>
-          <div class="meta-item"><span class="meta-label">Cap:</span><span class="meta-value">${capacity}</span></div>
-          <div class="meta-item"><span class="meta-label">Used:</span><span class="meta-value">${utilized}</span></div>
-          <div class="meta-item"><span class="meta-label">Eff:</span><span class="meta-value">${capacity > 0 ? Math.round(utilized / capacity * 100) : 0}%</span></div>
-          ${log.floor ? `<div class="meta-item"><span class="meta-label">Floor:</span><span class="meta-value">${log.floorCompletedCount || 0}/4</span></div>` : ''}
-        </div>`;
-
-      if (logStories.length > 0) {
-        html += '<div style="margin-top:8px">';
-        logStories.forEach(e => {
-          const story = this.data.stories.find(s => s.id === (e.id || e.storyId));
-          const storyName = story ? story.name : (e.storyName || 'Unknown');
-          const effort = e.timeSpent || e.effort || 0;
-          html += `<div style="display:flex;justify-content:space-between;padding:4px 0;font-size:12px;border-bottom:1px solid var(--border)">
-            <span style="color:var(--text-body)">${this.escapeHtml(storyName)}</span>
-            <span style="font-weight:600">${effort}b</span>
-          </div>`;
-        });
-        html += '</div>';
-      }
-
-      if (log.notes) {
-        html += `<p style="margin-top:8px;font-size:12px;color:var(--text-muted)">${this.escapeHtml(log.notes)}</p>`;
-      }
-
-      html += '</div>';
-    });
-
-    container.innerHTML = html;
   }
 
   // Analytics
@@ -4148,56 +1955,10 @@ class CapacityManager {
   getSidebarLinksForTab(tabName) {
     const links = [];
     switch (tabName) {
-      case 'portfolio':
-        links.push(
-          { id: 'portfolioCard', icon: '\u{1F4CA}', label: 'Portfolio' }
-        );
-        break;
-      case 'daily':
-        links.push(
-          { id: 'dailyLogForm', icon: '\u{1F4C5}', label: 'Daily Log' },
-          { id: 'floorChecklistCard', icon: '\u{1F3AF}', label: 'Daily Floor' },
-          { id: 'missingDaysSection', icon: '\u{26A0}\u{FE0F}', label: 'Missed Days' },
-          { id: 'dailyStorySelection', icon: '\u{1F4CA}', label: 'Story Work' },
-          { id: 'dailyLogHistoryCard', icon: '\u{1F4DC}', label: 'History' }
-        );
-        break;
       case 'calendar':
         links.push(
-          { id: 'weeklyPlanningForm', icon: '\u{1F4CB}', label: 'Weekly Planning' },
-          { id: 'calendarTableCard', icon: '\u{1F4C5}', label: 'Planned Weeks' }
+          { id: 'calendar-root', icon: '\u{1F4C5}', label: 'Calendar' }
         );
-        // Add individual week sub-links for visible weeks
-        {
-          const visibleWeeks = this.getVisibleWeeks();
-          if (visibleWeeks.length > 0) {
-            const sorted = [...visibleWeeks].sort((a, b) => {
-              return (a.year * 52 + parseInt(a.week)) - (b.year * 52 + parseInt(b.week));
-            });
-            sorted.forEach(week => {
-              const isCurrent = this.isCurrentWeek(week);
-              const monthShort = new Date(week.year, parseInt(week.month) - 1)
-                .toLocaleString('default', { month: 'short' });
-              links.push({
-                id: `week-${week.year}-W${week.week}`,
-                icon: isCurrent ? '\u{1F4CD}' : week.pinned ? '\u{1F4CC}' : ' ',
-                label: `${monthShort} W${week.week}`,
-                indent: true
-              });
-            });
-          }
-        }
-        // Add archived link if any exist
-        {
-          const archivedCount = this.data.calendar.filter(w => w.archived).length;
-          if (archivedCount > 0) {
-            links.push({
-              id: 'archivedWeeks',
-              icon: '\u{1F4E6}',
-              label: `Archived (${archivedCount})`
-            });
-          }
-        }
         break;
       case 'epics':
         links.push(
@@ -4224,12 +1985,6 @@ class CapacityManager {
   }
 
   scrollToSection(sectionId) {
-    // Special case: clicking archived link switches view
-    if (sectionId === 'archivedWeeks') {
-      this.setCalendarView('archived');
-      return;
-    }
-
     const element = document.getElementById(sectionId);
     if (!element) return;
 
@@ -4407,97 +2162,10 @@ class CapacityManager {
     epic.status = EPIC_STATUS.ACTIVE;
     epic.completedAt = null;
     await this.saveEpic(epic);
-    this.renderEpicsList();
-    this.renderEpicArchive();
-    this.renderEpicTimeline();
-    this.renderStoryMap();
+
   }
 
   // Epic Archive
-  renderEpicArchive() {
-    const container = document.getElementById('epicArchive');
-    const countBadge = document.getElementById('archiveCountBadge');
-    if (!container) return;
-
-    const archivedEpics = this.data.epics.filter(e =>
-      e.status === EPIC_STATUS.COMPLETED || e.status === EPIC_STATUS.ARCHIVED
-    );
-
-    if (countBadge) countBadge.textContent = archivedEpics.length;
-
-    if (archivedEpics.length === 0) {
-      container.innerHTML = '<p class="empty-state">No archived epics.</p>';
-      return;
-    }
-
-    archivedEpics.sort((a, b) => {
-      const dateA = a.completedAt || a.createdAt || '';
-      const dateB = b.completedAt || b.createdAt || '';
-      return new Date(dateB) - new Date(dateA);
-    });
-
-    let html = '<div class="archive-grid">';
-    archivedEpics.forEach(epic => {
-      const stories = this.data.stories.filter(s => s.epicId === epic.id);
-      const completedStories = stories.filter(s =>
-        s.status === STORY_STATUS.COMPLETED || s.status === STORY_STATUS.ABANDONED
-      );
-      const activeStories = stories.filter(s => s.status === STORY_STATUS.ACTIVE);
-
-      const completedDate = epic.completedAt
-        ? new Date(epic.completedAt).toLocaleDateString()
-        : 'Unknown';
-
-      const statusTagClass = epic.status === EPIC_STATUS.ARCHIVED ? 'tag-abandoned' : 'tag-completed';
-
-      html += `
-        <div class="archive-epic-card ${epic.status}">
-          <div class="archive-epic-header">
-            <div class="archive-epic-title">
-              <h4>${this.escapeHtml(epic.name)}</h4>
-              <span class="tag ${statusTagClass}">${epic.status}</span>
-            </div>
-            ${activeStories.length > 0 ? `
-              <div class="archive-warning">
-                ⚠️ ${activeStories.length} active story/stories
-              </div>
-            ` : ''}
-          </div>
-          <div class="archive-epic-meta">
-            <span>🎯 ${this.escapeHtml(this.getFocusName(epic.focusId))}</span>
-            <span>📅 ${completedDate}</span>
-          </div>
-          <div class="archive-epic-stats">
-            <div class="stat">
-              <span class="stat-label">Stories:</span>
-              <span class="stat-value">${completedStories.length}/${stories.length}</span>
-            </div>
-            ${epic.vision ? `<p class="archive-vision">${this.escapeHtml(epic.vision)}</p>` : ''}
-          </div>
-          <div class="archive-epic-actions">
-            ${epic.status === EPIC_STATUS.COMPLETED ? `
-              <button class="btn-primary btn-sm" onclick="app.reactivateEpicUI('${epic.id}')">
-                ↻ Reactivate
-              </button>
-              <button class="btn-secondary btn-sm" onclick="app.permanentlyArchiveEpic('${epic.id}')">
-                📦 Archive Permanently
-              </button>
-            ` : `
-              <button class="btn-secondary btn-sm" onclick="app.reactivateEpicUI('${epic.id}')">
-                ↻ Restore
-              </button>
-            `}
-            <button class="btn-danger btn-sm" onclick="app.deleteEpic('${epic.id}')">
-              Delete
-            </button>
-          </div>
-        </div>
-      `;
-    });
-    html += '</div>';
-    container.innerHTML = html;
-  }
-
   async reactivateEpicUI(epicId) {
     const epic = this.data.epics.find(e => e.id === epicId);
     if (!epic) return;
@@ -4516,20 +2184,13 @@ class CapacityManager {
     epic.status = EPIC_STATUS.ARCHIVED;
     epic.archivedAt = new Date().toISOString();
     await this.saveEpic(epic);
-    this.renderEpicArchive();
-    this.renderEpicsList();
+
     this.showNotification('Epic archived', 'success');
   }
 
   // Rendering
   renderAll() {
-    this.renderCalendarTable();
-    this.renderSubFocusList();
-    this.renderEpicsList();
-    this.renderEpicTimeline();
-    this.renderEpicArchive();
-    this.renderStoriesList();
-    this.renderDailyLogHistory();
+    // Rendered views are now driven by switchTab() and individual view modules
   }
 
   // Utilities
@@ -4557,6 +2218,4 @@ let app;
 document.addEventListener('DOMContentLoaded', async () => {
   app = new CapacityManager();
   await app.init();
-  window.app = app;
-  window.openBulkEdit = () => openBulkEditModal('stories');
 });
