@@ -24,7 +24,7 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 16px 20px;
+  padding: var(--space-lg) var(--space-xl);
   border-bottom: 1px solid var(--border);
   position: sticky;
   top: 0;
@@ -32,14 +32,14 @@
   z-index: 1;
 }
 .dlo-date-label {
-  font-size: 16px;
+  font-size: var(--text-base);
   font-weight: 600;
   color: var(--text-dark, #fff);
 }
 .dlo-close {
   background: none;
   border: none;
-  font-size: 22px;
+  font-size: var(--text-2xl);
   color: var(--text-muted);
   cursor: pointer;
   min-width: 44px;
@@ -51,54 +51,54 @@
 }
 .dlo-close:hover { background: rgba(255,255,255,0.08); }
 .dlo-close:focus-visible {
-  outline: 2px solid var(--primary, #6366f1);
+  outline: 2px solid var(--primary);
   outline-offset: 2px;
 }
 .dlo-body {
-  padding: 20px;
+  padding: var(--space-xl);
   flex: 1;
 }
 .dlo-future-notice,
 .dlo-loading {
   color: var(--text-muted);
-  font-size: 13px;
+  font-size: var(--text-sm);
   text-align: center;
   padding: 40px 0;
 }
 
 /* ── Sections ─────────────────────────────────────────────────────── */
 .dlo-section {
-  padding: 16px 0;
+  padding: var(--space-lg) 0;
   border-bottom: 1px solid var(--border, rgba(255,255,255,0.06));
 }
 .dlo-section:last-child { border-bottom: none; }
 
 .dlo-section-label {
-  font-size: 11px;
+  font-size: var(--text-xs);
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.05em;
   color: var(--text-muted);
-  margin-bottom: 10px;
+  margin-bottom: var(--space-md);
 }
 
 /* ── Day type row ─────────────────────────────────────────────────── */
 .dlo-day-type-row {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: var(--space-md);
   flex-wrap: wrap;
 }
 
 .dlo-derived-badge {
-  font-size: 12px;
-  padding: 4px 10px;
+  font-size: var(--text-xs);
+  padding: var(--space-xs) var(--space-md);
   border-radius: var(--radius-sm, 4px);
 }
 
 .dlo-override-select {
-  font-size: 12px;
-  padding: 6px 10px;
+  font-size: var(--text-xs);
+  padding: var(--space-sm) var(--space-md);
   background: var(--bg-subtle, rgba(255,255,255,0.05));
   color: var(--bg-white, #fff);
   border: 1px solid var(--border, rgba(255,255,255,0.1));
@@ -107,7 +107,7 @@
   cursor: pointer;
 }
 .dlo-override-select:focus-visible {
-  outline: 2px solid var(--primary, #6366f1);
+  outline: 2px solid var(--primary);
   outline-offset: 2px;
 }
 
@@ -115,27 +115,27 @@
 .dlo-capacity-row {
   display: flex;
   align-items: center;
-  gap: 16px;
+  gap: var(--space-lg);
   flex-wrap: wrap;
 }
 
 .dlo-cap-derived {
-  font-size: 13px;
+  font-size: var(--text-sm);
   color: var(--text-muted);
 }
 
 .dlo-cap-override-label {
-  font-size: 13px;
+  font-size: var(--text-sm);
   color: var(--text-muted);
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--space-sm);
 }
 
 .dlo-cap-input {
   width: 72px;
-  font-size: 13px;
-  padding: 6px 8px;
+  font-size: var(--text-sm);
+  padding: var(--space-sm) var(--space-sm);
   background: var(--bg-subtle, rgba(255,255,255,0.05));
   color: var(--bg-white, #fff);
   border: 1px solid var(--border, rgba(255,255,255,0.1));
@@ -143,7 +143,7 @@
   min-height: 44px;
 }
 .dlo-cap-input:focus-visible {
-  outline: 2px solid var(--primary, #6366f1);
+  outline: 2px solid var(--primary);
   outline-offset: 2px;
 }
 
@@ -151,18 +151,18 @@
 .dlo-floor-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 4px;
+  gap: var(--space-xs);
 }
 
 .dlo-floor-item {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--space-sm);
   min-height: 44px;
-  padding: 6px 8px;
+  padding: var(--space-sm) var(--space-sm);
   cursor: pointer;
   border-radius: var(--radius-sm, 4px);
-  font-size: 13px;
+  font-size: var(--text-sm);
   color: var(--bg-white, #e0e0e0);
 }
 .dlo-floor-item:hover {
@@ -181,9 +181,9 @@
 .dlo-notes {
   width: 100%;
   resize: vertical;
-  font-size: 13px;
+  font-size: var(--text-sm);
   font-family: inherit;
-  padding: 10px 12px;
+  padding: var(--space-md) var(--space-md);
   background: var(--bg-subtle, rgba(255,255,255,0.05));
   color: var(--bg-white, #e0e0e0);
   border: 1px solid var(--border, rgba(255,255,255,0.1));
@@ -193,7 +193,7 @@
   min-height: 44px;
 }
 .dlo-notes:focus-visible {
-  outline: 2px solid var(--primary, #6366f1);
+  outline: 2px solid var(--primary);
   outline-offset: 2px;
 }
 .dlo-notes::placeholder {
@@ -204,14 +204,14 @@
 .dlo-stories-list {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: var(--space-xs);
 }
 
 .dlo-story-row {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 8px 10px;
+  gap: var(--space-sm);
+  padding: var(--space-sm) var(--space-md);
   border-radius: var(--radius-sm, 4px);
   background: var(--bg-subtle, rgba(255,255,255,0.03));
   min-height: 44px;
@@ -223,7 +223,7 @@
 
 .dlo-story-name {
   flex: 1;
-  font-size: 13px;
+  font-size: var(--text-sm);
   color: var(--bg-white, #e0e0e0);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -231,8 +231,8 @@
 }
 
 .dlo-story-status {
-  font-size: 11px;
-  padding: 2px 8px;
+  font-size: var(--text-xs);
+  padding: var(--space-xs) var(--space-sm);
   border-radius: 10px;
   flex-shrink: 0;
   text-transform: capitalize;
@@ -245,10 +245,10 @@
 .dlo-status--abandoned { background: rgba(148,163,184,0.12); color: #64748b; }
 
 .dlo-empty-stories {
-  font-size: 13px;
+  font-size: var(--text-sm);
   color: var(--text-muted);
   text-align: center;
-  padding: 20px 0;
+  padding: var(--space-xl) 0;
   line-height: 1.5;
 }
 
@@ -257,13 +257,13 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 14px 0 8px;
+  padding: var(--space-md) 0 var(--space-sm);
   border-top: 1px solid var(--border, rgba(255,255,255,0.06));
-  margin-top: 4px;
+  margin-top: var(--space-xs);
 }
 
 .dlo-save-indicator {
-  font-size: 12px;
+  font-size: var(--text-xs);
   color: var(--text-muted);
   min-width: 50px;
 }
@@ -272,8 +272,8 @@
   background: none;
   border: 1px solid var(--border, rgba(255,255,255,0.1));
   color: var(--text-muted);
-  font-size: 12px;
-  padding: 6px 14px;
+  font-size: var(--text-xs);
+  padding: var(--space-sm) var(--space-md);
   border-radius: var(--radius-sm, 4px);
   cursor: pointer;
   min-height: 44px;

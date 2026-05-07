@@ -45,7 +45,16 @@
       "Bash(lsof -ti:8080)",
       "Bash(xargs kill *)",
       "Bash([ ! -f \"/Users/jun/Library/CloudStorage/OneDrive-Personal/Tools/capacity-planner/$f\" ])",
-      "Bash(curl -sf http://localhost:8080/)"
+      "Bash(curl -sf http://localhost:8080/)",
+      "Bash(grep -oE '#[0-9a-fA-F]{3,6}' /Users/jun/Library/CloudStorage/OneDrive-Personal/Tools/capacity-planner/css/styles.css)",
+      "WebFetch(domain:localhost)",
+      "Bash(curl -sf -o /dev/null -w '%{http_code}' http://localhost:8080/)",
+      "Bash(kill %1)",
+      "Bash(tail -5 /private/tmp/claude-501/-Users-jun-Library-CloudStorage-OneDrive-Personal-Tools/capacity-planner/c9dbb199-5bb9-4818-919b-1070d137d535/tasks/b83c6lhdo.output)",
+      "Read(//private/tmp/claude-501/-Users-jun-Library-CloudStorage-OneDrive-Personal-Tools/capacity-planner/c9dbb199-5bb9-4818-919b-1070d137d535/tasks/**)",
+      "Bash(git checkout *)",
+      "Bash(grep -n '\\\\.epic-card, \\\\.story-card {\\\\|\\\\.week-card {\\\\|\\\\.sub-focus-card {\\\\|\\\\.metric-card {\\\\|\\\\.sm-story-card {\\\\|\\\\.archive-epic-card {\\\\|\\\\.es-epic-card {\\\\|\\\\.missing-day-card {\\\\|^input, select, textarea {\\\\|\\\\.epic-bar-fill {\\\\|\\\\.progress-actual {' css/styles.css)",
+      "Bash(grep -n '^button\\\\b\\\\|^button,\\\\|button {' css/styles.css css/backlog.css)"
     ]
   }
 }

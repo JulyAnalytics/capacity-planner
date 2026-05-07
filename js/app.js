@@ -524,6 +524,61 @@ class CapacityManager {
     this._createActionItemDraft = [];
   }
 
+  renderCalendarSkeleton() {
+    const target = document.getElementById('calendar-root');
+    if (!target) return;
+    target.innerHTML = `
+      <div class="skeleton skeleton-week"></div>
+      <div class="skeleton skeleton-week"></div>
+      <div class="skeleton skeleton-week"></div>
+    `;
+  }
+
+  renderBacklogSkeleton() {
+    const target = document.getElementById('backlog-root');
+    if (!target) return;
+    const rows = Array.from({ length: 6 })
+      .map(() => '<div class="skeleton skeleton-row"></div>').join('');
+    target.innerHTML = rows;
+  }
+
+  renderAnalyticsSkeleton() {
+    const target = document.getElementById('analyticsReport');
+    if (!target) return;
+    target.innerHTML = `
+      <div class="skeleton skeleton-stat"></div>
+      <div class="skeleton skeleton-stat"></div>
+      <div class="skeleton skeleton-chart"></div>
+    `;
+  }
+
+  renderCalendarEmpty() {
+    const target = document.getElementById('calendar-root');
+    if (!target) return;
+    target.innerHTML = '<div class="empty-state">' +
+      '<p class="empty-state-title">No calendar data yet</p>' +
+      '<p class="empty-state-text">Create a focus and assign capacities to get started.</p>' +
+      '</div>';
+  }
+
+  renderBacklogEmpty() {
+    const target = document.getElementById('backlog-root');
+    if (!target) return;
+    target.innerHTML = '<div class="empty-state">' +
+      '<p class="empty-state-title">Your backlog is empty</p>' +
+      '<p class="empty-state-text">Epics and stories you create will appear here.</p>' +
+      '</div>';
+  }
+
+  renderAnalyticsEmpty() {
+    const target = document.getElementById('analyticsReport');
+    if (!target) return;
+    target.innerHTML = '<div class="empty-state">' +
+      '<p class="empty-state-title">No analytics yet</p>' +
+      '<p class="empty-state-text">Start tracking your capacity to see insights.</p>' +
+      '</div>';
+  }
+
   // Single re-render fan-out map (§2.1)
   notifyDataChange(type) {
     const map = {
@@ -1192,7 +1247,7 @@ class CapacityManager {
     if (tabName === 'calendar') {
       const el = document.getElementById('calendar');
       if (el) el.classList.add('active');
-      // Render calendar into dedicated container
+      this.renderCalendarSkeleton();
       if (window.calendarView) {
         const container = document.getElementById('calendar-root');
         window.calendarView.render({ container });
@@ -1203,6 +1258,7 @@ class CapacityManager {
     if (tabName === 'focus') {
       const el = document.getElementById('backlog');
       if (el) el.classList.add('active');
+      this.renderBacklogSkeleton();
       if (window.backlogView) window.backlogView._setGroupBy('focus');
       return;
     }
@@ -1210,6 +1266,7 @@ class CapacityManager {
     if (tabName === 'sprints') {
       const el = document.getElementById('backlog');
       if (el) el.classList.add('active');
+      this.renderBacklogSkeleton();
       if (window.backlogView) window.backlogView._setGroupBy('sprint');
       return;
     }
@@ -1217,6 +1274,7 @@ class CapacityManager {
     if (tabName === 'storymap') {
       const el = document.getElementById('backlog');
       if (el) el.classList.add('active');
+      this.renderBacklogSkeleton();
       if (window.backlogView) window.backlogView._setGroupBy('storymap');
       return;
     }
@@ -1224,6 +1282,7 @@ class CapacityManager {
     if (tabName === 'analytics') {
       const el = document.getElementById('analytics');
       if (el) el.classList.add('active');
+      this.renderAnalyticsSkeleton();
       if (window.app?.renderAnalytics) window.app.renderAnalytics();
       return;
     }

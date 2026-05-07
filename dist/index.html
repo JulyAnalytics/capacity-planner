@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Capacity Planner</title>    <link rel="stylesheet" href="dist/styles.d5c9eacd.min.css">
+    <title>Capacity Planner</title>    <link rel="stylesheet" href="dist/styles.97dd2143.min.css">
     </head>
 <body>
     <!-- Auth Overlay — shown when no session exists -->
@@ -32,15 +32,15 @@
     <!-- Expand button when sidebar is collapsed -->
     <button class="sidebar-expand-button" onclick="app.toggleSidebar()">&#9654;</button>
 
-    <div class="container">
+    <div class="container main-content">
         <header>
             <h1>Capacity Planner</h1>
             <div class="sync-status">
                 <span id="lastSaved">Last saved: Never</span>
                 <button id="exportBtn" class="btn-secondary btn-sm">Export</button>
                 <button id="importBtn" class="btn-secondary btn-sm">Import</button>
-                <button id="migrate-idb-btn" class="btn-secondary btn-sm" onclick="migrateFromIDB()" title="Copy existing IndexedDB data to Supabase">Migrate Local Data</button>
-                <button id="signout-btn" onclick="authSignOut()" style="display:none;">Sign Out</button>
+                <button id="migrate-idb-btn" class="btn-tertiary btn-sm" onclick="migrateFromIDB()" title="Copy existing IndexedDB data to Supabase">Migrate Local Data</button>
+                <button id="signout-btn" class="btn-tertiary btn-sm" onclick="authSignOut()" style="display:none;">Sign Out</button>
                 <input type="file" id="fileInput" accept=".json" style="display:none">
             </div>
         </header>
@@ -132,6 +132,6 @@
       </div>
     </div>
 
-    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>    <script src="dist/app.849a3385.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>    <script src="dist/app.e4ef154c.min.js"></script>
     </body>
 </html>
