@@ -1,9 +1,14 @@
 [build]
   command = "npm install && npm run build"
-  publish = "."
+  publish = "dist"
 
 [[headers]]
-  for = "/dist/*"
+  for = "/app.*.min.js"
+  [headers.values]
+    Cache-Control = "public, max-age=31536000, immutable"
+
+[[headers]]
+  for = "/styles.*.min.css"
   [headers.values]
     Cache-Control = "public, max-age=31536000, immutable"
 

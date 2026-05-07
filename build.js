@@ -317,6 +317,11 @@ async function main() {
   const [jsFile, cssFile] = await Promise.all([buildJS(), buildCSS()]);
   updateIndexHtml(jsFile, cssFile);
 
+  // Copy static assets
+  if (fs.existsSync('robots.txt')) {
+    fs.copyFileSync('robots.txt', 'dist/robots.txt');
+  }
+
   console.log('\nBuild complete ✓');
 }
 
