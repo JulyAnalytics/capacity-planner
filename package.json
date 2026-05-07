@@ -5,11 +5,13 @@
     "build": "node build.js",
     "reauth": "node scripts/reauth.mjs"
   },
-  "devDependencies": {
-    "@playwright/test": "^1.59.1",
+  "dependencies": {
     "cssnano": "^7",
-    "dotenv": "^17.4.2",
     "postcss": "^8",
     "terser": "^5"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.59.1",
+    "dotenv": "^17.4.2"
   }
 }
