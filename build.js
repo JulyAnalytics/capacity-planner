@@ -262,40 +262,31 @@ async function buildCSS() {
 // ─── Update index.html ───────────────────────────────────────────────────────
 
 function updateIndexHtml(jsFile, cssFile) {
+  // Bare paths for dist/index.html (served from dist/ on Netlify)
+  const jsBare  = path.basename(jsFile);
+  const cssBare = path.basename(cssFile);
+
   let html = fs.readFileSync('index.html', 'utf8');
 
-  // 1. Remove all <link rel="stylesheet" href="css/..."> and old dist CSS tags
-  html = html.replace(/<link\s+rel="stylesheet"\s+href="css\/[^"]*"\s*>\s*\n?/g, '');
-  html = html.replace(/<link\s+rel="stylesheet"\s+href="dist\/styles\.[^"]*"\s*>\s*\n?/g, '');
+  // 1. Remove old CSS/JS tags (only local app files, not external CDN)
+  html = html.replace(/<link\s+rel="stylesheet"\s+href="(?:css\/|dist\/)[^"]*"\s*>\s*\n?/g, '');
+  html = html.replace(/<script[^>]*\bsrc="(?:js\/|dist\/)[^"]*"[^>]*>\s*<\/script>\s*\n?/g, '');
+  // 2. Insert new CSS link before </head>
+  html = html.replace(/<\/head>/, `    <link rel="stylesheet" href="${cssBare}">\n  </head>`);
+  // 3. Insert new JS bundle before </body>
+  html = html.replace(/<\/body>/, `    <script src="${jsBare}"></script>\n  </body>`);
 
-  // 2. Insert single hashed CSS link just before </head>
-  html = html.replace(
-    /(\s*<\/head>)/,
-    `    <link rel="stylesheet" href="${cssFile}">\n$1`
-  );
-
-  // 3. Remove all <script> tags pointing into js/ or old dist bundles (with or without type="module")
-  html = html.replace(/<script[^>]*\bsrc="js\/[^"]*"[^>]*>\s*<\/script>\s*\n?/g, '');
-  html = html.replace(/<script[^>]*\bsrc="dist\/app\.[^"]*"[^>]*>\s*<\/script>\s*\n?/g, '');
-
-  // 4. Insert single hashed JS bundle just before </body>
-  //    It lands after the Supabase CDN tag, which is left untouched.
-  html = html.replace(
-    /(\s*<\/body>)/,
-    `    <script src="${jsFile}"></script>\n$1`
-  );
-
+  // dist/index.html: bare paths (Netlify serves dist/ as root)
   fs.writeFileSync('dist/index.html', html, 'utf8');
-  fs.copyFileSync('dist/index.html', 'index.html');
+
+  // Root index.html: dist/-prefixed paths (for local dev server)
+  let rootHtml = html
+    .replace(`href="${cssBare}"`, `href="dist/${cssBare}"`)
+    .replace(`src="${jsBare}"`, `src="dist/${jsBare}"`);
+  fs.writeFileSync('index.html', rootHtml, 'utf8');
+
   console.log('  HTML → dist/index.html + index.html updated');
 
-  // Sanity checks
-  if (/<script[^>]*src="js\//.test(html)) {
-    console.warn('  ⚠️  WARNING: js/ script tags still present in output index.html');
-  }
-  if (/<link[^>]*href="css\//.test(html)) {
-    console.warn('  ⚠️  WARNING: css/ link tags still present in output index.html');
-  }
   if (!html.includes('cdn.jsdelivr.net')) {
     console.warn('  ⚠️  WARNING: Supabase CDN tag appears to be missing');
   }
