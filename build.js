@@ -9,6 +9,8 @@ const crypto = require('crypto');
 
 const JS_FILES = [
   'js/constants.js',
+  'js/notificationRegistry.js',
+  'vendor/sortablejs/Sortable.min.js',
   'js/utils.js',
   'js/auth.js',
   'js/db.js',
@@ -32,6 +34,7 @@ const JS_FILES = [
   'js/calendarView.js',
   'js/dailyLogOverlay.js',
   'js/importUtils.js',
+  'js/migrationRunner.js',
   'js/app.js',
 ];
 

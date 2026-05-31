@@ -313,7 +313,7 @@ function _initCapacityPlannerChannel() {
         const i = hierarchyCache.data.sprints.findIndex(s => s.id === data.id);
         if (i >= 0) hierarchyCache.data.sprints[i] = data;
       }
-      window.app?.notifyDataChange('sprint');
+      NotificationRegistry.emit('sprint');
     },
     onLocationPeriod: (action, data) => {
       if (action === 'created') {
@@ -326,7 +326,7 @@ function _initCapacityPlannerChannel() {
         hierarchyCache.data.locationPeriods =
           hierarchyCache.data.locationPeriods.filter(p => p.id !== data.id);
       }
-      window.app?.notifyDataChange('locationPeriod');
+      NotificationRegistry.emit('locationPeriod');
     },
     onDayTypeOverride: (action, data) => {
       if (action === 'upserted') {
@@ -337,7 +337,7 @@ function _initCapacityPlannerChannel() {
         hierarchyCache.data.dayTypeOverrides =
           hierarchyCache.data.dayTypeOverrides.filter(o => o.date !== data.date);
       }
-      window.app?.notifyDataChange('dayTypeOverride');
+      NotificationRegistry.emit('dayTypeOverride');
     },
   });
 }

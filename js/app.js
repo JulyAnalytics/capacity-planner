@@ -134,7 +134,7 @@ class ModalManager {
       const updated = this._collectFormValues(type, item);
       if (!updated) return;
       await this._persist(type, updated);
-      this.app.notifyDataChange(type);
+      NotificationRegistry.emit(type);
       this.close();
     } catch (err) {
       this.app.showNotification('Save failed: ' + err.message, 'error');
@@ -513,7 +513,7 @@ class CapacityManager {
       focuses: [],
       locationPeriods:  [],
       dayTypeOverrides: [],
-      sprints:          null, // null = not loaded yet (C4 fix); [] = loaded but empty
+      sprints:          [],
     };
     this.timelineWeeks = 8;
     this.sidebarCollapsed = false;
@@ -579,44 +579,6 @@ class CapacityManager {
       '</div>';
   }
 
-  // Single re-render fan-out map (§2.1)
-  notifyDataChange(type) {
-    const map = {
-      focus: () => {
-      },
-      story: () => {
-        if (window.backlogView) window.backlogView.renderSprintCapacityHeaders();
-        if (window.backlogView?._currentGroupBy?.() === 'storymap') window.backlogView.render();
-      },
-      epic: () => {
-
-        this.populateEpicDropdown();
-
-        if (window.backlogView?._currentGroupBy?.() === 'storymap') window.backlogView.render();
-      },
-      subFocus: () => {
-
-        this.loadSubFocusesForEpic();
-      },
-      sprint: () => {
-        if (window.backlogView)  window.backlogView.render();
-        if (window.calendarView) window.calendarView.render();
-      },
-      travelSegment: () => {
-        if (window.backlogView) window.backlogView.renderSprintCapacityHeaders();
-      },
-      locationPeriod: () => {
-        if (window.backlogView)  window.backlogView.renderSprintCapacityHeaders();
-        if (window.calendarView) window.calendarView.render();
-      },
-      dayTypeOverride: () => {
-        if (window.calendarView) window.calendarView.render();
-        if (window.backlogView)  window.backlogView.renderSprintCapacityHeaders();
-      },
-    };
-    map[type]?.();
-  }
-
   // ── Data accessor methods (§3.1) ──────────────────────────────────────────
   // All mutations to this.data.* flow through these. Satellites must never
   // assign this.data.* directly — they call these, which trigger re-renders.
@@ -626,13 +588,13 @@ class CapacityManager {
     const i = this.data.locationPeriods.findIndex(p => p.id === period.id);
     if (i >= 0) this.data.locationPeriods[i] = period;
     else this.data.locationPeriods.push(period);
-    this.notifyDataChange('locationPeriod');
+    NotificationRegistry.emit('locationPeriod');
   }
 
   removeLocationPeriodInMemory(periodId) {
     if (!Array.isArray(this.data.locationPeriods)) return;
     this.data.locationPeriods = this.data.locationPeriods.filter(p => p.id !== periodId);
-    this.notifyDataChange('locationPeriod');
+    NotificationRegistry.emit('locationPeriod');
   }
 
   upsertDayTypeOverrideInMemory(override) {
@@ -640,13 +602,13 @@ class CapacityManager {
     const i = this.data.dayTypeOverrides.findIndex(o => o.date === override.date);
     if (i >= 0) this.data.dayTypeOverrides[i] = override;
     else this.data.dayTypeOverrides.push(override);
-    this.notifyDataChange('dayTypeOverride');
+    NotificationRegistry.emit('dayTypeOverride');
   }
 
   removeDayTypeOverrideInMemory(date) {
     if (!Array.isArray(this.data.dayTypeOverrides)) return;
     this.data.dayTypeOverrides = this.data.dayTypeOverrides.filter(o => o.date !== date);
-    this.notifyDataChange('dayTypeOverride');
+    NotificationRegistry.emit('dayTypeOverride');
   }
 
   upsertDailyLogInMemory(log) {
@@ -669,19 +631,19 @@ class CapacityManager {
     const i = this.data.sprints.findIndex(s => s.id === sprint.id);
     if (i >= 0) this.data.sprints[i] = sprint;
     else this.data.sprints.push(sprint);
-    this.notifyDataChange('sprint');
+    NotificationRegistry.emit('sprint');
   }
 
   updateStoryInMemory(storyId, updates) {
     const idx = this.data.stories?.findIndex(s => s.id === storyId);
     if (idx >= 0) this.data.stories[idx] = { ...this.data.stories[idx], ...updates };
-    this.notifyDataChange('story');
+    NotificationRegistry.emit('story');
   }
 
   updateSprintInMemory(sprintId, updates) {
     const i = this.data.sprints?.findIndex(s => s.id === sprintId);
     if (i >= 0) this.data.sprints[i] = { ...this.data.sprints[i], ...updates };
-    this.notifyDataChange('sprint');
+    NotificationRegistry.emit('sprint');
   }
 
   async init() {
@@ -692,6 +654,7 @@ class CapacityManager {
       if (migrated) {
         this.showNotification('Data migrated from localStorage to IndexedDB', 'success');
       }
+      await MigrationRunner.run(DB);
       await this.loadAllData();
       // Align hierarchyCache to app.data so there is one source of truth per §3.3
       if (window.hierarchyCache?.data) {
@@ -703,18 +666,11 @@ class CapacityManager {
         hc.locationPeriods  = this.data.locationPeriods;
         hc.dayTypeOverrides = this.data.dayTypeOverrides;
       }
-      await this.migrateToSubFocuses();
-      await this.migrateCalendarToIncludeFocuses();
-      await this.migrateStoriesToIncludeActionItems();
-      await this.migrateWeeksToIncludeArchiveFields();
-      // F-0 migrations (order matters)
-      await this.migrateSeedFocuses();
-      await this.migrateEpicsToFocusId();
-      await this.migrateSubFocusesToFocusId();
-      await this.migrateSprintStatusToCompleted();
 
       this.modal = new ModalManager(this);
       this.setupEventListeners();
+      NotificationRegistry.on('epic',     () => this.populateEpicDropdown());
+      NotificationRegistry.on('subFocus', () => this.loadSubFocusesForEpic());
       this.setupNavigation();
       this.setDefaultDate();
       this.makeCardsCollapsible();
@@ -782,179 +738,14 @@ class CapacityManager {
     return this.data.focuses.find(f => f.id === focusId) || null;
   }
 
-  getFocusIdByName(name) {
-    const f = this.data.focuses.find(f => f.name === name);
-    return f ? f.id : null;
-  }
-
-  // ── F-0 Migrations ────────────────────────────────────────────────────────
-
-  async migrateSeedFocuses() {
-    const guard = await DB.get(DB.STORES.METADATA, 'migration:focuses-seeded');
-    if (guard) return;
-
-    const seedData = [
-      { name: 'Trading',     color: '#f06a6a', icon: '' },
-      { name: 'Photography', color: '#4a90d9', icon: '' },
-      { name: 'Physical',    color: '#4caf50', icon: '' },
-      { name: 'Learning',    color: '#f5a623', icon: '' },
-      { name: 'Building',    color: '#9b59b6', icon: '' },
-      { name: 'Social',      color: '#e67e22', icon: '' },
-      { name: 'Reading',     color: '#1abc9c', icon: '' },
-      { name: 'Admin',       color: '#95a5a6', icon: '' },
-    ];
-
-    for (const seed of seedData) {
-      const focus = {
-        id:          `focus-${seed.name.toLowerCase()}`,
-        name:        seed.name,
-        color:       seed.color,
-        icon:        seed.icon,
-        description: '',
-        status:      FOCUS_STATUS.ACTIVE,
-        createdAt:   new Date().toISOString(),
-        archivedAt:  null,
-      };
-      await DB.put(DB.STORES.FOCUSES, focus);
-    }
-
-    this.data.focuses = await DB.getAll(DB.STORES.FOCUSES);
-
-    await DB.put(DB.STORES.METADATA, {
-      key: 'migration:focuses-seeded',
-      value: true,
-      timestamp: new Date().toISOString(),
-    });
-    console.log('migrateSeedFocuses: 8 focuses seeded');
-  }
-
-  async migrateSprintStatusToCompleted() {
-    const guard = await DB.get(DB.STORES.METADATA, 'migration:sprint-status-completed');
-    if (guard) return;
-
-    const sprints = this.data.sprints || [];
-    let migrated = 0;
-    for (const sprint of sprints) {
-      if (sprint.status === 'done') {
-        sprint.status = 'completed';
-        sprint.updatedAt = new Date().toISOString();
-        await DB.put(DB.STORES.SPRINTS, sprint);
-        migrated++;
-      }
-    }
-
-    if (migrated > 0) {
-      this.data.sprints = await DB.getAll(DB.STORES.SPRINTS);
-      console.log(`migrateSprintStatusToCompleted: ${migrated} sprint(s) updated`);
-    }
-
-    await DB.put(DB.STORES.METADATA, {
-      id: 'migration:sprint-status-completed',
-      value: true,
-      timestamp: new Date().toISOString(),
-    });
-  }
-
-  async migrateEpicsToFocusId() {
-    const guard = await DB.get(DB.STORES.METADATA, 'migration:epics-focus-id');
-    if (guard) return;
-
-    const epics = await DB.getAll(DB.STORES.EPICS);
-    let migrated = 0;
-
-    for (const epic of epics) {
-      if (epic.focusId) continue;
-
-      const focusId = this.getFocusIdByName(epic.focus);
-      if (!focusId) {
-        console.warn(`migrateEpicsToFocusId: no focus for "${epic.focus}" on epic ${epic.id}`);
-        continue;
-      }
-
-      const updated = { ...epic, focusId };
-      delete updated.focus;
-      await DB.put(DB.STORES.EPICS, updated);
-      migrated++;
-    }
-
-    this.data.epics = await DB.getAll(DB.STORES.EPICS);
-
-    await DB.put(DB.STORES.METADATA, {
-      key: 'migration:epics-focus-id',
-      value: true,
-      migrated,
-      timestamp: new Date().toISOString(),
-    });
-    console.log(`migrateEpicsToFocusId: ${migrated} records updated`);
-  }
-
-  async migrateSubFocusesToFocusId() {
-    const guard = await DB.get(DB.STORES.METADATA, 'migration:subfocuses-focus-id');
-    if (guard) return;
-
-    const subFocuses = await DB.getAll(DB.STORES.SUB_FOCUSES);
-    let migrated = 0;
-
-    for (const sf of subFocuses) {
-      if (sf.focusId) continue;
-
-      const focusId = this.getFocusIdByName(sf.focus);
-      if (!focusId) {
-        console.warn(`migrateSubFocusesToFocusId: no focus for "${sf.focus}" on sf ${sf.id}`);
-        continue;
-      }
-
-      const updated = { ...sf, focusId };
-      delete updated.focus;
-      await DB.put(DB.STORES.SUB_FOCUSES, updated);
-      migrated++;
-    }
-
-    this.data.subFocuses = await DB.getAll(DB.STORES.SUB_FOCUSES);
-
-    await DB.put(DB.STORES.METADATA, {
-      key: 'migration:subfocuses-focus-id',
-      value: true,
-      migrated,
-      timestamp: new Date().toISOString(),
-    });
-    console.log(`migrateSubFocusesToFocusId: ${migrated} records updated`);
-  }
-
-  // Migrate sprint status 'done' → 'completed' (2026-05-03)
-  // The check uses 'done' intentionally — it converts OLD data to the NEW format.
-  async migrateSprintStatusToCompleted() {
-    const guard = await DB.get(DB.STORES.METADATA, 'migration:sprint-status-completed');
-    if (guard) return;
-    const sprints = this.data.sprints || [];
-    let migrated = 0;
-    for (const sprint of sprints) {
-      if (sprint.status === 'done') {
-        sprint.status = 'completed';
-        sprint.updatedAt = new Date().toISOString();
-        await DB.put(DB.STORES.SPRINTS, sprint);
-        migrated++;
-      }
-    }
-    if (migrated > 0) {
-      this.data.sprints = await DB.getAll(DB.STORES.SPRINTS);
-      console.log(`migrateSprintStatusToCompleted: ${migrated} sprint(s) updated`);
-    }
-    await DB.put(DB.STORES.METADATA, {
-      id: 'migration:sprint-status-completed',
-      value: true,
-      timestamp: new Date().toISOString(),
-    });
-  }
-
   // ── F-0 Focus CRUD ────────────────────────────────────────────────────────
 
   async saveFocus(data) {
     await DB.put(DB.STORES.FOCUSES, data);
-    this.data.focuses = this.data.focuses.filter(f => f.id !== data.id);
-    this.data.focuses.push(data);
+    this.data.focuses = await DB.getAll(DB.STORES.FOCUSES);
+    await window.invalidateCache('focuses');
     this.updateLastSaved();
-    this.notifyDataChange('focus');
+    NotificationRegistry.emit('focus');
   }
 
   async archiveFocus(id) {
@@ -1013,8 +804,8 @@ class CapacityManager {
 
     const updated = { ...focus, name: newName };
     await DB.put(DB.STORES.FOCUSES, updated);
-    this.data.focuses = this.data.focuses.filter(f => f.id !== id);
-    this.data.focuses.push(updated);
+    this.data.focuses = await DB.getAll(DB.STORES.FOCUSES);
+    await window.invalidateCache('focuses');
     await this._updateCalendarFocusName(focus.name, newName);
     this.updateLastSaved();
     this.showNotification(`Focus renamed to "${newName}"`, 'success');
@@ -1052,16 +843,17 @@ class CapacityManager {
 
   async saveEpic(epicData) {
     await DB.put(DB.STORES.EPICS, epicData);
-    this.data.epics = this.data.epics.filter(e => e.id !== epicData.id);
-    this.data.epics.push(epicData);
+    this.data.epics = await DB.getAll(DB.STORES.EPICS);
+    await window.invalidateCache('epics');
     this.updateLastSaved();
+    NotificationRegistry.emit('epic');
   }
 
   async saveStory(storyData) {
     await DB.put(DB.STORES.STORIES, storyData);
-    this.data.stories = this.data.stories.filter(s => s.id !== storyData.id);
-    this.data.stories.push(storyData);
+    this.data.stories = await DB.getAll(DB.STORES.STORIES);
     this.updateLastSaved();
+    NotificationRegistry.emit('story');
   }
 
   async deleteEpic(id) {
@@ -1080,9 +872,10 @@ class CapacityManager {
 
   async saveSubFocus(data) {
     await DB.put(DB.STORES.SUB_FOCUSES, data);
-    this.data.subFocuses = this.data.subFocuses.filter(sf => sf.id !== data.id);
-    this.data.subFocuses.push(data);
+    this.data.subFocuses = await DB.getAll(DB.STORES.SUB_FOCUSES);
+    await window.invalidateCache('subFocuses');
     this.updateLastSaved();
+    NotificationRegistry.emit('subFocus');
   }
 
   async deleteSubFocus(id) {
@@ -1096,118 +889,6 @@ class CapacityManager {
     this.data.subFocuses = this.data.subFocuses.filter(sf => sf.id !== id);
 
     this.showNotification('Sub-focus deleted', 'success');
-  }
-
-  async migrateToSubFocuses() {
-    const migrationRecord = await DB.get(DB.STORES.METADATA, 'migration:subfocus');
-    if (migrationRecord) return;
-
-    // Collect unique focus values from existing epics
-    const focuses = [...new Set(this.data.epics.map(e => e.focus).filter(Boolean))];
-
-    for (const focus of focuses) {
-      const sf = {
-        id: `sf-${focus.toLowerCase()}-general`,
-        name: 'General',
-        description: '',
-        focus,
-        icon: '',
-        color: '#6d6e6f',
-        month: String(new Date().getMonth() + 1).padStart(2, '0'),
-        createdAt: new Date().toISOString()
-      };
-      await this.saveSubFocus(sf);
-    }
-
-    // Update existing epics with subFocusId
-    for (const epic of this.data.epics) {
-      if (!epic.subFocusId && epic.focus) {
-        epic.subFocusId = `sf-${epic.focus.toLowerCase()}-general`;
-        await this.saveEpic(epic);
-      }
-    }
-
-    await DB.put(DB.STORES.METADATA, {
-      key: 'migration:subfocus',
-      value: true,
-      timestamp: new Date().toISOString()
-    });
-  }
-
-  async migrateCalendarToIncludeFocuses() {
-    const metadata = await DB.get(DB.STORES.METADATA, 'migration:calendar-focus');
-    if (metadata?.value) return;
-
-    const calendar = await DB.getAll(DB.STORES.CALENDAR);
-
-    for (const week of calendar) {
-      if (!week.focuses) {
-        week.focuses = {
-          primary: "",
-          secondary1: "",
-          secondary2: "",
-          floor: ""
-        };
-        await DB.put(DB.STORES.CALENDAR, week);
-      }
-    }
-
-    await DB.put(DB.STORES.METADATA, {
-      key: 'migration:calendar-focus',
-      value: true,
-      date: new Date().toISOString()
-    });
-
-    console.log('Calendar focus migration complete');
-  }
-
-  async migrateStoriesToIncludeActionItems() {
-    const metadata = await DB.get(DB.STORES.METADATA, 'migration:story-action-items');
-    if (metadata?.value) return;
-
-    const stories = await DB.getAll(DB.STORES.STORIES);
-
-    for (const story of stories) {
-      if (!story.actionItems) {
-        story.actionItems = [];
-        await DB.put(DB.STORES.STORIES, story);
-      }
-    }
-
-    await DB.put(DB.STORES.METADATA, {
-      key: 'migration:story-action-items',
-      value: true,
-      date: new Date().toISOString()
-    });
-
-    console.log('Story action items migration complete');
-  }
-
-  async migrateWeeksToIncludeArchiveFields() {
-    const metadata = await DB.get(DB.STORES.METADATA, 'migration:week-archive');
-    if (metadata?.value) return;
-
-    const weeks = await DB.getAll(DB.STORES.CALENDAR);
-
-    for (const week of weeks) {
-      if (!('archived' in week)) {
-        week.archived = false;
-        week.archivedAt = null;
-        week.pinned = false;
-        week.pinnedAt = null;
-        await DB.put(DB.STORES.CALENDAR, week);
-      }
-    }
-
-    await DB.put(DB.STORES.METADATA, {
-      key: 'migration:week-archive',
-      value: true,
-      date: new Date().toISOString()
-    });
-
-    // Reload calendar data after migration
-    this.data.calendar = await DB.getAll(DB.STORES.CALENDAR);
-    console.log('Week archive fields migration complete');
   }
 
   async deleteStory(id) {

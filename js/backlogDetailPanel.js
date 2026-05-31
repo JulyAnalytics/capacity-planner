@@ -506,7 +506,7 @@ export async function saveFocusField(focusId, field, value) {
     await DB.put(DB.STORES.FOCUSES, focus);
     window.app.data.focuses = await DB.getAll(DB.STORES.FOCUSES);
     await invalidateCache('focus');
-    window.app?.notifyDataChange('focus');
+    NotificationRegistry.emit('focus');
     window.backlogView?.render();
   } catch (err) {
     focus[field] = prev;
@@ -524,7 +524,7 @@ export async function saveSubFocusField(sfId, field, value) {
     await DB.put(DB.STORES.SUB_FOCUSES, sf);
     window.app.data.subFocuses = await DB.getAll(DB.STORES.SUB_FOCUSES);
     await invalidateCache('subFocus');
-    window.app?.notifyDataChange('subFocus');
+    NotificationRegistry.emit('subFocus');
     window.backlogView?.render();
   } catch (err) {
     sf[field] = prev;
@@ -645,7 +645,7 @@ export async function saveEpicField(epicId, field, value) {
     await DB.put(DB.STORES.EPICS, epic);
     window.app.data.epics = await DB.getAll(DB.STORES.EPICS);
     await invalidateCache('epic');
-    window.app?.notifyDataChange('epic');
+    NotificationRegistry.emit('epic');
     if (field === 'name' || field === 'fg') {
       window.backlogView?.patchEpicTag(epicId);
     }
@@ -1430,7 +1430,7 @@ async function _saveSegment() {
     }
 
     await openSegmentBuilder(_segmentFormSprintId);
-    if (window.app?.notifyDataChange) window.app.notifyDataChange('travelSegment');
+    NotificationRegistry.emit('travelSegment');
     window.backlogView?.renderSprintCapacityHeaders?.();
   } catch (err) {
     if (errEl) { errEl.textContent = err.message; errEl.style.display = ''; }
@@ -1440,7 +1440,7 @@ async function _saveSegment() {
 async function _deleteSegment(segId, sprintId) {
   await window.sprintManager.deleteSegment(segId);
   await openSegmentBuilder(sprintId);
-  if (window.app?.notifyDataChange) window.app.notifyDataChange('travelSegment');
+  NotificationRegistry.emit('travelSegment');
   window.backlogView?.renderSprintCapacityHeaders?.();
 }
 
@@ -1469,7 +1469,7 @@ async function _reopenSprint(sprintId) {
     window.app.data.sprints = await DB.getAll(DB.STORES.SPRINTS);
   }
   openSprint(sprintId);
-  if (window.app?.notifyDataChange) window.app.notifyDataChange('sprint');
+  NotificationRegistry.emit('sprint');
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────

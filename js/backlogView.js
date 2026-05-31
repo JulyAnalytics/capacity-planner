@@ -219,13 +219,12 @@ function _sprintDisplayName(sprintId) {
   return sprint ? `S${sprint.sprintNumber || '?'}` : sprintId;
 }
 
-function _getSectionIdForStory(story) {
-  if (story.sprintId) return story.sprintId;
-  return 'backlog-bucket';
-}
-
 function _getStoryFromData(storyId) {
   return window.app?.data?.stories?.find(s => s.id === storyId) || null;
+}
+
+function _storyOrderCmp(a, b) {
+  return (a.sortOrder ?? 0) - (b.sortOrder ?? 0) || a.id.localeCompare(b.id);
 }
 
 function _currentUrl() {
@@ -434,7 +433,6 @@ function _renderStoryRow(story, mode, allData) {
 
   return `<div class="bl-story-row bl-story-row--${mode}${isSelected ? ' bl-story-row--selected' : ''}"
     data-story-id="${esc(story.id)}"
-    draggable="true"
     onclick="window.backlogView._onStoryRowClick('${esc(story.id)}', event)">
     <span class="bl-drag-handle" title="Drag to move">⠿</span>
     ${starBtn}
@@ -778,8 +776,8 @@ async function _renderBySprintMode(allSprints, allStories, filteredStories, allE
 
   const renderSprint = (sprint) => {
     const isExpanded = _getSectionExpanded('sprint', sprint.id, sprint);
-    const allInSprint = allStories.filter(s => s.sprintId === sprint.id);
-    const visibleInSprint = filteredStories.filter(s => s.sprintId === sprint.id);
+    const allInSprint = allStories.filter(s => s.sprintId === sprint.id).sort(_storyOrderCmp);
+    const visibleInSprint = filteredStories.filter(s => s.sprintId === sprint.id).sort(_storyOrderCmp);
 
     // Apply activeFocus filter within sprint view
     let displayStories = visibleInSprint;
@@ -805,8 +803,8 @@ async function _renderBySprintMode(allSprints, allStories, filteredStories, allE
   for (const sprint of doneSprints)     parts.push(renderSprint(sprint));
 
   // Backlog bucket (sprintId === null)
-  const allBacklog = allStories.filter(s => !s.sprintId);
-  let visibleBacklog = filteredStories.filter(s => !s.sprintId);
+  const allBacklog = allStories.filter(s => !s.sprintId).sort(_storyOrderCmp);
+  let visibleBacklog = filteredStories.filter(s => !s.sprintId).sort(_storyOrderCmp);
   if (activeFocus) {
     visibleBacklog = _applyFocusFilter(visibleBacklog, allEpics, allFocuses, activeFocus);
   }
@@ -1307,6 +1305,8 @@ export async function _renderBacklogView() {
   const root = document.getElementById('backlog-root');
   if (!root) return;
 
+  _destroySprintSortables(root);
+
   const [allSprints, allStories, allEpics, allFocuses, allSubFocuses] = await Promise.all([
     DB.getAll(DB.STORES.SPRINTS),
     DB.getAll(DB.STORES.STORIES),
@@ -1349,7 +1349,7 @@ export async function _renderBacklogView() {
     <div id="bl-list">${listHtml}</div>
   `;
 
-  _initAllDragHandlers();
+  _initSprintSortables(root);
   _loadSprintCapacityHeaders();
 
   // Restore visual selection state after re-render
@@ -1369,46 +1369,8 @@ export function renderSprintCapacityHeaders() {
 
 // ── Patch helpers (in-place DOM updates) ──────────────────────────────────────
 
-export function patchStoryRow(storyId, { movedToSection } = {}) {
-  const story = _getStoryFromData(storyId);
-  if (!story) return;
-
-  const row = document.querySelector(`[data-story-id="${storyId}"]`);
-  if (!row) return;
-
-  const titleEl = row.querySelector('.bl-story-title');
-  if (titleEl) titleEl.textContent = story.name;
-
-  const badge = row.querySelector('.bl-status-badge');
-  if (badge) {
-    badge.className = `bl-status-badge bl-status-badge--${story.status}`;
-    badge.textContent = STATUS_DISPLAY_LABELS[story.status] || story.status;
-  }
-
-  const fibEl = row.querySelector('.bl-fib-badge');
-  if (fibEl) fibEl.textContent = story.fibonacciSize ? String(story.fibonacciSize) : '';
-
-  if (movedToSection) {
-    const targetSectionBody = document.querySelector(`[data-section-id="${movedToSection}"] .bl-section-body`);
-    if (!targetSectionBody) {
-      // Case B: target section not in DOM → full re-render
-      _renderBacklogView();
-      return;
-    }
-    const isHidden = targetSectionBody.classList.contains('bl-hidden');
-    if (isHidden) {
-      // Case A: target section is collapsed → expand then move
-      _expandSection(movedToSection);
-    }
-    targetSectionBody.appendChild(row);
-
-    // Case C: move involves backlog bucket
-    if (movedToSection === 'backlog-bucket' || row.dataset.prevSection === 'backlog-bucket') {
-      _patchBacklogHeader();
-    }
-  }
-
-  window.backlogDetailPanel?.refreshIfShowing(storyId);
+export function patchStoryRow(storyId) {
+  _refreshRowContent(storyId);
 }
 
 export function patchEpicTag(epicId) {
@@ -1428,130 +1390,137 @@ function _patchBacklogHeader() {
   if (countNum) countNum.textContent = String(allBacklog.length);
 }
 
-// ── Drag & Drop — desktop HTML5 ───────────────────────────────────────────────
+// ── SortableJS row + container refresh helpers ───────────────────────────────
 
-function _initDragHandlers(rowEl) {
-  rowEl.setAttribute('draggable', 'true');
-
-  rowEl.addEventListener('dragstart', (e) => {
-    e.dataTransfer.setData('text/plain', rowEl.dataset.storyId);
-    rowEl.classList.add('bl-dragging');
-  });
-
-  rowEl.addEventListener('dragend', () => {
-    rowEl.classList.remove('bl-dragging');
-  });
-}
-
-function _initDropZone(sectionEl) {
-  sectionEl.addEventListener('dragover', (e) => {
-    e.preventDefault();
-    sectionEl.classList.add('bl-drop-over');
-  });
-
-  sectionEl.addEventListener('dragleave', () => {
-    sectionEl.classList.remove('bl-drop-over');
-  });
-
-  sectionEl.addEventListener('drop', async (e) => {
-    sectionEl.classList.remove('bl-drop-over');
-    await _handleDrop(e, sectionEl.dataset.sectionId);
-  });
-}
-
-async function _handleDrop(e, targetSectionId) {
-  e.preventDefault();
-  const storyId = e.dataTransfer.getData('text/plain');
-  if (!storyId) return;
-
+function _refreshRowContent(storyId) {
   const story = _getStoryFromData(storyId);
-  if (!story) return;
-  const prevSprintId = story.sprintId;
-  const prevSectionId = _getSectionIdForStory(story);
-  const newSprintId = (targetSectionId === 'backlog-bucket') ? null : targetSectionId;
+  const row = document.querySelector(`[data-story-id="${storyId}"]`);
+  if (!story || !row) return;
 
-  story.sprintId = newSprintId;
+  const titleEl = row.querySelector('.bl-story-title');
+  if (titleEl) titleEl.textContent = story.name;
 
-  try {
-    await DB.put(DB.STORES.STORIES, story);
-    window.app?.updateStoryInMemory(story.id, { sprintId: story.sprintId });
-    patchStoryRow(storyId, { movedToSection: targetSectionId });
-  } catch (err) {
-    story.sprintId = prevSprintId;
-    patchStoryRow(storyId, { movedToSection: prevSectionId });
-    if (window.showToastWithActions) {
-      window.showToastWithActions('Failed to save — story moved back', 'error', { duration: 4000 });
-    }
+  const badge = row.querySelector('.bl-status-badge');
+  if (badge) {
+    badge.className = `bl-status-badge bl-status-badge--${story.status}`;
+    badge.textContent = STATUS_DISPLAY_LABELS[story.status] || story.status;
+  }
+
+  const fibEl = row.querySelector('.bl-fib-badge');
+  if (fibEl) fibEl.textContent = story.fibonacciSize ? String(story.fibonacciSize) : '';
+
+  window.backlogDetailPanel?.refreshIfShowing(storyId);
+}
+
+function _refreshContainers(fromEl, toEl) {
+  renderSprintCapacityHeaders();
+
+  const fromSection = fromEl.closest('[data-section-id]')?.dataset.sectionId;
+  const toSection   = toEl.closest('[data-section-id]')?.dataset.sectionId;
+  if (fromSection === 'backlog-bucket' || toSection === 'backlog-bucket') {
+    _patchBacklogHeader();
   }
 }
 
-// ── Drag & Drop — mobile pointer events ──────────────────────────────────────
+// ── SortableJS event handlers ────────────────────────────────────────────────
 
-function _initPointerDrag(rowEl) {
-  let dragging = false;
-  let clone    = null;
-  const storyId = rowEl.dataset.storyId;
-  let timer = null;
+async function _handleSortableCross(evt) {
+  const storyId = evt.item.dataset.storyId;
+  const story   = _getStoryFromData(storyId);
+  if (!story) return;
 
-  rowEl.addEventListener('pointerdown', (e) => {
-    if (e.pointerType !== 'touch') return;
-    timer = setTimeout(() => {
-      dragging = true;
-      clone = rowEl.cloneNode(true);
-      clone.classList.add('bl-drag-clone');
-      document.body.appendChild(clone);
-      rowEl.classList.add('bl-dragging');
-      rowEl.setPointerCapture(e.pointerId);
-    }, 400);
-  });
+  const toSectionEl = evt.to.closest('[data-section-id]');
+  const newSprintId = toSectionEl?.dataset.sectionId === 'backlog-bucket'
+    ? null
+    : (toSectionEl?.dataset.sectionId ?? story.sprintId);
 
-  rowEl.addEventListener('pointercancel', () => {
-    clearTimeout(timer);
-    dragging = false;
-    clone?.remove();
-    clone = null;
-    rowEl.classList.remove('bl-dragging');
-  });
+  const fromZone = evt.from.closest('[data-priority-zone]')?.dataset.priorityZone ?? null;
+  const toZone   = evt.to.closest('[data-priority-zone]')?.dataset.priorityZone   ?? null;
 
-  rowEl.addEventListener('pointerup', () => clearTimeout(timer), { once: false });
+  const updates = {};
+  if (newSprintId !== story.sprintId)            updates.sprintId = newSprintId;
+  if (toZone !== null && toZone !== fromZone)    updates.priority = toZone || null;
 
-  rowEl.addEventListener('pointermove', (e) => {
-    if (!dragging || !clone) return;
-    clone.style.position  = 'fixed';
-    clone.style.transform = `translate(${e.clientX - 20}px, ${e.clientY - 20}px)`;
-    _highlightDropTarget(document.elementFromPoint(e.clientX, e.clientY)?.closest('[data-section-id]'));
-  });
+  if (Object.keys(updates).length === 0) return;
 
-  rowEl.addEventListener('pointerup', async (e) => {
-    if (!dragging) return;
-    dragging = false;
-    clone?.remove();
-    clone = null;
-    rowEl.classList.remove('bl-dragging');
-    const target = document.elementFromPoint(e.clientX, e.clientY);
-    const section = target?.closest('[data-section-id]');
-    if (section) {
-      await _handleDrop(
-        { dataTransfer: { getData: () => storyId }, preventDefault: () => {} },
-        section.dataset.sectionId
-      );
-    }
-  });
+  const prev     = { ...story };
+  const oldIndex = evt.oldIndex;
+
+  Object.assign(story, updates);
+  try {
+    await DB.put(DB.STORES.STORIES, story);
+    window.app?.updateStoryInMemory(story.id, updates);
+    _refreshRowContent(storyId);
+    _refreshContainers(evt.from, evt.to);
+  } catch (err) {
+    Object.assign(story, prev);
+    window.app?.updateStoryInMemory(story.id, prev);
+    const refNode = evt.from.children[oldIndex] ?? null;
+    evt.from.insertBefore(evt.item, refNode);
+    window.showToast?.('Failed to save — change reverted', 'error', { duration: 4000 });
+  }
 }
 
-function _highlightDropTarget(sectionEl) {
-  document.querySelectorAll('.bl-drop-over').forEach(el => el.classList.remove('bl-drop-over'));
-  if (sectionEl) sectionEl.classList.add('bl-drop-over');
+async function _handleSortableReorder(evt) {
+  const containerEl = evt.to;
+  const orderedIds  = [...containerEl.querySelectorAll('[data-story-id]')]
+    .map(el => el.dataset.storyId);
+
+  const stories = window.app?.data?.stories || [];
+  const writes  = [];
+
+  for (let i = 0; i < orderedIds.length; i++) {
+    const story    = stories.find(s => s.id === orderedIds[i]);
+    const newOrder = i;
+    if (!story || story.sortOrder === newOrder) continue;
+    story.sortOrder = newOrder;
+    writes.push(DB.put(DB.STORES.STORIES, story));
+  }
+
+  if (writes.length === 0) return;
+
+  try {
+    await Promise.all(writes);
+    NotificationRegistry.emit('story');
+  } catch {
+    window.showToast?.('Failed to save order', 'error', { duration: 4000 });
+    _renderBacklogView();
+  }
 }
 
-function _initAllDragHandlers() {
-  document.querySelectorAll('.bl-story-row').forEach(row => {
-    _initDragHandlers(row);
-    _initPointerDrag(row);
-  });
+// ── SortableJS lifecycle ─────────────────────────────────────────────────────
 
-  document.querySelectorAll('[data-section-id]').forEach(section => {
-    _initDropZone(section);
+function _initSprintSortables(rootEl) {
+  const sortableEls = rootEl.querySelectorAll(
+    '.bl-section-sprint .bl-section-body, .bl-section-backlog .bl-section-body'
+  );
+
+  for (const el of sortableEls) {
+    el._sortable?.destroy();
+    el._sortable = new Sortable(el, {
+      group:               'stories',
+      animation:           150,
+      ghostClass:          'bl-story-row--ghost',
+      chosenClass:         'bl-story-row--chosen',
+      dragClass:           'bl-story-row--drag',
+      dataIdAttr:          'data-story-id',
+      scroll:              true,
+      scrollSensitivity:   80,
+      scrollSpeed:         10,
+      delay:               50,
+      delayOnTouchOnly:    false,
+      touchStartThreshold: 5,
+
+      onAdd(evt)    { _handleSortableCross(evt); },
+      onUpdate(evt) { _handleSortableReorder(evt); },
+    });
+  }
+}
+
+function _destroySprintSortables(rootEl) {
+  rootEl.querySelectorAll('.bl-section-body').forEach(el => {
+    el._sortable?.destroy();
+    delete el._sortable;
   });
 }
 
@@ -1603,7 +1572,7 @@ export async function _submitCreateSprint() {
   try {
     await window.sprintManager.createSprint({ startDate, durationWeeks, goal });
     document.getElementById('create-sprint-overlay')?.remove();
-    window.app?.notifyDataChange('sprint');
+    NotificationRegistry.emit('sprint');
     _renderBacklogView();
   } catch (err) {
     if (errEl) { errEl.textContent = err.message; errEl.style.display = ''; }
@@ -1628,10 +1597,10 @@ async function _toggleStoryFocus(storyId) {
 
   try {
     await DB.put(DB.STORES.STORIES, story);
-    if (window.app?.data?.stories) {
-      const idx = window.app.data.stories.findIndex(s => s.id === storyId);
-      if (idx >= 0) window.app.data.stories[idx].inFocus = story.inFocus;
+    if (window.app?.data) {
+      window.app.data.stories = await DB.getAll(DB.STORES.STORIES);
     }
+    NotificationRegistry.emit('story');
   } catch (err) {
     // Revert DOM on failure
     story.inFocus = prev;
@@ -1696,5 +1665,17 @@ window.backlogView = {
     });
   },
 };
+
+NotificationRegistry.on('story', () => {
+  window.backlogView.renderSprintCapacityHeaders();
+  if (window.backlogView._currentGroupBy() === 'storymap') window.backlogView.render();
+});
+NotificationRegistry.on('epic', () => {
+  if (window.backlogView._currentGroupBy() === 'storymap') window.backlogView.render();
+});
+NotificationRegistry.on('sprint',          () => window.backlogView.render());
+NotificationRegistry.on('travelSegment',   () => window.backlogView.renderSprintCapacityHeaders());
+NotificationRegistry.on('locationPeriod',  () => window.backlogView.renderSprintCapacityHeaders());
+NotificationRegistry.on('dayTypeOverride', () => window.backlogView.renderSprintCapacityHeaders());
 
 export default { render, renderSprintCapacityHeaders, patchStoryRow, patchEpicTag, openStoryPanel, openEpicPanel, openFocusPanel, openSubFocusPanel, closePanel };

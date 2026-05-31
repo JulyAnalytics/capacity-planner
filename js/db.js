@@ -161,13 +161,13 @@ const DB = {
   //            (3 sites). All are genuinely mid-render or mid-validation; cannot await.
   //            Eliminating it requires async render paths, introducing race conditions
   //            and a cascade of async obligations. Code philosophy: pull complexity downward.
-  // Sync path confirmed: write → notifyDataChange → BroadcastChannel → refreshHierarchyCache().
+  // Sync path: write → NotificationRegistry.emit() → BroadcastChannel → refreshHierarchyCache().
   //            invalidateCache() also calls refreshHierarchyCache() directly.
   // Date: 2026-04-15
 
   // DECISION: DB.subscribe() is not introduced.
-  // Rationale: app.notifyDataChange(type) already provides fan-out notification.
-  //            A subscription layer would be a third mechanism alongside notifyDataChange
+  // Rationale: NotificationRegistry.emit(type) already provides fan-out notification.
+  //            A subscription layer would be a third mechanism alongside NotificationRegistry.emit()
   //            and BroadcastChannel — more complexity, no benefit.
   // Date: 2026-04-15
 
@@ -181,7 +181,7 @@ const DB = {
   //   1. await DB.put/delete(storeName, ...)
   //   2. app.data[storeKey] = await DB.getAll(DB.STORES.X)       // reload slice
   //   3. await window.invalidateCache(type)                        // hierarchy stores only
-  //   4. app.notifyDataChange(type)                                // trigger re-renders
+  //   4. NotificationRegistry.emit(type)                             // trigger re-renders
   // Direct app.data mutations after writes are banned.
   // window.invalidateCache() is required for writes to focuses, epics, subFocuses only.
   // portfolioUpdater.js uses window.invalidateCache() — it is a globals file, no imports.

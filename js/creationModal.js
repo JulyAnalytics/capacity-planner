@@ -675,10 +675,15 @@ function getFormData() {
         if (epic) focusStr = window.app?.getFocusName(epic.focusId) || '';
       }
 
+      const _peers = (window.app?.data?.stories || []).filter(s => (s.sprintId || null) === (sprintId || null));
+      const _maxOrder = _peers.reduce((m, s) => Math.max(m, s.sortOrder ?? -1), -1);
+      const _sortOrder = _maxOrder + 1;
+
       return {
         ...base,
         epicId,
         sprintId,
+        sortOrder: _sortOrder,
         focus: focusStr,
         description: document.getElementById('cm-story-description')?.value || '',
         priority,

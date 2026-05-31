@@ -597,30 +597,6 @@ button.bl-focus-name {
 .bl-empty-plus  { font-size: 14px; font-weight: 300; line-height: 1; }
 .bl-empty-label { font-size: 12px; }
 
-/* ── Drag state ─────────────────────────────────────────────────────────────── */
-
-.bl-dragging { opacity: 0.4; }
-
-.bl-drag-clone {
-  position: fixed;
-  pointer-events: none;
-  z-index: 9999;
-  opacity: 0.85;
-  background: var(--bg-white);
-  border: 1px solid var(--border-strong);
-  border-radius: 6px;
-  box-shadow: var(--shadow-md);
-  padding: 7px var(--space-md);
-  font-size: var(--text-sm);
-  min-width: 220px;
-  color: var(--text-dark);
-}
-
-.bl-drop-over {
-  background: rgba(99,102,241,.08) !important;
-  outline: 2px dashed rgba(99,102,241,.5);
-}
-
 /* ── Secondary new sprint row ─────────────────────────────────────────────── */
 
 .bl-new-sprint-row { padding: 8px 16px; }
@@ -2583,3 +2559,9 @@ button.bl-focus-name {
 .bl-focus-star--on {
   color: var(--warning, #f59e0b);
 }
+
+/* ── SortableJS drag states ───────────────────────────────────────────── */
+.bl-story-row--ghost  { opacity: 0.4; background: var(--bg-subtle) !important; }
+.bl-story-row--chosen { box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12);
+                        transform: rotate(1.5deg); }
+.bl-story-row--drag   { opacity: 0; }

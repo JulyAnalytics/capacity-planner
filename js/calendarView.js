@@ -1172,7 +1172,7 @@ async function _savePeriod() {
     }
     _closePanel();
     render();
-    window.app?.notifyDataChange('locationPeriod');
+    NotificationRegistry.emit('locationPeriod');
     window.backlogView?.renderSprintCapacityHeaders();
   } catch (err) {
     if (errEl) { errEl.textContent = err.message; errEl.style.display = ''; }
@@ -1202,7 +1202,7 @@ async function _confirmDelete() {
   window.app?.removeLocationPeriodInMemory(_editingPeriodId);
   _closePanel();
   render();
-  window.app?.notifyDataChange('locationPeriod');
+  NotificationRegistry.emit('locationPeriod');
   window.backlogView?.renderSprintCapacityHeaders();
 }
 
@@ -1238,3 +1238,7 @@ window.calendarView = {
   _confirmDelete,
   _removeFromRanking,
 };
+
+NotificationRegistry.on('sprint',          () => window.calendarView.render());
+NotificationRegistry.on('locationPeriod',  () => window.calendarView.render());
+NotificationRegistry.on('dayTypeOverride', () => window.calendarView.render());

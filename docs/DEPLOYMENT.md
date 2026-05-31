@@ -1,93 +1,73 @@
-# Deployment Checklist
+# Deployment Guide — Capacity Planner
 
-## Pre-Deployment
+## Architecture
 
-### Code
-- [ ] All 8 phases implemented and merged
-- [ ] No console errors on fresh load
-- [ ] No unresolved TODOs in critical paths
+SPA with build step. Source in `js/` + `css/` + `index.html`. Built output in `dist/`. Supabase for auth + data. Deployed to Netlify.
 
-### Testing
-- [ ] `tests/index.html` — all automated tests green
-- [ ] Manual: create one of each entity type (sub-focus, epic, story)
-- [ ] Manual: validation errors display correctly (inline, no `alert()`)
-- [ ] Manual: Undo works within 5-second window
-- [ ] Manual: rapid-fire mode (`Cmd+Enter`) creates multiple items
-- [ ] Manual: form recovery restores state after accidental close
-- [ ] Multi-tab: open two tabs, create in one, other updates
-- [ ] Mobile: test at 375px width — full-screen modal, 16px inputs
-- [ ] Keyboard-only: Tab through all fields, Escape closes, focus returns
-
-### Documentation
-- [ ] `docs/USER_GUIDE.md` accurate
-- [ ] `docs/DEVELOPER_GUIDE.md` accurate
-- [ ] Module/function comments up to date
-
----
-
-## Deployment Steps
-
-This is a pure client-side app (no build step required).
-
-### 1. Copy files to hosting
+## Build
 
 ```bash
-# All you need:
-cp -r css/ js/ index.html /path/to/hosting/
-# Optionally include docs/ and tests/ for reference
+npm install
+npm run build
 ```
 
-### 2. Verify on production URL
+This runs `node build.js` which:
+1. Concatenates JS files in dependency order (defined in `build.js` `JS_FILES`)
+2. Strips `import`/`export` statements (IIFE concatenation, no bundler)
+3. Minifies JS and CSS
+4. Appends content hashes to output filenames (`dist/app.<hash>.min.js`)
+5. Writes `dist/index.html` with updated script/link tags
 
-1. Open the app
-2. Open DevTools → Console (should be clean)
-3. Press `Cmd+K` — modal opens
-4. Create a test story — appears in portfolio
-5. Click Undo — story disappears
-6. Refresh — story is gone (not in IndexedDB)
+## Pre-deployment checklist
 
-### 3. Optional: minify for faster loads
+- [ ] `npm run build` exits clean
+- [ ] `ls dist/app.*.min.js dist/styles.*.min.css` — hashed bundles exist
+- [ ] `grep -r "import \|export " dist/*.min.js` returns nothing (no import leak)
+- [ ] `python3 -m http.server 8080` + open `http://localhost:8080` — app loads without console errors
+- [ ] Auth flow works (sign in → data loads → sign out clears cache)
+- [ ] Multi-tab: open two tabs, create a story in one, other tab reflects via BroadcastChannel
+- [ ] Tests: `npx playwright test --reporter=line` (requires auth state in `.env`)
+
+## Supabase setup
+
+1. Create a project at [supabase.com](https://supabase.com)
+2. Enable Email/Password auth (or your preferred provider)
+3. Set up Row Level Security (RLS) policies on all tables
+4. Copy the project URL and anon key
+5. Configure in `js/auth.js`: `initAuth(SUPABASE_URL, SUPABASE_ANON_KEY)`
+
+Auth state is stored in `localStorage` under `sb-*` keys. The `DB._uid()` method throws `SessionExpiredError` if no valid session exists.
+
+## Netlify deploy
+
+### Option A: Drag-and-drop
+
+1. Run `npm run build`
+2. Drag the `dist/` folder to [app.netlify.com](https://app.netlify.com)
+
+### Option B: Git + Netlify
+
+1. Connect your repo to Netlify
+2. Build settings:
+   - **Build command:** `npm install && npm run build`
+   - **Publish directory:** `dist`
+3. Deploy
+
+The `dist/index.html` is the entry point. Netlify serves it automatically.
+
+### Option C: Netlify CLI
 
 ```bash
-# JavaScript (requires terser)
-npx terser js/app.js js/db.js js/hierarchyCache.js js/contextDetection.js \
-           js/portfolioUpdater.js js/dbValidator.js js/errorHandler.js \
-           js/accessibility.js js/performance.js js/mobileOptimizations.js \
-           js/creationModal.js \
-  --module --compress --mangle -o dist/app.min.js
-
-# CSS (requires cssnano)
-npx cssnano css/styles.css dist/styles.min.css
+npm install -g netlify-cli
+netlify deploy --prod --dir=dist
 ```
 
-Then update `index.html` script/link tags to point to `dist/` files.
+## Data backup
 
----
-
-## Post-Deployment Verification
-
-- [ ] App loads without console errors
-- [ ] IndexedDB initializes (check DevTools → Application → IndexedDB)
-- [ ] Can create a story end-to-end
-- [ ] BroadcastChannel works between two tabs
-- [ ] Mobile layout correct on real device
-
----
+Supabase stores all data server-side. For additional local backup, use the app's **Export** button to download a full JSON export covering all stores. Import validates structurally before writing.
 
 ## Rollback
 
-If a deployment introduces a regression:
-
-1. `git revert HEAD` (or restore previous files)
-2. Re-deploy
-3. IndexedDB schema is backwards-compatible — no data migration needed for rollback to any Phase 1–8 version
-
----
-
-## Data Backup
-
-IndexedDB is local to the browser — no server backup exists by default.
-
-**Recommended**: use the app's **Export** button regularly to download a JSON backup. The export covers all stores: calendar, priorities, subFocuses, epics, stories, dailyLogs, metadata, monthlyPlans.
-
-To restore: use the **Import** button and select the exported JSON file.
+1. Revert the commit: `git revert HEAD`
+2. Rebuild and redeploy: `npm run build && netlify deploy --prod --dir=dist`
+3. Schema is backwards-compatible — no data migration needed for rollback
