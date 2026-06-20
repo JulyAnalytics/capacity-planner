@@ -180,7 +180,7 @@ ALWAYS_READ:
   - path:    js/constants.js
     confirm: "DAY_CAPACITY keys: travel(0.25), buffer(1.5), stable(3.5), project(3.5), social(0.5). Status enums: STORY_STATUS(5), EPIC_STATUS(4), FOCUS_STATUS(2), SPRINT_STATUS(3). ENTITY_TO_STORE: 11 mappings. FIBONACCI_SIZES: [1,2,3,5,8,13,21]. Channels: hierarchy-cache-sync, capacity_planner."
   - path:    js/db.js
-    confirm: "DB.STORES: 12 stores (11 entity + metadata). DB._uid() called synchronously before first await in every method. Standard post-write pattern: put/delete → reload slice → invalidateCache (hierarchy stores only) → notifyDataChange."
+    confirm: "DB.STORES: 12 stores (11 entity + metadata). DB._uid() called synchronously before first await in every method. Standard post-write pattern: put/delete → reload slice → invalidateCache (hierarchy stores only) → NotificationRegistry.emit."
   - path:    js/businessRules.js
     confirm: "Exports: validateStatusTransition(entityType, from, to), validateSprint(sprint), validateLocationPeriod(period, allPeriods), detectCircularDependencies(stories). Status transition whitelists for story(5 states), epic(4), focus(2), sprint(3). Sprint duration: 1-2 weeks."
   - path:    js/barricade.js
@@ -193,7 +193,7 @@ ALWAYS_READ:
 
 - `CLAUDE.md` — emit: "Architecture: Pure HTML/CSS/JS, Supabase backend. Build: node build.js. Tests: Playwright. Stores: calendar, priorities, subFocuses, epics, stories, dailyLogs, monthlyPlans, focuses, sprints, travelSegments, locationPeriods, dayTypeOverrides."
 - `js/constants.js` — emit: "DAY_CAPACITY keys: travel(0.25), buffer(1.5), stable(3.5), project(3.5), social(0.5). Status enums: STORY_STATUS(5), EPIC_STATUS(4), FOCUS_STATUS(2), SPRINT_STATUS(3). ENTITY_TO_STORE: 11 mappings. FIBONACCI_SIZES: [1,2,3,5,8,13,21]. Channels: hierarchy-cache-sync, capacity_planner."
-- `js/db.js` — emit: "DB.STORES: 12 stores (11 entity + metadata). DB._uid() called synchronously before first await in every method. Standard post-write pattern: put/delete → reload slice → invalidateCache (hierarchy stores only) → notifyDataChange."
+- `js/db.js` — emit: "DB.STORES: 12 stores (11 entity + metadata). DB._uid() called synchronously before first await in every method. Standard post-write pattern: put/delete → reload slice → invalidateCache (hierarchy stores only) → NotificationRegistry.emit."
 - `js/businessRules.js` — emit: "Exports: validateStatusTransition(entityType, from, to), validateSprint(sprint), validateLocationPeriod(period, allPeriods), detectCircularDependencies(stories). Status transition whitelists for story(5 states), epic(4), focus(2), sprint(3). Sprint duration: 1-2 weeks."
 - `js/barricade.js` — emit: "Structural validation before writes. Required fields per entity: focus(id,name), calendar(id,month,year,week,dayTypes,capacities), priorities(id,periodType,month,focuses), subFocus(id,name), epic(id,name), story(id,name), dailyLog(id,date,dayType). Does NOT enforce epicId on stories (domain rule)."
 
@@ -318,7 +318,7 @@ This is a manual check by the spec author. It takes under two minutes.
     bash assertion, not prose-only descriptions
 [ ] Any new JS file appears in the build.js concatenation order array
 [ ] Any new store added to DB.STORES is also added to ENTITY_TO_STORE in constants.js
-[ ] DB writes follow the standard post-write pattern: put/delete → reload slice → invalidateCache → notifyDataChange
+[ ] DB writes follow the standard post-write pattern: put/delete → reload slice → invalidateCache → NotificationRegistry.emit
 ```
 
 A spec that fails any gate item is not ready. Fix before handing to the model.
@@ -356,7 +356,7 @@ Priority Level > Focus > Sub-Focus > Epic > Story
 await DB.put(DB.STORES.X, obj);           // or DB.delete
 app.data[storeKey] = await DB.getAll(...);  // reload from cache
 await window.invalidateCache(type);         // hierarchy stores only
-app.notifyDataChange(type);                 // re-render
+NotificationRegistry.emit(type);                 // re-render
 ```
 
 Direct `app.data` mutations are banned. `invalidateCache()` required only for: `focuses`, `epics`, `subFocuses`.

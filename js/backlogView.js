@@ -1017,21 +1017,27 @@ function _renderEpicCardCell(epic, allStories, allFocuses) {
   `;
 }
 
-function _renderStoryMapCard(story) {
-  const borderColors = {
-    active:    '#3b82f6',
-    completed: '#22c55e',
-    blocked:   '#f59e0b',
-    backlog:   '#e5e7eb',
-    abandoned: '#9ca3af',
-  };
-  const bgColors = {
-    blocked: '#fffbeb',
-  };
+// Storymap card status colours — single source for _renderStoryMapCard and
+// _patchStoryMapCard. Hex values relocated from _renderStoryMapCard (no new literals).
+const SM2_STATUS_BORDER = {
+  active:    '#3b82f6',
+  completed: '#22c55e',
+  blocked:   '#f59e0b',
+  backlog:   '#e5e7eb',
+  abandoned: '#9ca3af',
+};
+const SM2_STATUS_BG = { blocked: '#fffbeb' };
 
+function _sm2StatusStyle(status) {
+  return {
+    border: SM2_STATUS_BORDER[status] || '#e5e7eb',
+    bg:     SM2_STATUS_BG[status]     || '#ffffff',
+  };
+}
+
+function _renderStoryMapCard(story) {
   const status = story.status || 'backlog';
-  const border = borderColors[status] || '#e5e7eb';
-  const bg     = bgColors[status]     || '#ffffff';
+  const { border, bg } = _sm2StatusStyle(status);
 
   const fibBadge = story.fibonacciSize
     ? `<span class='sm2-card-fib'>${esc(String(story.fibonacciSize))}</span>`
@@ -1247,6 +1253,75 @@ async function _loadStoryMapCapacityBars(orderedSprints, allStories) {
     barEl.style.width   = `${pct}%`;
     labelEl.textContent = `${allocated}/${cap.total}b`;
   }));
+}
+
+// ── Structured 'story' notification routing (storymap targeted patches) ──────
+
+// Fields whose change can be reflected on an sm2 card without a full re-render.
+// Everything else (epicId, sprintId, priority, fibonacciSize, description, …)
+// falls through to a full render — conservative by design (I2, I3, I6).
+const _SM_PATCHABLE_FIELDS = new Set(['name', 'status']);
+
+// Patch a single storymap card in place. Never replaces the .sm2-card node (I4);
+// falls back to a full render if the card is not in the DOM.
+function _patchStoryMapCard(storyId, changed) {
+  const card = document.querySelector(`[data-sm2-story-id="${CSS.escape(storyId)}"]`);
+  if (!card) { _renderBacklogView(); return; }
+
+  if ('status' in changed) {
+    const status = changed.status || 'backlog';
+    const { border, bg } = _sm2StatusStyle(status);
+    // An sm2 card carries exactly two classes: 'sm2-card' + one 'sm2-card--<status>'.
+    // Storymap has no drag, so no transient classes exist — reconstruction is safe.
+    card.className             = `sm2-card sm2-card--${status}`;
+    card.style.borderLeftColor = border;
+    card.style.background       = bg;
+    const dot = card.querySelector('.sm2-card-dot');
+    if (dot) dot.style.background = border;
+    const name = card.querySelector('.sm2-card-title')?.textContent ?? '';
+    card.setAttribute('aria-label', `${name}, ${status}`);
+  }
+
+  if ('name' in changed) {
+    const title = card.querySelector('.sm2-card-title');
+    if (title) title.textContent = changed.name; // textContent escapes — no esc() needed
+    const status = card.className.match(/sm2-card--(\S+)/)?.[1] ?? '';
+    card.setAttribute('aria-label', `${changed.name}, ${status}`);
+  }
+}
+
+// Refresh capacity bars for one sprint only (status changes can cross the
+// abandoned filter that _loadStoryMapCapacityBars applies). No-op for the backlog
+// bucket, which has no capacity bars.
+async function _refreshCapacityBars(sprintId) {
+  if (!sprintId) return;
+  const allStories = window.app?.data?.stories ?? [];
+  await _loadStoryMapCapacityBars([{ id: sprintId }], allStories);
+}
+
+// Route a 'story' notification. In storymap mode, patch when every changed field
+// is patchable; otherwise full render. In other modes, patch the affected row
+// (which also refreshes an open detail panel via _refreshRowContent). A legacy
+// payload-less emit has no id → prior no-op behaviour is preserved (I8).
+function _handleStoryNotification(payload) {
+  if (_blGroupBy !== 'storymap') {
+    if (payload?.id) patchStoryRow(payload.id);
+    return;
+  }
+
+  const fields    = payload?.changed ? Object.keys(payload.changed) : [];
+  const patchable = fields.length > 0 && fields.every(f => _SM_PATCHABLE_FIELDS.has(f));
+
+  if (patchable) {
+    _patchStoryMapCard(payload.id, payload.changed);
+    if ('status' in payload.changed) _refreshCapacityBars(payload.context?.sprintId);
+  } else {
+    _renderBacklogView(); // empty/unknown/error payload → full render (I6)
+  }
+  // Keep an open detail panel in sync (it lives in #backlog-detail-panel, separate
+  // from #backlog-root, so a full render does not touch it). On error this shows
+  // the rolled-back value.
+  if (payload?.id) window.backlogDetailPanel?.refreshIfShowing(payload.id);
 }
 
 async function _renderByStoryMapMode(
@@ -1666,9 +1741,9 @@ window.backlogView = {
   },
 };
 
-NotificationRegistry.on('story', () => {
+NotificationRegistry.on('story', (payload) => {
   window.backlogView.renderSprintCapacityHeaders();
-  if (window.backlogView._currentGroupBy() === 'storymap') window.backlogView.render();
+  _handleStoryNotification(payload);
 });
 NotificationRegistry.on('epic', () => {
   if (window.backlogView._currentGroupBy() === 'storymap') window.backlogView.render();

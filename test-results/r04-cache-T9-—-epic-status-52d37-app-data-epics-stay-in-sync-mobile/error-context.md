@@ -1,0 +1,219 @@
+# Instructions
+
+- Following Playwright test failed.
+- Explain why, be concise, respect Playwright best practices.
+- Provide a snippet of code with the fix, if possible.
+
+# Test info
+
+- Name: r04-cache.spec.ts >> T9 — epic status change: DB._cache.epics and app.data.epics stay in sync
+- Location: tests/r04-cache.spec.ts:463:5
+
+# Error details
+
+```
+Test timeout of 30000ms exceeded.
+```
+
+```
+Error: page.waitForFunction: Test timeout of 30000ms exceeded.
+```
+
+# Page snapshot
+
+```yaml
+- generic [ref=e1]:
+  - generic [ref=e3]:
+    - heading "Capacity Planner" [level=2] [ref=e4]
+    - paragraph [ref=e5]: Sign in to continue.
+    - textbox "your@email.com" [ref=e6]
+    - textbox "Password" [ref=e7]
+    - button "Sign In" [ref=e8] [cursor=pointer]
+    - paragraph [ref=e9]
+  - navigation [ref=e10]:
+    - generic [ref=e12]:
+      - heading "Quick Nav" [level=4] [ref=e13]
+      - button "◀" [ref=e14] [cursor=pointer]
+  - button "▶" [ref=e16] [cursor=pointer]
+  - generic [ref=e17]:
+    - banner [ref=e18]:
+      - heading "Capacity Planner" [level=1] [ref=e19]
+      - generic [ref=e20]:
+        - generic [ref=e21]: "Last saved: Never"
+        - button "Export" [ref=e22] [cursor=pointer]
+        - button "Import" [ref=e23] [cursor=pointer]
+        - button "Migrate Local Data" [ref=e24]
+    - navigation [ref=e25]:
+      - button "Calendar" [ref=e26] [cursor=pointer]
+      - button "Focus" [ref=e27] [cursor=pointer]
+      - button "Sprints" [active] [ref=e28] [cursor=pointer]
+      - button "Story Map" [ref=e29] [cursor=pointer]
+      - button "Analytics" [ref=e30] [cursor=pointer]
+  - button "+ Create" [ref=e33] [cursor=pointer]
+```
+
+# Test source
+
+```ts
+  369 |     await page.waitForSelector(SEL.sprintActions);
+  370 |     if (await page.locator(SEL.completeSprintBtn).count() > 0) break;
+  371 |   }
+  372 | 
+  373 |   const hasCompleteBtn = await page.locator(SEL.completeSprintBtn).count() > 0;
+  374 |   if (!hasCompleteBtn) {
+  375 |     test.skip(true, 'No active sprint available — activate one (T6) to run this test.');
+  376 |     return;
+  377 |   }
+  378 | 
+  379 |   const before = await getStoreLengths(page, 'sprints');
+  380 | 
+  381 |   const sprintId = await page.evaluate(() =>
+  382 |     ((window as any).app?.data?.sprints ?? []).find((s: any) => s.status === 'active')?.id
+  383 |   );
+  384 | 
+  385 |   await completeBtn.click();
+  386 |   // _completeSprint has no toast — wait for the sprint's status to update in app.data.
+  387 |   // Sprint status 'done' was renamed to 'completed' (migration #9, constants.js:35).
+  388 |   await page.waitForFunction((id) =>
+  389 |     ((window as any).app?.data?.sprints ?? []).some((s: any) => s.id === id && s.status === 'completed'),
+  390 |     sprintId
+  391 |   );
+  392 | 
+  393 |   const after = await getStoreLengths(page, 'sprints');
+  394 | 
+  395 |   expect(after.cache).toBe(after.appData);
+  396 |   expect(after.cache).toBe(before.cache);
+  397 |   const cachedStatus = await page.evaluate((id) =>
+  398 |     ((window as any).DB?._cache?.sprints ?? []).find((s: any) => s.id === id)?.status,
+  399 |     sprintId
+  400 |   );
+  401 |   expect(cachedStatus).toBe('completed');
+  402 | });
+  403 | 
+  404 | // ---------------------------------------------------------------------------
+  405 | // T8 — Edit focus name inline: DB._cache.focuses and app.data.focuses in sync
+  406 | //     (rerouted from the removed portfolio tab to the backlog detail panel)
+  407 | // ---------------------------------------------------------------------------
+  408 | 
+  409 | test('T8 — inline focus name edit: DB._cache.focuses and app.data.focuses stay in sync', async ({ page }) => {
+  410 |   await loadApp(page);
+  411 | 
+  412 |   // Focus name editing lives in the detail panel now. Open the Focus tab
+  413 |   // (group-by focus → focus headers carry .bl-focus-name, backlogView.js:507).
+  414 |   await page.click(SEL.focusTab);
+  415 |   await page.waitForSelector('.bl-focus-name');
+  416 | 
+  417 |   const before = await getStoreLengths(page, 'focuses');
+  418 |   expect(before.cache, 'At least one focus must exist').toBeGreaterThan(0);
+  419 |   expect(before.cache, 'cache and app.data must already be in sync').toBe(before.appData);
+  420 | 
+  421 |   // Click the first focus name to open its detail panel, capturing its id.
+  422 |   const focusId = await page.evaluate(() => {
+  423 |     const btn = document.querySelector('.bl-focus-name') as HTMLElement | null;
+  424 |     if (!btn) return null;
+  425 |     const name = (btn.textContent || '').trim();
+  426 |     const f = ((window as any).app?.data?.focuses ?? []).find((x: any) => x.name === name);
+  427 |     btn.click(); // → openFocusPanel
+  428 |     return f ? f.id : null;
+  429 |   });
+  430 |   if (!focusId) {
+  431 |     test.skip(true, 'T8: no focus name button available to open a focus panel.');
+  432 |     return;
+  433 |   }
+  434 | 
+  435 |   await page.waitForSelector(`${SEL.detailPanel} ${SEL.focusNameInput}`);
+  436 | 
+  437 |   const newName = `PW02-T8-${Date.now()}`;
+  438 |   const input = page.locator(`${SEL.detailPanel} ${SEL.focusNameInput}`).first();
+  439 |   await input.fill(newName);
+  440 |   await input.blur(); // fires onblur → saveFocusField → DB.put → reload app.data.focuses
+  441 | 
+  442 |   // Wait for the new name to land in app.data.
+  443 |   await page.waitForFunction(
+  444 |     ({ id, name }) =>
+  445 |       ((window as any).app?.data?.focuses ?? []).some((f: any) => f.id === id && f.name === name),
+  446 |     { id: focusId, name: newName }
+  447 |   );
+  448 | 
+  449 |   const after = await getStoreLengths(page, 'focuses');
+  450 |   expect(after.cache).toBe(after.appData);
+  451 |   expect(after.cache).toBe(before.cache);
+  452 | 
+  453 |   const cachedName = await page.evaluate((id) =>
+  454 |     ((window as any).DB?._cache?.focuses ?? []).find((f: any) => f.id === id)?.name, focusId);
+  455 |   expect(cachedName).toBe(newName);
+  456 | });
+  457 | 
+  458 | // ---------------------------------------------------------------------------
+  459 | // T9 — Change epic status: DB._cache.epics and app.data.epics in sync
+  460 | //     (rerouted from the removed portfolio tab to the backlog detail panel)
+  461 | // ---------------------------------------------------------------------------
+  462 | 
+  463 | test('T9 — epic status change: DB._cache.epics and app.data.epics stay in sync', async ({ page }) => {
+  464 |   await loadApp(page);
+  465 | 
+  466 |   // Epic editing lives in the detail panel now. Open the Sprints tab and click
+  467 |   // an epic tag on a story row (backlogView.js:354-361) to open the epic panel.
+  468 |   await page.click(SEL.backlogTab);
+> 469 |   await page.waitForFunction(() => document.querySelectorAll('.bl-epic-tag[data-epic-id]').length > 0);
+      |              ^ Error: page.waitForFunction: Test timeout of 30000ms exceeded.
+  470 | 
+  471 |   const before = await getStoreLengths(page, 'epics');
+  472 |   expect(before.cache, 'At least one epic must exist').toBeGreaterThan(0);
+  473 |   expect(before.cache, 'cache and app.data must already be in sync').toBe(before.appData);
+  474 | 
+  475 |   const epicId = await page.evaluate(() => {
+  476 |     const tag = document.querySelector('.bl-epic-tag[data-epic-id]') as HTMLElement | null;
+  477 |     if (!tag) return null;
+  478 |     const id = tag.getAttribute('data-epic-id');
+  479 |     tag.click(); // → openEpicPanel (stopPropagation in handler)
+  480 |     return id;
+  481 |   });
+  482 |   if (!epicId) {
+  483 |     test.skip(true, 'T9: no epic tag visible on a story row — create a story with an epic to run this test.');
+  484 |     return;
+  485 |   }
+  486 | 
+  487 |   await page.waitForSelector(SEL.epicStatusSelect);
+  488 | 
+  489 |   // Choose a status different from the current one (valid: planning|active|completed|archived).
+  490 |   const newStatus = await page.evaluate((id) => {
+  491 |     const e = ((window as any).app?.data?.epics ?? []).find((x: any) => x.id === id);
+  492 |     const valid = ['planning', 'active', 'completed', 'archived'];
+  493 |     return e ? (valid.find((v) => v !== e.status) ?? null) : null;
+  494 |   }, epicId);
+  495 |   if (!newStatus) {
+  496 |     test.skip(true, 'T9: could not resolve a new status for the epic.');
+  497 |     return;
+  498 |   }
+  499 | 
+  500 |   await page.locator(SEL.epicStatusSelect).selectOption(newStatus);
+  501 |   // onchange → saveEpicField → DB.put → reload app.data.epics
+  502 |   await page.waitForFunction(
+  503 |     ({ id, status }) =>
+  504 |       ((window as any).app?.data?.epics ?? []).some((e: any) => e.id === id && e.status === status),
+  505 |     { id: epicId, status: newStatus }
+  506 |   );
+  507 | 
+  508 |   const after = await getStoreLengths(page, 'epics');
+  509 |   expect(after.cache).toBe(after.appData);
+  510 |   expect(after.cache).toBe(before.cache);
+  511 | 
+  512 |   const cachedStatus = await page.evaluate((id) =>
+  513 |     ((window as any).DB?._cache?.epics ?? []).find((e: any) => e.id === id)?.status, epicId);
+  514 |   expect(cachedStatus).toBe(newStatus);
+  515 | });
+  516 | 
+  517 | // ---------------------------------------------------------------------------
+  518 | // T10 — Bulk edit: RETIRED
+  519 | // The bulk-edit feature (bulkEdit.js, window.openBulkEdit) was deleted in the
+  520 | // portfolio cleanup (git 5aeecb2). There is no UI to trigger. Story-mutation
+  521 | // cache coverage now rests on T3 (create) and T5 (drag). Replace with a
+  522 | // different story-mutation path in PW03 if additional coverage is needed.
+  523 | // ---------------------------------------------------------------------------
+  524 | 
+  525 | test('T10 — bulk edit: retired (feature removed in portfolio cleanup)', async () => {
+  526 |   test.skip(true, 'T10 retired: bulk edit feature removed in portfolio cleanup (git 5aeecb2). Story cache coverage now rests on T3 (create) and T5 (drag).');
+  527 | });
+  528 | 
+```

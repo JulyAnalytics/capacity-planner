@@ -1,6 +1,6 @@
 # SYSTEM MAP — Capacity Planner
 
-**Last verified:** 2026-05-14
+**Last verified:** 2026-06-19
 **Refresh trigger:** New JS module added to build.js, new `NotificationRegistry.on/emit` pair, new BroadcastChannel, migration added/removed, new `window.X` global
 
 ---
@@ -16,6 +16,7 @@ Every `js/*.js` source file, what it owns, and its direct dependencies.
 | `js/utils.js` | `showToast()`, `esc()` HTML escaper | none | `showToast` |
 | `js/auth.js` | Supabase client, session lifecycle, IDB→Supabase migration trigger, `_resetCache()` | `supabase`, `DB`, `app` | `initAuth`, `currentUserId`, `authSubmit`, `authSignOut`, `migrateFromIDB` |
 | `js/db.js` | Supabase data access, `_TABLE_MAP`, `STORES` (13 stores), `_cache` (12 entries), `_uid()` | `currentUserId` | `DB` |
+| `js/storyWrites.js` | Coordinated story-write path: `commitStoryUpdate(storyId, updates)` — in-memory mutate + `DB.put`, structured `'story'` emit with pre-mutation `prev`/`context`, in-memory rollback on failure | `DB`, `NotificationRegistry`, `app`, `showToast` | `storyWrites` |
 | `js/businessRules.js` | Status transition whitelists, story/epic/sprint validation, circular dependency detection | `deriveSprintMeta`, `daysBetween` | `businessRules` |
 | `js/hierarchyCache.js` | Synchronous lookup index (focuses/subFocuses/epics/sprints/locations/DTOs), `invalidateCache()`, dual-channel BroadcastChannel listener, localStorage fallback | `DB`, constants, `validateExternalInput` | `hierarchyCache`, `invalidateCache` |
 | `js/contextDetection.js` | Derives hierarchy context from current selection | `hierarchyCache` getters | none |
@@ -30,8 +31,8 @@ Every `js/*.js` source file, what it owns, and its direct dependencies.
 | `js/sprintManager.js` | Sprint + TravelSegment CRUD, cross-tab broadcast | `DB`, businessRules, sprintCapacity, constants | `sprintManager` |
 | `js/sprintCapacity.js` | `deriveSprintCapacity()`, `detectGaps()`, `deriveSprintMeta()` | `DAY_CAPACITY`, `addDaysUTC` | none |
 | `js/sprintAllocation.js` | Story-point allocation across capacity pools | none | none |
-| `js/backlogView.js` | Backlog UI: group-by, drag-drop, filtering, story status cycling | `DB`, `esc`, `daysBetween`, `deriveSprintMeta`, constants, Sortable | `backlogView`, `_backlogEpicFilter` |
-| `js/backlogDetailPanel.js` | Detail panel: story/epic/sprint editing, ranking editor | `DB`, `esc`, `daysBetween`, `invalidateCache`, sprintCapacity, constants | `backlogDetailPanel`, `_bdpRankingCurrent`, `_bdpRankingEdit` |
+| `js/backlogView.js` | Backlog UI: group-by, drag-drop, filtering, story status cycling, storymap targeted-patch routing (`_handleStoryNotification` patches cards for `name`/`status`; full render otherwise) | `DB`, `esc`, `daysBetween`, `deriveSprintMeta`, constants, Sortable, `backlogDetailPanel` | `backlogView`, `_backlogEpicFilter` |
+| `js/backlogDetailPanel.js` | Detail panel: story/epic/sprint editing, ranking editor; story saves go through `storyWrites.commitStoryUpdate` | `DB`, `esc`, `daysBetween`, `invalidateCache`, sprintCapacity, constants, `storyWrites` | `backlogDetailPanel`, `_bdpRankingCurrent`, `_bdpRankingEdit` |
 | `js/barricade.js` | Structural validation (shape, not meaning) — 14 schema keys | `VALID_STATUSES`, `VALID_FIBONACCI` | `barricade` |
 | `js/calendarView.js` | Calendar view: week grid, sprint bars, daily log overlay trigger | `esc`, constants, locationCapacity | `calendarView` |
 | `js/dailyLogOverlay.js` | Daily log: checklist, day-type display, notes | `DB`, locationCapacity | `dailyLogOverlay` |
@@ -56,7 +57,7 @@ User Action → Handler → DB write → reload slice → invalidateCache (hiera
 | `focus` | (none currently — emitted, no listener registered) | Calendar + backlog re-render triggered indirectly via hierarchy cache |
 | `subFocus` | app.js:673 → `loadSubFocusesForEpic()` | Epic dropdown in creation modal |
 | `epic` | app.js:672 → `populateEpicDropdown()`, backlogView.js:1673 | Epic dropdown + backlog re-render |
-| `story` | backlogView.js:1669 | Backlog story list |
+| `story` | backlogView.js `_handleStoryNotification` (registered on the `'story'` listener) | `renderSprintCapacityHeaders()` always; storymap patches the affected `.sm2-card` for `name`/`status` (full render otherwise); other modes `patchStoryRow`; open detail panel re-syncs. Payload-shape: `{id, changed, prev, context}` (success) or `{id, error, prev, context}` (failure); payload-less emit preserves legacy full-render behaviour |
 | `sprint` | backlogView.js:1676, calendarView.js:1242 | Backlog + calendar |
 | `travelSegment` | backlogView.js:1677 | Sprint capacity headers |
 | `locationPeriod` | backlogView.js:1678, calendarView.js:1243 | Sprint capacity headers + calendar |
@@ -68,7 +69,7 @@ User Action → Handler → DB write → reload slice → invalidateCache (hiera
 |------|------------------------|
 | `focus` | app.js:748, backlogDetailPanel.js:509 |
 | `epic` | app.js:849, backlogDetailPanel.js:648 |
-| `story` | app.js:640, app.js:856, backlogView.js:1484, backlogView.js:1603 |
+| `story` | storyWrites.js `commitStoryUpdate` (structured payload — the canonical story-edit path), app.js:640, app.js:856, backlogView.js:1484, backlogView.js:1603 |
 | `subFocus` | app.js:878, backlogDetailPanel.js:527 |
 | `sprint` | app.js:634, app.js:646, backlogView.js:1575, backlogDetailPanel.js:1472, hierarchyCache.js:316 |
 | `travelSegment` | backlogDetailPanel.js:1433, backlogDetailPanel.js:1443 |
@@ -168,7 +169,7 @@ Adding a new migration: append to `MIGRATIONS` array in dependency order. Guard 
 
 IIFE concatenation — files are concatenated in order, no module resolution at build time. A file can only reference symbols defined in files that precede it.
 
-`build.js` `JS_FILES` array (28 entries, `build.js:10-39`):
+`build.js` `JS_FILES` array (29 entries, `build.js:10-40`):
 
 ```
  0: js/constants.js              ← must be first (all modules depend on it)
@@ -177,28 +178,29 @@ IIFE concatenation — files are concatenated in order, no module resolution at 
  3: js/utils.js
  4: js/auth.js
  5: js/db.js
- 6: js/businessRules.js
- 7: js/hierarchyCache.js
- 8: js/contextDetection.js
- 9: js/locationCapacity.js
-10: js/locationManager.js
-11: js/errorHandler.js
-12: js/dbValidator.js
-13: js/accessibility.js
-14: js/performance.js
-15: js/mobileOptimizations.js
-16: js/creationModal.js
-17: js/sprintManager.js
-18: js/sprintCapacity.js
-19: js/sprintAllocation.js
-20: js/backlogView.js
-21: js/backlogDetailPanel.js
-22: js/barricade.js
-23: js/calendarView.js
-24: js/dailyLogOverlay.js
-25: js/importUtils.js
-26: js/migrationRunner.js
-27: js/app.js                     ← must be last (orchestrator, depends on all)
+ 6: js/storyWrites.js            ← depends on DB + NotificationRegistry; consumers (backlogDetailPanel) come later
+ 7: js/businessRules.js
+ 8: js/hierarchyCache.js
+ 9: js/contextDetection.js
+10: js/locationCapacity.js
+11: js/locationManager.js
+12: js/errorHandler.js
+13: js/dbValidator.js
+14: js/accessibility.js
+15: js/performance.js
+16: js/mobileOptimizations.js
+17: js/creationModal.js
+18: js/sprintManager.js
+19: js/sprintCapacity.js
+20: js/sprintAllocation.js
+21: js/backlogView.js
+22: js/backlogDetailPanel.js
+23: js/barricade.js
+24: js/calendarView.js
+25: js/dailyLogOverlay.js
+26: js/importUtils.js
+27: js/migrationRunner.js
+28: js/app.js                     ← must be last (orchestrator, depends on all)
 ```
 
 Adding a new JS file: insert at correct dependency position in `JS_FILES`. If it exposes a `window.X` global, ensure consumers come after it.

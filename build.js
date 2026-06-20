@@ -14,6 +14,7 @@ const JS_FILES = [
   'js/utils.js',
   'js/auth.js',
   'js/db.js',
+  'js/storyWrites.js',
   'js/businessRules.js',
   'js/hierarchyCache.js',
   'js/contextDetection.js',

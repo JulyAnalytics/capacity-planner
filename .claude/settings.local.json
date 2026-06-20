@@ -87,7 +87,18 @@
       "Bash(sed -n '722,735p' js/creationModal.js)",
       "Bash(sed -n '710,718p' js/creationModal.js)",
       "Bash(sed -n '682,708p' js/creationModal.js)",
-      "Bash(grep -c '`.*&& echo \"OK\" || exit 1`' docs/architecture/specs/phase-3-task-specs.md)"
+      "Bash(grep -c '`.*&& echo \"OK\" || exit 1`' docs/architecture/specs/phase-3-task-specs.md)",
+      "Bash(mv \"E-personal-os/process-frameworks/capacity_planner_mvp_1.pdf\" \"A-capacity-planner/mvp-specs/\")",
+      "Bash(mv \"vol_regime_tool_architecture.md\" \"B-quant-trading/tool-architecture/\")",
+      "Bash(mv \"external-sentiment-evaluation.md\" \"B-quant-trading/tool-architecture/\")",
+      "Bash(mv \"# Academic Source Extraction — Backtesti.md\" \"B-quant-trading/source-extractions/\")",
+      "Bash(mv \"# Source Extraction — Jordan Okafor Risk.md\" \"B-quant-trading/source-extractions/\")",
+      "Bash(echo \"exit: $?\")",
+      "Bash(git -C /Users/jun/Library/CloudStorage/OneDrive-Personal/Tools/capacity-planner diff --stat -- js/app.js)",
+      "Bash(cat /private/tmp/claude-501/-Users-jun-Library-CloudStorage-OneDrive-Personal-Tools/capacity-planner/a824c434-1e96-4557-adb2-e462fac0859f/tasks/bb27qktpx.output 2>/dev/null || echo \"no output file\")",
+      "Read(//private/tmp/claude-501/-Users-jun-Library-CloudStorage-OneDrive-Personal-Tools/capacity-planner/a824c434-1e96-4557-adb2-e462fac0859f/tasks/**)",
+      "Bash(kill 28250)",
+      "Bash(esbuild --version)"
     ],
     "additionalDirectories": [
       "/Users/jun/Downloads"

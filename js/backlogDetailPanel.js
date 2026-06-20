@@ -500,16 +500,14 @@ async function _renderSubFocusPanel(sfId) {
 export async function saveFocusField(focusId, field, value) {
   const focus = window.app?.data?.focuses?.find(f => f.id === focusId);
   if (!focus) return;
-  const prev = focus[field];
-  focus[field] = value;
+  const updated = { ...focus, [field]: value };
   try {
-    await DB.put(DB.STORES.FOCUSES, focus);
+    await DB.put(DB.STORES.FOCUSES, updated);
     window.app.data.focuses = await DB.getAll(DB.STORES.FOCUSES);
     await invalidateCache('focus');
     NotificationRegistry.emit('focus');
     window.backlogView?.render();
   } catch (err) {
-    focus[field] = prev;
     _renderFocusPanel(focusId);
     window.showToastWithActions?.('Save failed', 'error', { duration: 3000 });
   }
@@ -518,16 +516,14 @@ export async function saveFocusField(focusId, field, value) {
 export async function saveSubFocusField(sfId, field, value) {
   const sf = window.app?.data?.subFocuses?.find(s => s.id === sfId);
   if (!sf) return;
-  const prev = sf[field];
-  sf[field] = value;
+  const updated = { ...sf, [field]: value };
   try {
-    await DB.put(DB.STORES.SUB_FOCUSES, sf);
+    await DB.put(DB.STORES.SUB_FOCUSES, updated);
     window.app.data.subFocuses = await DB.getAll(DB.STORES.SUB_FOCUSES);
     await invalidateCache('subFocus');
     NotificationRegistry.emit('subFocus');
     window.backlogView?.render();
   } catch (err) {
-    sf[field] = prev;
     _renderSubFocusPanel(sfId);
     window.showToastWithActions?.('Save failed', 'error', { duration: 3000 });
   }
@@ -561,33 +557,23 @@ export async function saveField(storyId, field, value) {
   const story = window.app?.data?.stories?.find(s => s.id === storyId);
   if (!story) return;
 
-  const prev   = story[field];
-  const parsed = field === 'fibonacciSize' ? (parseInt(value) || null)
+  const parsed = field === 'fibonacciSize'   ? (parseInt(value) || null)
                : field === 'estimatedBlocks' ? (parseFloat(value) || null)
                : value;
-  story[field] = parsed;
 
-  // Re-derive focus from new epic when epicId changes
+  const updates = { [field]: parsed };
+
+  // Re-derive focus from the new epic when epicId changes — applied atomically
+  // with the epicId write so a failed save rolls both back together.
   if (field === 'epicId') {
     const newEpic = window.app?.data?.epics?.find(e => e.id === value);
-    if (newEpic) {
-      const focus = window.app?.data?.focuses?.find(f => f.id === newEpic.focusId);
-      story.focus = focus?.name || '';
-    } else {
-      story.focus = '';
-    }
+    const focus   = newEpic && window.app?.data?.focuses?.find(f => f.id === newEpic.focusId);
+    updates.focus = focus?.name || '';
   }
 
-  try {
-    await DB.put(DB.STORES.STORIES, story);
-    if (window.backlogView) window.backlogView.patchStoryRow(storyId);
-  } catch (err) {
-    story[field] = prev;
-    const fresh = await DB.get(DB.STORES.STORIES, storyId);
-    if (fresh) window.app?.updateStoryInMemory(storyId, fresh);
-    _render(storyId);
-    if (window.showToastWithActions) window.showToastWithActions('Save failed', 'error', { duration: 3000 });
-  }
+  // commitStoryUpdate owns the write, the structured 'story' emit (which patches
+  // the row/card and refreshes this panel), the in-memory rollback, and the toast.
+  await window.storyWrites.commitStoryUpdate(storyId, updates);
 }
 
 // ── Action item CRUD ──────────────────────────────────────────────────────────
@@ -639,10 +625,9 @@ export async function removeActionItem(storyId, idx) {
 export async function saveEpicField(epicId, field, value) {
   const epic = window.app?.data?.epics?.find(e => e.id === epicId);
   if (!epic) return;
-  const prev = epic[field];
-  epic[field] = value;
+  const updated = { ...epic, [field]: value };
   try {
-    await DB.put(DB.STORES.EPICS, epic);
+    await DB.put(DB.STORES.EPICS, updated);
     window.app.data.epics = await DB.getAll(DB.STORES.EPICS);
     await invalidateCache('epic');
     NotificationRegistry.emit('epic');
@@ -650,7 +635,6 @@ export async function saveEpicField(epicId, field, value) {
       window.backlogView?.patchEpicTag(epicId);
     }
   } catch (err) {
-    epic[field] = prev;
     _renderEpicPanel(epicId);
     window.showToastWithActions?.('Save failed', 'error', { duration: 3000 });
   }

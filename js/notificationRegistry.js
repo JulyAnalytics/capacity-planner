@@ -12,9 +12,10 @@ const NotificationRegistry = {
     this._listeners[type].push(callback);
   },
 
-  emit(type) {
+  // payload is optional and backward compatible — existing zero-arg handlers ignore it.
+  emit(type, payload) {
     (this._listeners[type] || []).forEach(cb => {
-      try { cb(); } catch (e) { console.error('NotificationRegistry handler error:', type, e); }
+      try { cb(payload); } catch (e) { console.error('NotificationRegistry handler error:', type, e); }
     });
   }
 };

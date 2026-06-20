@@ -5,6 +5,7 @@ Pure HTML/CSS/JS, no framework. Supabase backend (auth + storage).
 - Entry: `index.html` → `dist/app.*.min.js` (built by `node build.js`)
 - App logic: `js/app.js` (`CapacityManager` class, exposed as `window.app`)
 - DB layer: `js/db.js` (Supabase client wrapper, exposed as `window.DB`)
+- Story writes: `js/storyWrites.js` (coordinated story write path, `window.storyWrites.commitStoryUpdate`) — bundled immediately after `js/db.js`
 - Auth: `js/auth.js` (Supabase session, `window.initAuth`, `window.currentUserId`)
 - Build: `node build.js` — bundles + minifies JS/CSS into `dist/`
 - Sprint-view drag: SortableJS (Tier 0 migration complete, replaces HTML5 drag)
@@ -33,6 +34,15 @@ Paste output into `.env` as `SUPABASE_AUTH_STATE=<paste>`.
 
 Tests marked `[PW02-INCOMPLETE]` assert cache-length invariants only — the
 triggering UI interaction is stubbed with a TODO and must be completed in PW02.
+
+**PW02 status: complete.** All `[PW02-INCOMPLETE]` bodies are filled — every test
+performs its triggering UI interaction and asserts the cache invariant.
+Navigation was re-routed post-portfolio-removal: tests use the Sprints tab
+(`[data-tab="sprints"]`) to reach `#backlog`, and focus/epic edits run through
+the backlog detail panel. T7 asserts sprint status `'completed'` (renamed from
+`'done'` by migration #9). T10 (bulk edit) is **retired** — the feature was
+deleted in portfolio cleanup (`git 5aeecb2`); story cache coverage rests on
+T3 (create) and T5 (drag).
 
 ## Process
 
@@ -77,3 +87,5 @@ Addendum alignment — after any CLAUDE.md update, verify that
 `docs/architecture/capacity-planner-invariant-addendum.md` matches. If any value in
 the addendum is stale, flag it to the user before the next spec authoring session.
 CLAUDE.md is authoritative. The addendum must match it, not the reverse.
+
+`Last updated: 2026-06-19 after Task C2-additive — added js/storyWrites.js coordinated story-write path (commitStoryUpdate) with structured 'story' notification payload; migrated backlogDetailPanel.saveField onto it; NotificationRegistry.emit now accepts an optional payload (backward compatible).`
