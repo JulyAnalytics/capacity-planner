@@ -1,8 +1,8 @@
 # Project Invariant Addendum
 **Applies to:** Capacity Planner
 **Repo root:** `/Users/jun/Library/CloudStorage/OneDrive-Personal/Tools/capacity-planner`
-**Protocol base:** `docs/architecture/gap_prevention_protocol_v2.md`
-**Last updated:** 2026-05-07 after initial invariant audit
+**Protocol base:** `docs/architecture/gap_prevention_protocol_v3.md`
+**Last updated:** 2026-06-20 after drag-and-drop Stage 4 (storyWrites canonical file added; priority-tier source corrected to PRIORITY_LEVELS/PRIORITY_LABELS)
 
 > This document is loaded into every Claude.ai spec authoring session alongside
 > the base protocol. Together they replace all placeholders in the protocol
@@ -88,6 +88,9 @@ ADDITIONAL_UTILITIES:
   - file:   js/barricade.js
     import: window.barricade — global; structural validation before all writes
     locked: validateEntity(type, data), validateStructural()
+  - file:   js/storyWrites.js
+    import: window.storyWrites — global; the single coordinated story-write path
+    locked: commitStoryUpdate(storyId, updates), commitStoryReorder(orderedIds, field)
 ```
 
 **Do Not Create rule (copy verbatim into every spec Constraints section):**
@@ -99,6 +102,7 @@ ADDITIONAL_UTILITIES:
 - Any constant that duplicates something already in js/constants.js
 - Any new store name that bypasses ENTITY_TO_STORE
 - Any new BroadcastChannel name outside js/constants.js
+- Any new story-write path — js/storyWrites.js is the only coordinated story writer (no inline DB.put on the stories store)
 ```
 
 ---
@@ -142,8 +146,8 @@ OTHER_CONSTANTS:
     use_instead: js/constants.js FIBONACCI_SIZES
   - literal: 'travel', 'buffer', 'stable', 'project', 'social' (day type strings)
     use_instead: js/constants.js DAY_CAPACITY keys
-  - literal: 'primary', 'secondary1', 'secondary2', 'floor' (priority tier strings)
-    use_instead: js/constants.js DAY_CAPACITY[dayType] keys
+  - literal: 'primary', 'secondary1', 'secondary2', 'floor' (story priority tier strings)
+    use_instead: js/constants.js PRIORITY_LEVELS (values) / PRIORITY_LABELS (display labels) — NOT DAY_CAPACITY keys (those are the capacity-pool tiers, whose first key is 'priority', not 'primary')
   - literal: 'hierarchy-cache-sync', 'capacity_planner' (channel names)
     use_instead: js/constants.js CHANNEL_HIERARCHY_SYNC / CHANNEL_CAPACITY_PLANNER
 ```
@@ -386,4 +390,4 @@ Direct `app.data` mutations are banned. `invalidateCache()` required only for: `
 ---
 
 *This file lives at `docs/architecture/project_invariant_addendum.md`.
-Load it alongside `gap_prevention_protocol_v2.md` in every spec authoring session.*
+Load it alongside `gap_prevention_protocol_v3.md` in every spec authoring session.*

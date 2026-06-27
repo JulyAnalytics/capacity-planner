@@ -11,7 +11,7 @@
  */
 
 import DB from './db.js';
-import { CHANNEL_HIERARCHY_SYNC, CHANNEL_CAPACITY_PLANNER } from './constants.js';
+import { CHANNEL_HIERARCHY_SYNC, CHANNEL_CAPACITY_PLANNER, FOCUS_STATUS } from './constants.js';
 import { validateExternalInput } from './barricade.js';
 
 // ============================================================================
@@ -274,7 +274,7 @@ async function invalidateCache(entityType) {
 // ============================================================================
 
 function getAllFocuses() {
-  return hierarchyCache.data.focuses.filter(f => f.status !== 'archived');
+  return hierarchyCache.data.focuses.filter(f => f.status !== FOCUS_STATUS.ARCHIVED);
 }
 
 function getSubFocusesForFocus(focusId) {

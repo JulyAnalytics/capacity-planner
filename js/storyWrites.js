@@ -32,6 +32,43 @@ const storyWrites = {
       return false;
     }
   },
+
+  // Batch-reindex `field` ('sortOrder' | 'cellSortOrder') to match the order of
+  // `orderedIds` (DOM order from a drag). Writes all affected stories as one unit
+  // and emits a SINGLE structured 'story' notification {reorder, field, ids} so a
+  // view patches once per drag, not once per story. Rolls every value back on
+  // failure. Field-agnostic — carries no status/priority literals.
+  async commitStoryReorder(orderedIds, field) {
+    const stories = window.app?.data?.stories;
+    if (!Array.isArray(stories) || !orderedIds?.length) return false;
+
+    const snapshots = new Map(); // storyId → prev value (for rollback)
+    const writes    = [];
+
+    for (let i = 0; i < orderedIds.length; i++) {
+      const story = stories.find(s => s.id === orderedIds[i]);
+      if (!story || story[field] === i) continue;
+      snapshots.set(story.id, story[field]);
+      story[field] = i;
+      writes.push(DB.put(DB.STORES.STORIES, story));
+    }
+
+    if (writes.length === 0) return true; // already in order — nothing to persist
+
+    try {
+      await Promise.all(writes);
+      NotificationRegistry.emit('story', { reorder: true, field, ids: orderedIds });
+      return true;
+    } catch (err) {
+      for (const [id, prevVal] of snapshots) {
+        const s = stories.find(x => x.id === id);
+        if (s) s[field] = prevVal;
+      }
+      NotificationRegistry.emit('story', { reorder: true, field, ids: orderedIds, error: err });
+      window.showToast?.('Failed to save order — reverted', 'error', { duration: 4000 });
+      return false;
+    }
+  },
 };
 
 window.storyWrites = storyWrites;

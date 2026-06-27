@@ -12,97 +12,122 @@
 # Error details
 
 ```
-Error: At least one focus must exist
+Error: Channel closed
+```
 
-expect(received).toBeGreaterThan(expected)
+```
+Error: page.click: Test ended.
+Call log:
+  - waiting for locator('[data-type="story"]')
+    - locator resolved to <button data-type="story" class="type-tab active">Story</button>
+  - attempting click action
+    2 × waiting for element to be visible, enabled and stable
+      - element is not stable
+    - retrying click action
+    - waiting 20ms
+    2 × waiting for element to be visible, enabled and stable
+      - element is not stable
+    - retrying click action
+      - waiting 100ms
+    39 × waiting for element to be visible, enabled and stable
+       - element is visible, enabled and stable
+       - scrolling into view if needed
+       - done scrolling
+       - <div id="auth-overlay">…</div> intercepts pointer events
+     - retrying click action
+       - waiting 500ms
 
-Expected: > 1
-Received:   1
 ```
 
 # Page snapshot
 
 ```yaml
 - generic [ref=e1]:
-  - navigation [ref=e2]:
-    - generic [ref=e4]:
-      - heading "Quick Nav" [level=4] [ref=e5]
-      - button "◀" [ref=e6] [cursor=pointer]
-  - generic [ref=e8]:
-    - banner [ref=e9]:
-      - heading "Capacity Planner" [level=1] [ref=e10]
-      - generic [ref=e11]:
-        - generic [ref=e12]: "Last saved: Never"
-        - button "Export" [ref=e13] [cursor=pointer]
-        - button "Import" [ref=e14] [cursor=pointer]
-        - button "Migrate Local Data" [ref=e15]
-    - navigation [ref=e16]:
-      - button "Calendar" [ref=e17] [cursor=pointer]
-      - button "Focus" [ref=e18] [cursor=pointer]
-      - button "Sprints" [ref=e19] [cursor=pointer]
-      - button "Story Map" [ref=e20] [cursor=pointer]
-      - button "Analytics" [ref=e21] [cursor=pointer]
-  - button "+ Create" [ref=e24] [cursor=pointer]
-  - dialog [ref=e26]:
-    - generic [ref=e27]:
-      - heading "Create New Item" [level=2] [ref=e28]
-      - button "Close modal" [ref=e29] [cursor=pointer]: ×
-    - generic [ref=e30]:
-      - tab "Focus" [ref=e31] [cursor=pointer]
-      - tab "Sub-Focus" [ref=e32] [cursor=pointer]
-      - tab "Epic" [ref=e33] [cursor=pointer]
-      - tab "Story" [selected] [ref=e34] [cursor=pointer]
+  - generic [ref=e3]:
+    - heading "Capacity Planner" [level=2] [ref=e4]
+    - paragraph [ref=e5]: Sign in to continue.
+    - textbox "your@email.com" [ref=e6]
+    - textbox "Password" [ref=e7]
+    - button "Sign In" [ref=e8] [cursor=pointer]
+    - paragraph [ref=e9]
+  - navigation [ref=e10]:
+    - generic [ref=e12]:
+      - heading "Quick Nav" [level=4] [ref=e13]
+      - button "◀" [ref=e14] [cursor=pointer]
+  - generic [ref=e16]:
+    - banner [ref=e17]:
+      - heading "Capacity Planner" [level=1] [ref=e18]
+      - generic [ref=e19]:
+        - generic [ref=e20]: "Last saved: Never"
+        - button "Export" [ref=e21] [cursor=pointer]
+        - button "Import" [ref=e22] [cursor=pointer]
+        - button "Migrate Local Data" [ref=e23]
+    - navigation [ref=e24]:
+      - button "Calendar" [ref=e25] [cursor=pointer]
+      - button "Focus" [ref=e26] [cursor=pointer]
+      - button "Sprints" [ref=e27] [cursor=pointer]
+      - button "Story Map" [ref=e28] [cursor=pointer]
+      - button "Analytics" [ref=e29] [cursor=pointer]
+  - button "+ Create" [ref=e32] [cursor=pointer]
+  - dialog [ref=e34]:
     - generic [ref=e35]:
-      - generic [ref=e36]:
-        - generic [ref=e37]: Story Name *
-        - textbox "Story Name *" [active] [ref=e38]:
+      - heading "Create New Item" [level=2] [ref=e36]
+      - button "Close modal" [ref=e37] [cursor=pointer]: ×
+    - generic [ref=e38]:
+      - tab "Focus" [ref=e39] [cursor=pointer]
+      - tab "Sub-Focus" [ref=e40] [cursor=pointer]
+      - tab "Epic" [ref=e41] [cursor=pointer]
+      - tab "Story" [selected] [ref=e42] [cursor=pointer]
+    - generic [ref=e43]:
+      - generic [ref=e44]:
+        - generic [ref=e45]: Story Name *
+        - textbox "Story Name *" [active] [ref=e46]:
           - /placeholder: e.g., Add password reset flow
-          - text: PW01-T3-story-1781913154510
-        - generic [ref=e39]: Short, action-oriented description
-      - generic [ref=e40]:
-        - generic [ref=e41]: Description
-        - textbox "Description" [ref=e42]:
+        - generic [ref=e47]: Short, action-oriented description
+      - generic [ref=e48]:
+        - generic [ref=e49]: Description
+        - textbox "Description" [ref=e50]:
           - /placeholder: Add a description…
-      - generic [ref=e43]:
-        - generic [ref=e44]: Categorize *
-        - generic [ref=e45]: Select hierarchy...
-        - generic [ref=e46]:
-          - generic [ref=e47]: Focus
-          - combobox "Focus" [disabled] [ref=e48]:
+      - generic [ref=e51]:
+        - generic [ref=e52]: Categorize *
+        - generic [ref=e53]: Select hierarchy...
+        - generic [ref=e54]:
+          - generic [ref=e55]: Focus
+          - combobox "Focus" [disabled] [ref=e56]:
             - option "Select Focus" [selected]
-          - generic [ref=e49]: No focuses available.
-        - generic [ref=e50]:
-          - generic [ref=e51]: Sub-Focus
-          - combobox "Sub-Focus" [disabled] [ref=e52]:
+          - generic [ref=e57]: No focuses available.
+        - generic [ref=e58]:
+          - generic [ref=e59]: Sub-Focus
+          - combobox "Sub-Focus" [disabled] [ref=e60]:
             - option "Select Focus first" [selected]
-        - generic [ref=e53]:
-          - generic [ref=e54]: Epic *
-          - combobox "Epic *" [disabled] [ref=e55]:
+        - generic [ref=e61]:
+          - generic [ref=e62]: Epic *
+          - combobox "Select epic for this story" [disabled] [ref=e63]:
             - option "Select Sub-Focus first" [selected]
-      - generic [ref=e56]:
-        - generic [ref=e57]: Sprint (optional)
-        - combobox "Sprint (optional)" [ref=e58] [cursor=pointer]:
+      - generic [ref=e64]:
+        - generic [ref=e65]: Sprint (optional)
+        - combobox "Sprint (optional)" [ref=e66] [cursor=pointer]:
           - option "Backlog (no sprint)" [selected]
-      - generic [ref=e59]:
-        - generic [ref=e60]: Priority
-        - combobox "Priority" [ref=e61] [cursor=pointer]:
+      - generic [ref=e67]:
+        - generic [ref=e68]: Priority
+        - combobox "Priority" [ref=e69] [cursor=pointer]:
           - option "—" [selected]
           - option "primary"
           - option "secondary1"
           - option "secondary2"
           - option "floor"
-      - generic [ref=e62]:
-        - generic [ref=e63]: Status
-        - combobox "Status" [ref=e64] [cursor=pointer]:
+      - generic [ref=e70]:
+        - generic [ref=e71]: Status
+        - combobox "Status" [ref=e72] [cursor=pointer]:
           - option "Backlog"
           - option "Active" [selected]
           - option "Completed"
           - option "Abandoned"
           - option "Blocked"
-      - generic [ref=e65]:
-        - generic [ref=e66]:
-          - generic [ref=e67]: Fibonacci Size
-          - combobox "Fibonacci Size" [ref=e68] [cursor=pointer]:
+      - generic [ref=e73]:
+        - generic [ref=e74]:
+          - generic [ref=e75]: Fibonacci Size
+          - combobox "Fibonacci Size" [ref=e76] [cursor=pointer]:
             - option "None" [selected]
             - option "1 - Trivial"
             - option "2 - Simple"
@@ -111,23 +136,29 @@ Received:   1
             - option "8 - Large"
             - option "13 - Very Large"
             - option "21 - Epic"
-        - generic [ref=e69]:
-          - generic [ref=e70]: Estimate (blocks)
-          - spinbutton "Estimate (blocks)" [ref=e71]
-      - generic [ref=e72]:
-        - generic [ref=e73]: Action Items (optional)
-        - generic [ref=e74]:
-          - textbox "Add an action item…" [ref=e75]
-          - button "Add" [ref=e76] [cursor=pointer]
-    - generic [ref=e77]:
-      - button "Cancel" [ref=e78] [cursor=pointer]
-      - button "Create and close modal" [ref=e79] [cursor=pointer]: Create & Close
-      - button "Create and add another item" [ref=e80] [cursor=pointer]: Create & Add Another
+        - generic [ref=e77]:
+          - generic [ref=e78]: Estimate (blocks)
+          - spinbutton "Estimate (blocks)" [ref=e79]
+      - generic [ref=e80]:
+        - generic [ref=e81]: Action Items (optional)
+        - generic [ref=e82]:
+          - textbox "Add an action item…" [ref=e83]
+          - button "Add" [ref=e84] [cursor=pointer]
+    - generic [ref=e85]:
+      - button "Cancel" [ref=e86] [cursor=pointer]
+      - button "Create and close modal" [ref=e87] [cursor=pointer]: Create & Close
+      - button "Create and add another item" [ref=e88] [cursor=pointer]: Create & Add Another
 ```
 
 # Test source
 
 ```ts
+  16  |  *     in sprint group-by (app.js:947-951). SEL.backlogTab points at the Sprints tab.
+  17  |  *   - The portfolio tab was removed. Focus/epic editing now lives in the backlog
+  18  |  *     detail panel (#backlog-detail-panel), reached from the Sprints/Focus tabs.
+  19  |  *   - Sprint status 'done' was renamed to 'completed' (migration #9).
+  20  |  *   - T10 (bulk edit) is retired: the feature was deleted in portfolio cleanup.
+  21  |  */
   22  | 
   23  | import { test, expect, Page } from '@playwright/test';
   24  | 
@@ -222,14 +253,14 @@ Received:   1
   113 | 
   114 |   await page.click(SEL.openModalBtn);
   115 |   await page.waitForSelector(SEL.tabStory);
-  116 |   await page.click(SEL.tabStory);
+> 116 |   await page.click(SEL.tabStory);
+      |              ^ Error: page.click: Test ended.
   117 |   await page.fill(SEL.nameInput, `PW01-T3-story-${Date.now()}`);
   118 | 
   119 |   // Requires at least one focus → sub-focus → epic chain in the DB.
   120 |   // Select the first available focus, sub-focus, and epic.
   121 |   const focusOptions = await page.locator(SEL.focusSelect).locator('option').count();
-> 122 |   expect(focusOptions, 'At least one focus must exist').toBeGreaterThan(1);
-      |                                                         ^ Error: At least one focus must exist
+  122 |   expect(focusOptions, 'At least one focus must exist').toBeGreaterThan(1);
   123 |   await page.locator(SEL.focusSelect).selectOption({ index: 1 });
   124 | 
   125 |   const subFocusSelect = page.locator('#story-subfocus');
@@ -324,10 +355,4 @@ Received:   1
   214 |     ({ id, targetSprintId }) =>
   215 |       ((window as any).app?.data?.stories ?? []).some(
   216 |         (s: any) => s.id === id && s.sprintId === targetSprintId
-  217 |       ),
-  218 |     plan,
-  219 |     { timeout: 5000 }
-  220 |   ).catch(() => {/* SortableJS drag may need live-DOM tuning — see PW02 spec §3 note */});
-  221 | 
-  222 |   const after = await getStoreLengths(page, 'stories');
 ```

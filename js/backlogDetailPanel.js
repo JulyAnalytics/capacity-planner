@@ -8,7 +8,7 @@ import { esc } from './utils.js';
 import { daysBetween } from './locationCapacity.js';
 import { invalidateCache } from './hierarchyCache.js';
 import { deriveSprintCapacity, detectGaps, deriveSprintMeta } from './sprintCapacity.js';
-import { STORY_STATUS, EPIC_STATUS, SPRINT_STATUS } from './constants.js';
+import { STORY_STATUS, EPIC_STATUS, FOCUS_STATUS, SPRINT_STATUS, PRIORITY_LEVELS } from './constants.js';
 
 const container = () => document.getElementById('backlog-detail-panel');
 const root      = () => document.getElementById('backlog-root');
@@ -158,7 +158,7 @@ async function _render(storyId) {
 // saveField('undefined', 'status', ...). This rename keeps the two surfaces
 // distinct: the badge is a display element, the select is an editor.
 function _renderStatusSelect(status, storyId) {
-  const statuses = ['backlog', 'active', 'completed', 'blocked', 'abandoned'];
+  const statuses = [STORY_STATUS.BACKLOG, STORY_STATUS.ACTIVE, STORY_STATUS.COMPLETED, STORY_STATUS.BLOCKED, STORY_STATUS.ABANDONED];
   return `<select class="bdp-status-select" data-status="${esc(status)}"
     onchange="window.backlogDetailPanel.saveField('${esc(storyId)}', 'status', this.value)">
     ${statuses.map(s => `<option value="${s}" ${status === s ? 'selected' : ''}>${_statusLabel(s)}</option>`).join('')}
@@ -178,7 +178,7 @@ function _renderSprintPicker(story, sprints) {
 }
 
 function _renderEpicPicker(story, epics) {
-  const active = epics.filter(e => e.status !== 'completed' && e.status !== 'archived');
+  const active = epics.filter(e => e.status !== EPIC_STATUS.COMPLETED && e.status !== EPIC_STATUS.ARCHIVED);
   const options = active.map(e => `<option value="${esc(e.id)}" ${story.epicId === e.id ? 'selected' : ''}>${esc(e.name)}</option>`);
   return `<select class="bdp-field-select"
     onchange="window.backlogDetailPanel.saveField('${esc(story.id)}', 'epicId', this.value || null)">
@@ -188,7 +188,7 @@ function _renderEpicPicker(story, epics) {
 }
 
 function _renderPriorityPicker(story) {
-  const levels = ['primary', 'secondary1', 'secondary2', 'floor'];
+  const levels = PRIORITY_LEVELS;
   const options = levels.map(l => `<option value="${l}" ${story.priority === l ? 'selected' : ''}>${l}</option>`);
   return `<select class="bdp-field-select"
     onchange="window.backlogDetailPanel.saveField('${esc(story.id)}', 'priority', this.value || null)">
@@ -253,8 +253,8 @@ async function _renderEpicPanel(epicId) {
 
   // Stats
   const totalCount  = epicStories.length;
-  const activeCount = epicStories.filter(s => s.status === 'active').length;
-  const doneCount   = epicStories.filter(s => s.status === 'completed').length;
+  const activeCount = epicStories.filter(s => s.status === STORY_STATUS.ACTIVE).length;
+  const doneCount   = epicStories.filter(s => s.status === STORY_STATUS.COMPLETED).length;
   const totalPoints = epicStories.reduce((sum, s) => sum + (s.fibonacciSize || 0), 0);
   const pct = totalCount > 0 ? Math.round((doneCount / totalCount) * 100) : 0;
 
@@ -284,10 +284,10 @@ async function _renderEpicPanel(epicId) {
             onblur="window.backlogDetailPanel.saveEpicField('${esc(epicId)}', 'name', this.value)" />
           <select class="ep-status-select" data-status="${esc(epic.status)}"
             onchange="window.backlogDetailPanel.saveEpicField('${esc(epicId)}', 'status', this.value)">
-            <option value="planning"  ${epic.status === 'planning'  ? 'selected' : ''}>Planning</option>
-            <option value="active"    ${epic.status === 'active'    ? 'selected' : ''}>Active</option>
-            <option value="completed" ${epic.status === 'completed' ? 'selected' : ''}>Completed</option>
-            <option value="archived"  ${epic.status === 'archived'  ? 'selected' : ''}>Archived</option>
+            <option value="${EPIC_STATUS.PLANNING}"  ${epic.status === EPIC_STATUS.PLANNING  ? 'selected' : ''}>Planning</option>
+            <option value="${EPIC_STATUS.ACTIVE}"    ${epic.status === EPIC_STATUS.ACTIVE    ? 'selected' : ''}>Active</option>
+            <option value="${EPIC_STATUS.COMPLETED}" ${epic.status === EPIC_STATUS.COMPLETED ? 'selected' : ''}>Completed</option>
+            <option value="${EPIC_STATUS.ARCHIVED}"  ${epic.status === EPIC_STATUS.ARCHIVED  ? 'selected' : ''}>Archived</option>
           </select>
           <button class="bdp-close" onclick="window.backlogView?.closePanel()" aria-label="Close panel">×</button>
         </div>
@@ -359,10 +359,10 @@ async function _renderFocusPanel(focusId) {
   const epicList    = allEpics.filter(e => e.focusId === focusId);
   const epicIds     = new Set(epicList.map(e => e.id));
   const storyList   = allStories.filter(s => s.epicId && epicIds.has(s.epicId));
-  const activeCount = storyList.filter(s => s.status === 'active').length;
+  const activeCount = storyList.filter(s => s.status === STORY_STATUS.ACTIVE).length;
 
-  const statusLabel = focus.status === 'active' ? 'Active' : 'Archived';
-  const statusClass = focus.status === 'active' ? 'active' : 'abandoned';
+  const statusLabel = focus.status === FOCUS_STATUS.ACTIVE ? 'Active' : 'Archived';
+  const statusClass = focus.status === FOCUS_STATUS.ACTIVE ? 'active' : 'abandoned';
 
   container().innerHTML = `
     <div class="ep-container">
@@ -402,7 +402,7 @@ async function _renderFocusPanel(focusId) {
           <div class="ep-stat"><span class="ep-stat-label">Active</span><span class="ep-stat-val">${activeCount}</span></div>
         </div>
 
-        ${focus.status === 'active' ? `
+        ${focus.status === FOCUS_STATUS.ACTIVE ? `
         <div class="bdp-actions-section">
           <span class="ep-label">Actions</span>
           <button class="bdp-action-btn--danger"
@@ -532,7 +532,7 @@ export async function saveSubFocusField(sfId, field, value) {
 async function _archiveFocus(focusId) {
   await window.app?.archiveFocus?.(focusId);
   const focus = window.app?.data?.focuses?.find(f => f.id === focusId);
-  if (focus?.status === 'archived') {
+  if (focus?.status === FOCUS_STATUS.ARCHIVED) {
     window.backlogView?.closePanel?.();
     window.backlogView?.render?.();
   }
@@ -955,7 +955,7 @@ async function _editRanking(sprintId) {
   const sprint = (window.app?.data?.sprints || []).find(s => s.id === sprintId);
   if (!sprint) return;
 
-  const allFocuses = (window.app?.data?.focuses || []).filter(f => f.status === 'active');
+  const allFocuses = (window.app?.data?.focuses || []).filter(f => f.status === FOCUS_STATUS.ACTIVE);
   let editRanking  = [...(sprint.focusRanking || [])];
 
   const renderEditPanel = () => {

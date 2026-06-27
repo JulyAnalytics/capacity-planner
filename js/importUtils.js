@@ -23,7 +23,7 @@
 
 import DB from './db.js';
 
-/** The seven stores covered by import. Metadata is excluded — it is never cleared on import. */
+/** The twelve stores covered by import. Metadata is excluded — it is never cleared on import. */
 const IMPORT_STORES = [
   DB.STORES.FOCUSES,
   DB.STORES.CALENDAR,
@@ -32,14 +32,19 @@ const IMPORT_STORES = [
   DB.STORES.EPICS,
   DB.STORES.STORIES,
   DB.STORES.DAILY_LOGS,
+  DB.STORES.MONTHLY_PLANS,
+  DB.STORES.SPRINTS,
+  DB.STORES.TRAVEL_SEGMENTS,
+  DB.STORES.LOCATION_PERIODS,
+  DB.STORES.DAY_TYPE_OVERRIDES,
 ];
 
 /**
- * Reads all records from the seven import stores in parallel.
+ * Reads all records from the twelve import stores in parallel.
  * Returns a snapshot object for use as a rollback source.
  * Throws if any store read fails — snapshot is all-or-nothing.
  *
- * @returns {Promise<Object>} — { [storeName]: records[] } for each of the 7 stores
+ * @returns {Promise<Object>} — { [storeName]: records[] } for each of the 12 stores
  */
 export async function snapshotAllStores() {
   const results = await Promise.all(IMPORT_STORES.map(s => DB.getAll(s)));
@@ -47,7 +52,7 @@ export async function snapshotAllStores() {
 }
 
 /**
- * Restores all seven stores from a snapshot produced by snapshotAllStores().
+ * Restores all twelve stores from a snapshot produced by snapshotAllStores().
  * Clears then rewrites each store sequentially so failures identify the exact store.
  * Never throws — always returns a structured result.
  *

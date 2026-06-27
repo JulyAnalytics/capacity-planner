@@ -36,7 +36,8 @@
 //            "is this a well-formed message?", not "is this payload valid?".
 // Date: 2026-04-14 | Author: [initials]
 
-import { VALID_STATUSES, VALID_FIBONACCI } from './businessRules.js';
+import { VALID_STATUSES } from './businessRules.js';
+import { FIBONACCI_SIZES } from './constants.js';
 
 // ============================================================================
 // SCHEMA DEFINITIONS
@@ -79,6 +80,14 @@ function _requirePlainObject(data, field, errors) {
   }
 }
 
+/** Require field is a non-empty string OR a number (for fields stored as either across history). */
+function _requireStringOrNumber(data, field, errors) {
+  const v = data[field];
+  if (((typeof v !== 'string') || v.trim() === '') && typeof v !== 'number') {
+    errors.push({ field, message: `'${field}' is required and must be a string or number` });
+  }
+}
+
 const SCHEMAS = {
 
   // --------------------------------------------------------------------------
@@ -98,8 +107,8 @@ const SCHEMAS = {
     if (!_requireObject(data, errors)) return errors;
     _requireString(data, 'id', errors);
     _requireString(data, 'month', errors);
-    _requireString(data, 'year', errors);
-    _requireString(data, 'week', errors);
+    _requireStringOrNumber(data, 'year', errors);
+    _requireStringOrNumber(data, 'week', errors);
     _requirePlainObject(data, 'dayTypes', errors);
     _requirePlainObject(data, 'capacities', errors);
     return errors;
@@ -109,7 +118,11 @@ const SCHEMAS = {
     const errors = [];
     if (!_requireObject(data, errors)) return errors;
     _requireString(data, 'id', errors);
-    _requireString(data, 'periodType', errors);
+    // 'period' is the canonical field; 'periodType' tolerated as a legacy alias.
+    if (!(typeof data.period === 'string' && data.period.trim()) &&
+        !(typeof data.periodType === 'string' && data.periodType.trim())) {
+      errors.push({ field: 'period', message: `'period' is required and must be a non-empty string` });
+    }
     _requireString(data, 'month', errors);
     _requirePlainObject(data, 'focuses', errors);
     return errors;
@@ -150,10 +163,10 @@ const SCHEMAS = {
     }
     // Enum check: if fibonacciSize is present it must be a known Fibonacci value.
     if (data.fibonacciSize !== undefined && data.fibonacciSize !== null) {
-      if (!VALID_FIBONACCI.includes(data.fibonacciSize)) {
+      if (!FIBONACCI_SIZES.includes(data.fibonacciSize)) {
         errors.push({
           field: 'fibonacciSize',
-          message: `'fibonacciSize' must be one of: ${VALID_FIBONACCI.join(', ')}`
+          message: `'fibonacciSize' must be one of: ${FIBONACCI_SIZES.join(', ')}`
         });
       }
     }
@@ -161,6 +174,58 @@ const SCHEMAS = {
   },
 
   'store:dailyLogs': (data) => {
+    const errors = [];
+    if (!_requireObject(data, errors)) return errors;
+    _requireString(data, 'id', errors);
+    _requireString(data, 'date', errors);
+    // dayType is optional — null when the day relies on dayTypeOverride (locationCapacity.js).
+    return errors;
+  },
+
+  // Satellite stores — structural shape for import parity (export covers all 12).
+  // Required-field sets sourced from SCHEMA_REFERENCE.md §2.5–2.11. Structural only:
+  // dayType/locationType value enums are domain rules, checked elsewhere, not here.
+
+  'store:monthlyPlans': (data) => {
+    const errors = [];
+    if (!_requireObject(data, errors)) return errors;
+    _requireString(data, 'id', errors);
+    // month is optional — legacy plan records may omit it.
+    _requireNumber(data, 'year', errors);
+    return errors;
+  },
+
+  'store:sprints': (data) => {
+    const errors = [];
+    if (!_requireObject(data, errors)) return errors;
+    _requireString(data, 'id', errors);
+    _requireString(data, 'startDate', errors);
+    _requireNumber(data, 'durationWeeks', errors);
+    return errors;
+  },
+
+  'store:travelSegments': (data) => {
+    const errors = [];
+    if (!_requireObject(data, errors)) return errors;
+    _requireString(data, 'id', errors);
+    _requireString(data, 'sprintId', errors);
+    _requireString(data, 'startDate', errors);
+    _requireString(data, 'endDate', errors);
+    _requirePlainObject(data, 'dayTypes', errors);
+    return errors;
+  },
+
+  'store:locationPeriods': (data) => {
+    const errors = [];
+    if (!_requireObject(data, errors)) return errors;
+    _requireString(data, 'id', errors);
+    _requireString(data, 'startDate', errors);
+    _requireString(data, 'endDate', errors);
+    _requirePlainObject(data, 'dayTypes', errors);
+    return errors;
+  },
+
+  'store:dayTypeOverrides': (data) => {
     const errors = [];
     if (!_requireObject(data, errors)) return errors;
     _requireString(data, 'id', errors);

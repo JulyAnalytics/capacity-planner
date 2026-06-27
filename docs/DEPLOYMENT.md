@@ -34,9 +34,27 @@ This runs `node build.js` which:
 2. Enable Email/Password auth (or your preferred provider)
 3. Set up Row Level Security (RLS) policies on all tables
 4. Copy the project URL and anon key
-5. Configure in `js/auth.js`: `initAuth(SUPABASE_URL, SUPABASE_ANON_KEY)`
+5. Configure in `js/auth.js`: set the file-level constants `SUPABASE_URL` and `SUPABASE_ANON_KEY` (lines 3-4). `initAuth()` takes no arguments — it reads those constants directly.
 
 Auth state is stored in `localStorage` under `sb-*` keys. The `DB._uid()` method throws `SessionExpiredError` if no valid session exists.
+
+### Self-Hosted (Tailscale)
+
+The app also runs against a self-hosted Supabase on the Mac Mini, reached privately over
+Tailscale. The only app change is the two constants in `js/auth.js:3-4`
+(`SUPABASE_URL = https://jun-mini.tailfbd588.ts.net:8452`, `SUPABASE_ANON_KEY = eyJ…` JWT),
+then `npm run build`.
+
+Backend stack (Docker Compose, `supabase/docker`): Kong (HTTP `127.0.0.1:8000`, fronted by
+Caddy on `:8452` with the Tailscale cert) · Postgres · GoTrue · PostgREST. Studio is on Caddy
+`:8453`. Kong `:8443` and Studio `:3000` are NOT published (they collide with AdGuard/code-server).
+Realtime/Storage/imgproxy/functions/supavisor are stopped — the app uses only db/rest/auth/kong
+and `BroadcastChannel` for multi-tab sync.
+
+Schema: 12 `public.*` tables (`id text pk`, `user_id uuid default auth.uid()`, `data jsonb`,
+`created_at`), RLS `auth.uid() = user_id`, plus the `stories_epic_id_not_null` CHECK. One-time
+data load uses the **Migrate Local Data** button (IndexedDB → Supabase, all 12 stores after
+Spec 01). Keep the cloud instance read-only until count parity is verified.
 
 ## Netlify deploy
 
@@ -64,7 +82,7 @@ netlify deploy --prod --dir=dist
 
 ## Data backup
 
-Supabase stores all data server-side. For additional local backup, use the app's **Export** button to download a full JSON export covering all stores. Import validates structurally before writing.
+Supabase stores all data server-side. For additional local backup, use the app's **Export** button to download a JSON export covering all 12 stores. Import validates structurally before writing.
 
 ## Rollback
 

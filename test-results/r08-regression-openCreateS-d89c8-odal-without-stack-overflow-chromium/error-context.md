@@ -12,11 +12,11 @@
 # Error details
 
 ```
-Test timeout of 30000ms exceeded.
+Error: Channel closed
 ```
 
 ```
-Error: page.click: Test timeout of 30000ms exceeded.
+Error: page.click: Test ended.
 Call log:
   - waiting for locator('[data-tab="backlog"]')
 
@@ -100,7 +100,7 @@ Call log:
   41  |   test('clicking "+ New Sprint" in backlog toolbar opens sprint creation modal without stack overflow', async ({ page }) => {
   42  |     await loadApp(page);
 > 43  |     await page.click('[data-tab="backlog"]');
-      |                ^ Error: page.click: Test timeout of 30000ms exceeded.
+      |                ^ Error: page.click: Test ended.
   44  |     // DECISION: button uses onclick="window.backlogView.openCreateSprintModal()" (confirmed
   45  |     // backlogView.js:280,744). Matching by class is more stable than text matching across
   46  |     // both toolbar (bl-btn-new-sprint) and secondary row (bl-new-sprint-secondary-btn).

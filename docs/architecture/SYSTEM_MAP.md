@@ -11,13 +11,13 @@ Every `js/*.js` source file, what it owns, and its direct dependencies.
 
 | File | Owns | Depends on (window/import) | Exposes (window.X) |
 |------|------|---------------------------|-------------------|
-| `js/constants.js` | DAY_CAPACITY, all status enums, ENTITY_TO_STORE, BroadcastChannel names, `listenCapacityPlannerChannel()` | none | none |
+| `js/constants.js` | DAY_CAPACITY, all status enums, ENTITY_TO_STORE, BroadcastChannel names, `PRIORITY_LEVELS` (story priority bands), `listenCapacityPlannerChannel()` | none | none |
 | `js/notificationRegistry.js` | Pub/sub: `on(type, cb)`, `emit(type)` — replaces hardcoded notifyDataChange switch | none | none (ES import) |
 | `js/utils.js` | `showToast()`, `esc()` HTML escaper | none | `showToast` |
 | `js/auth.js` | Supabase client, session lifecycle, IDB→Supabase migration trigger, `_resetCache()` | `supabase`, `DB`, `app` | `initAuth`, `currentUserId`, `authSubmit`, `authSignOut`, `migrateFromIDB` |
 | `js/db.js` | Supabase data access, `_TABLE_MAP`, `STORES` (13 stores), `_cache` (12 entries), `_uid()` | `currentUserId` | `DB` |
-| `js/storyWrites.js` | Coordinated story-write path: `commitStoryUpdate(storyId, updates)` — in-memory mutate + `DB.put`, structured `'story'` emit with pre-mutation `prev`/`context`, in-memory rollback on failure | `DB`, `NotificationRegistry`, `app`, `showToast` | `storyWrites` |
-| `js/businessRules.js` | Status transition whitelists, story/epic/sprint validation, circular dependency detection | `deriveSprintMeta`, `daysBetween` | `businessRules` |
+| `js/storyWrites.js` | Coordinated story-write path: `commitStoryUpdate(storyId, updates)` — in-memory mutate + `DB.put`, structured `'story'` emit with pre-mutation `prev`/`context`, in-memory rollback on failure; `commitStoryReorder(orderedIds, field)` — batch-reindex `sortOrder`/`cellSortOrder` to DOM order with a single structured `'story'` emit `{reorder, field, ids}` | `DB`, `NotificationRegistry`, `app`, `showToast` | `storyWrites` |
+| `js/businessRules.js` | Status transition whitelists, story/epic/sprint validation, circular dependency detection | `deriveSprintMeta`, `daysBetween`, `PRIORITY_LEVELS` | `businessRules` |
 | `js/hierarchyCache.js` | Synchronous lookup index (focuses/subFocuses/epics/sprints/locations/DTOs), `invalidateCache()`, dual-channel BroadcastChannel listener, localStorage fallback | `DB`, constants, `validateExternalInput` | `hierarchyCache`, `invalidateCache` |
 | `js/contextDetection.js` | Derives hierarchy context from current selection | `hierarchyCache` getters | none |
 | `js/locationCapacity.js` | Date math: `deriveCapacityForDateRange()`, `isoAddDays()`, `buildDayMap()`, `getSprintCoveringDate()` | `DAY_CAPACITY` | `_locationCapacityUtils` |
@@ -31,13 +31,13 @@ Every `js/*.js` source file, what it owns, and its direct dependencies.
 | `js/sprintManager.js` | Sprint + TravelSegment CRUD, cross-tab broadcast | `DB`, businessRules, sprintCapacity, constants | `sprintManager` |
 | `js/sprintCapacity.js` | `deriveSprintCapacity()`, `detectGaps()`, `deriveSprintMeta()` | `DAY_CAPACITY`, `addDaysUTC` | none |
 | `js/sprintAllocation.js` | Story-point allocation across capacity pools | none | none |
-| `js/backlogView.js` | Backlog UI: group-by, drag-drop, filtering, story status cycling, storymap targeted-patch routing (`_handleStoryNotification` patches cards for `name`/`status`; full render otherwise) | `DB`, `esc`, `daysBetween`, `deriveSprintMeta`, constants, Sortable, `backlogDetailPanel` | `backlogView`, `_backlogEpicFilter` |
+| `js/backlogView.js` | Backlog UI: group-by, drag-drop, filtering, story status cycling, storymap targeted-patch routing (`_handleStoryNotification` patches cards for `name`/`status`; full render otherwise); sprint-view priority bands (`_renderPriorityBands` — 5 zones/section, `.bl-band-body[data-priority-zone]` Sortable, per-band capacity via `deriveTierCheck`, row `data-priority` border); story-map intra-cell drag (`_handleStoryMapReorder` → `commitStoryReorder(ids,'cellSortOrder')`, element-attached `.sm2-cell-body` Sortables with no group, `_cellOrderCmp`) | `DB`, `esc`, `daysBetween`, `deriveSprintMeta`, constants, Sortable, `backlogDetailPanel` | `backlogView`, `_backlogEpicFilter` |
 | `js/backlogDetailPanel.js` | Detail panel: story/epic/sprint editing, ranking editor; story saves go through `storyWrites.commitStoryUpdate` | `DB`, `esc`, `daysBetween`, `invalidateCache`, sprintCapacity, constants, `storyWrites` | `backlogDetailPanel`, `_bdpRankingCurrent`, `_bdpRankingEdit` |
 | `js/barricade.js` | Structural validation (shape, not meaning) — 14 schema keys | `VALID_STATUSES`, `VALID_FIBONACCI` | `barricade` |
 | `js/calendarView.js` | Calendar view: week grid, sprint bars, daily log overlay trigger | `esc`, constants, locationCapacity | `calendarView` |
 | `js/dailyLogOverlay.js` | Daily log: checklist, day-type display, notes | `DB`, locationCapacity | `dailyLogOverlay` |
 | `js/importUtils.js` | JSON export/import with barricade validation | `DB` | none |
-| `js/migrationRunner.js` | Ordered list of 9 idempotent migrations, `MigrationRunner.run(DB)` | `DB`, status constants | none |
+| `js/migrationRunner.js` | Ordered list of 10 idempotent migrations, `MigrationRunner.run(DB)` | `DB`, status constants | none |
 | `js/app.js` | `CapacityManager`: tab switching, ModalManager, in-memory mutators, sidebar, notification handler registration, channel listener init | `DB`, businessRules, barricade, importUtils, constants, locationCapacity | `app` |
 
 ---
@@ -57,7 +57,7 @@ User Action → Handler → DB write → reload slice → invalidateCache (hiera
 | `focus` | (none currently — emitted, no listener registered) | Calendar + backlog re-render triggered indirectly via hierarchy cache |
 | `subFocus` | app.js:673 → `loadSubFocusesForEpic()` | Epic dropdown in creation modal |
 | `epic` | app.js:672 → `populateEpicDropdown()`, backlogView.js:1673 | Epic dropdown + backlog re-render |
-| `story` | backlogView.js `_handleStoryNotification` (registered on the `'story'` listener) | `renderSprintCapacityHeaders()` always; storymap patches the affected `.sm2-card` for `name`/`status` (full render otherwise); other modes `patchStoryRow`; open detail panel re-syncs. Payload-shape: `{id, changed, prev, context}` (success) or `{id, error, prev, context}` (failure); payload-less emit preserves legacy full-render behaviour |
+| `story` | backlogView.js `_handleStoryNotification` (registered on the `'story'` listener) | `renderSprintCapacityHeaders()` always; storymap patches the affected `.sm2-card` for `name`/`status` (full render otherwise); other modes `patchStoryRow`; open detail panel re-syncs. Payload-shape: `{id, changed, prev, context}` (success) or `{id, error, prev, context}` (failure); `{reorder:true, field, ids}` is a **no-op** (SortableJS already placed the DOM; only the capacity-header refresh in the listener wrapper runs). After Stage 1 all `'story'` emits originate in `window.storyWrites` — the drag handlers (`_handleSortableCross`/`_handleSortableReorder`) and toggles (`_toggleStoryStatus`/`_toggleStoryFocus`) are spine callers (`commitStoryUpdate`/`commitStoryReorder`); backlogView.js emits `'story'` directly no longer |
 | `sprint` | backlogView.js:1676, calendarView.js:1242 | Backlog + calendar |
 | `travelSegment` | backlogView.js:1677 | Sprint capacity headers |
 | `locationPeriod` | backlogView.js:1678, calendarView.js:1243 | Sprint capacity headers + calendar |
@@ -152,14 +152,15 @@ Run at `app.js:657` via `MigrationRunner.run(DB)`, before `loadAllData()`. Each 
 | # | Function | Metadata Key | Purpose |
 |---|----------|-------------|---------|
 | 1 | `migrateToSubFocuses` | `migration:subfocus` | Creates sub-focuses from epic focus names, assigns `subFocusId` |
-| 2 | `migrateCalendarToIncludeFocuses` | `migration:calendar_focuses` | Adds `focuses` field to calendar week records |
-| 3 | `migrateStoriesToIncludeActionItems` | `migration:story_action_items` | Adds empty `actionItems[]` to all stories |
-| 4 | `migrateStoriesToIncludeSortOrder` | `migration:sortOrder` | Seeds `sortOrder` on stories |
-| 5 | `migrateWeeksToIncludeArchiveFields` | `migration:week_archive_fields` | Adds `archived`, `archivedAt`, `pinned`, `pinnedAt` to calendar weeks |
-| 6 | `migrateSeedFocuses` | `migration:seed_focuses` | Seeds 8 default focuses (Trading, Photography, Physical, Learning, Building, Social, Reading, Admin) |
-| 7 | `migrateEpicsToFocusId` | `migration:epic_focusId` | Migrates `focus` string → `focusId` reference on epics |
-| 8 | `migrateSubFocusesToFocusId` | `migration:sf_focusId` | Migrates `focus` string → `focusId` on sub-focuses |
-| 9 | `migrateSprintStatusToCompleted` | `migration:sprint_completed` | Renames sprint status `'done'` → `'completed'` |
+| 2 | `migrateCalendarToIncludeFocuses` | `migration:calendar-focus` | Adds `focuses` field to calendar week records |
+| 3 | `migrateStoriesToIncludeActionItems` | `migration:story-action-items` | Adds empty `actionItems[]` to all stories |
+| 4 | `migrateStoriesToIncludeSortOrder` | `sortOrder_migration` | Seeds `sortOrder` on stories (lone underscore-key exception) |
+| 5 | `migrateStoriesToIncludeCellSortOrder` | `migration:cell-sort-order` | Seeds `cellSortOrder` per `epicId`×`sprintId` cell |
+| 6 | `migrateWeeksToIncludeArchiveFields` | `migration:week-archive` | Adds `archived`, `archivedAt`, `pinned`, `pinnedAt` to calendar weeks |
+| 7 | `migrateSeedFocuses` | `migration:focuses-seeded` | Seeds 8 default focuses (Trading, Photography, Physical, Learning, Building, Social, Reading, Admin) |
+| 8 | `migrateEpicsToFocusId` | `migration:epics-focus-id` | Migrates `focus` string → `focusId` reference on epics |
+| 9 | `migrateSubFocusesToFocusId` | `migration:subfocuses-focus-id` | Migrates `focus` string → `focusId` on sub-focuses |
+| 10 | `migrateSprintStatusToCompleted` | `migration:sprint-status-completed` | Renames sprint status `'done'` → `'completed'` |
 
 Adding a new migration: append to `MIGRATIONS` array in dependency order. Guard with a new metadata key. Create the migration function before the `MIGRATIONS` array definition.
 

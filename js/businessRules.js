@@ -1,5 +1,6 @@
 import { deriveSprintMeta } from './sprintCapacity.js';
 import { daysBetween } from './locationCapacity.js';
+import { PRIORITY_LEVELS } from './constants.js';
 
 /**
  * Business Rules & Validation
@@ -39,7 +40,8 @@ export const VALID_STATUSES = {
   sprint: ['planning', 'active', 'completed'],
 };
 
-export const VALID_PRIORITY_LEVELS = ['primary', 'secondary1', 'secondary2', 'floor'];
+// Single source of truth — re-exported from constants.js (Stage 0 dedupe).
+export const VALID_PRIORITY_LEVELS = PRIORITY_LEVELS;
 
 export const VALID_FOCUS_NAMES = [
   'Trading',

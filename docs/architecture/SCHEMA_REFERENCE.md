@@ -93,7 +93,8 @@ All Supabase tables share the same column structure: `id (text PK)`, `user_id (t
 | `name` | string | Y | — | — | |
 | `epicId` | string | Y | from form | Epic.id | NOT NULL (DB constraint) |
 | `sprintId` | string\|null | N | `null` | Sprint.id | `null` = backlog |
-| `sortOrder` | number | N | `_maxOrder + 1` | — | Drag-drop ordering |
+| `sortOrder` | number | N | `_maxOrder + 1` | — | Drag-drop ordering (sprint-scoped) |
+| `cellSortOrder` | number | N | `_maxCellOrder + 1` | — | Story-map per-cell ordering (`epicId`×`sprintId`); seeded by `migrateStoriesToIncludeCellSortOrder` (#5) |
 | `focus` | string | N | from epic | — | Denormalized |
 | `description` | string | N | `''` | — | |
 | `priority` | string\|null | N | `null` | — | |
@@ -191,8 +192,8 @@ All Supabase tables share the same column structure: `id (text PK)`, `user_id (t
 |-------|------|-----|---------|------|-------|
 | `id` | string | Y | `{year}-W{week}` | — | PK |
 | `month` | string | Y | — | — | |
-| `year` | string | Y | — | — | |
-| `week` | string | Y | — | — | |
+| `year` | number | Y | — | — | barricade accepts string\|number |
+| `week` | number | Y | — | — | barricade accepts string\|number |
 | `dayTypes` | object | Y | — | — | `{ 'YYYY-MM-DD': dayType }` |
 | `capacities` | object | Y | — | — | |
 | `focuses` | object | N | `{primary:'',secondary1:'',secondary2:'',floor:''}` | — | Added migration #2 |
@@ -209,7 +210,7 @@ All Supabase tables share the same column structure: `id (text PK)`, `user_id (t
 | Field | Type | Req | Default | FK → | Notes |
 |-------|------|-----|---------|------|-------|
 | `id` | string | Y | `{YYYY-MM}` | — | PK |
-| `periodType` | string | Y | — | — | `'month'` or `'week'` |
+| `period` | string | Y | — | — | `'month'` or `'week'` (legacy alias: `periodType`) |
 | `month` | string | Y | — | — | |
 | `focuses` | object | Y | — | — | `{primary,secondary1,secondary2,floor}` |
 
@@ -309,15 +310,15 @@ Which migration created or last modified each entity's schema.
 
 | Entity | Created by | Last modified by |
 |--------|-----------|-----------------|
-| Focus | #6 `migrateSeedFocuses` | — |
-| SubFocus | #1 `migrateToSubFocuses` | #8 `migrateSubFocusesToFocusId` |
-| Epic | initial app | #7 `migrateEpicsToFocusId` |
-| Story | initial app | #3 actionItems, #4 sortOrder |
-| Sprint | initial app | #9 `migrateSprintStatusToCompleted` |
+| Focus | #7 `migrateSeedFocuses` | — |
+| SubFocus | #1 `migrateToSubFocuses` | #9 `migrateSubFocusesToFocusId` |
+| Epic | initial app | #8 `migrateEpicsToFocusId` |
+| Story | initial app | #3 actionItems, #4 sortOrder, #5 cellSortOrder |
+| Sprint | initial app | #10 `migrateSprintStatusToCompleted` |
 | TravelSegment | initial app | — |
 | LocationPeriod | initial app | — |
 | DayTypeOverride | initial app | — |
-| Calendar | initial app | #2 focuses field, #5 archive/pin fields |
+| Calendar | initial app | #2 focuses field, #6 archive/pin fields |
 | Priority | initial app | — |
 | MonthlyPlan | DB v4 migration | — |
 | DailyLog | initial app | — |
@@ -330,11 +331,12 @@ Which migration created or last modified each entity's schema.
 | 2 | `migrateCalendarToIncludeFocuses` | `migration:calendar-focus` | Adds `focuses` field to calendar weeks |
 | 3 | `migrateStoriesToIncludeActionItems` | `migration:story-action-items` | Adds `actionItems[]` to stories |
 | 4 | `migrateStoriesToIncludeSortOrder` | `sortOrder_migration` | Seeds `sortOrder` on stories |
-| 5 | `migrateWeeksToIncludeArchiveFields` | `migration:week-archive` | Adds archive/pin fields to weeks |
-| 6 | `migrateSeedFocuses` | `migration:focuses-seeded` | Seeds 8 default focuses |
-| 7 | `migrateEpicsToFocusId` | `migration:epics-focus-id` | `focus` string → `focusId` on epics |
-| 8 | `migrateSubFocusesToFocusId` | `migration:subfocuses-focus-id` | `focus` string → `focusId` on sub-focuses |
-| 9 | `migrateSprintStatusToCompleted` | `migration:sprint-status-completed` | `'done'` → `'completed'` |
+| 5 | `migrateStoriesToIncludeCellSortOrder` | `migration:cell-sort-order` | Seeds `cellSortOrder` per `epicId`×`sprintId` cell |
+| 6 | `migrateWeeksToIncludeArchiveFields` | `migration:week-archive` | Adds archive/pin fields to weeks |
+| 7 | `migrateSeedFocuses` | `migration:focuses-seeded` | Seeds 8 default focuses |
+| 8 | `migrateEpicsToFocusId` | `migration:epics-focus-id` | `focus` string → `focusId` on epics |
+| 9 | `migrateSubFocusesToFocusId` | `migration:subfocuses-focus-id` | `focus` string → `focusId` on sub-focuses |
+| 10 | `migrateSprintStatusToCompleted` | `migration:sprint-status-completed` | `'done'` → `'completed'` |
 
 ---
 
@@ -343,7 +345,7 @@ Which migration created or last modified each entity's schema.
 All entity tables use the same structure. Entity fields are stored in a JSONB `data` column — there are no per-field columns.
 
 ```sql
--- Inferred from js/db.js write paths (db.js:237,259)
+-- Inferred from js/storyWrites.js (storyWrites.commitStoryUpdate, commitStoryReorder); underlying db.js:237,259
 CREATE TABLE <table> (
   id         TEXT PRIMARY KEY,
   user_id    TEXT REFERENCES auth.users,

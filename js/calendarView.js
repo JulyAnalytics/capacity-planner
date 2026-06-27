@@ -5,6 +5,7 @@
  */
 
 import { esc } from './utils.js';
+import { STORY_STATUS, FOCUS_STATUS } from './constants.js';
 import {
   isoAddDays, isoDateRange, daysBetween,
   buildDayMap, deriveSprintCapacityFromPeriods, detectUncoveredDays,
@@ -514,7 +515,7 @@ function _buildStoryCountByDate(sprints, stories) {
   const byDate = {};
   for (const sprint of sprints) {
     const end   = isoAddDays(sprint.startDate, sprint.durationWeeks * 7 - 1);
-    const count = stories.filter(s => s.sprintId === sprint.id && s.status !== 'completed' && s.status !== 'abandoned').length;
+    const count = stories.filter(s => s.sprintId === sprint.id && s.status !== STORY_STATUS.COMPLETED && s.status !== STORY_STATUS.ABANDONED).length;
     if (count === 0) continue;
     for (const ds of isoDateRange(sprint.startDate, end)) {
       byDate[ds] = count;
@@ -714,7 +715,7 @@ function _renderDetailPanel() {
 // ── Sprint create panel ────────────────────────────────────────────────────────
 
 function _renderSprintCreatePanel() {
-  const allFocuses    = (window.app?.data?.focuses || []).filter(f => f.status === 'active');
+  const allFocuses    = (window.app?.data?.focuses || []).filter(f => f.status === FOCUS_STATUS.ACTIVE);
   const rankedSet     = new Set(_sprintFormRanking);
   const availFocuses  = allFocuses.filter(f => !rankedSet.has(f.name));
 

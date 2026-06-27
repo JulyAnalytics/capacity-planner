@@ -5,18 +5,24 @@ Pure HTML/CSS/JS, no framework. Supabase backend (auth + storage).
 - Entry: `index.html` → `dist/app.*.min.js` (built by `node build.js`)
 - App logic: `js/app.js` (`CapacityManager` class, exposed as `window.app`)
 - DB layer: `js/db.js` (Supabase client wrapper, exposed as `window.DB`)
-- Story writes: `js/storyWrites.js` (coordinated story write path, `window.storyWrites.commitStoryUpdate`) — bundled immediately after `js/db.js`
+- Story writes: `js/storyWrites.js` (coordinated story write path, `window.storyWrites.commitStoryUpdate` for single edits + `window.storyWrites.commitStoryReorder(orderedIds, field)` for batch reindex) — bundled immediately after `js/db.js`. **All story writes funnel through it:** `js/backlogView.js`'s four former inline writers (`_handleSortableCross`, `_handleSortableReorder`, `_toggleStoryFocus`, `_toggleStoryStatus`) are now spine callers, and `_handleStoryNotification` early-returns on `{reorder:true}` payloads (no-op — Sortable already placed the DOM).
 - Auth: `js/auth.js` (Supabase session, `window.initAuth`, `window.currentUserId`)
 - Build: `node build.js` — bundles + minifies JS/CSS into `dist/`
-- Sprint-view drag: SortableJS (Tier 0 migration complete, replaces HTML5 drag)
+- Sprint-view drag: SortableJS (Tier 0 migration complete, replaces HTML5 drag). The sprint view renders **5 priority bands** per section (`primary/secondary1/secondary2/floor/unassigned`); SortableJS is attached per `.bl-band-body[data-priority-zone]` (group `stories`), so cross-band drag writes `story.priority` and cross-sprint drag still works. `sprintAllocation`/`backlogDetailPanel` reference the priority constants (dedupe complete; only `app.js:819` literal remains).
+- Story-map drag: SortableJS, intra-cell only. Each `.sm2-cell-body[data-epic-id][data-sprint-id]` (epic×sprint cell) is an isolated Sortable (no `group` → a card cannot leave its cell); reordering writes `cellSortOrder` via `window.storyWrites.commitStoryReorder(ids,'cellSortOrder')` (`_handleStoryMapReorder` is the handler). Lifecycle: `_initStoryMapSortables`/`_destroyStoryMapSortables` mirror the sprint sortables (destroy before `#bl-list` rebuild, init at end of `_renderByStoryMapMode`).
 - Vendored library: `vendor/sortablejs/Sortable.min.js` (exposes `window.Sortable`)
 
 ## Story Schema
 Stories include a `sortOrder` field (number, default 0) controlling row position within a sprint section or backlog bucket. Set by `migrateStoriesToIncludeSortOrder` on first run; new stories receive `max+1` at creation time.
 
+Stories also include a `cellSortOrder` field (number, default 0) — the per-cell rank in the story map, a sibling to `sortOrder` (which is the sprint-scoped rank). Seeded by `migrateStoriesToIncludeCellSortOrder` on first run (per `epicId`×`sprintId` cell, 0-based index ordered by existing `sortOrder`); new stories receive `max(cell)+1` at creation time.
+
 ## DB Migrations
-Metadata key `sortOrder_migration` guards the one-time sort-order seeding pass.
-Migration ordering in `init()`: … → `migrateStoriesToIncludeActionItems` → `migrateStoriesToIncludeSortOrder` → `migrateWeeksToIncludeArchiveFields` → …
+Metadata key `sortOrder_migration` guards the one-time sort-order seeding pass; `migration:cell-sort-order` guards the `cellSortOrder` seeding pass.
+Migration ordering in `init()`: … → `migrateStoriesToIncludeActionItems` → `migrateStoriesToIncludeSortOrder` → `migrateStoriesToIncludeCellSortOrder` → `migrateWeeksToIncludeArchiveFields` → …
+
+## Constants
+`js/constants.js` exports `PRIORITY_LEVELS` (`['primary','secondary1','secondary2','floor']`) and `PRIORITY_LABELS` (display labels: `Primary`/`Secondary 1`/`Secondary 2`/`Floor`) — the canonical source for story `priority` values + their band-header labels, distinct from the `DAY_CAPACITY` pool keys (which use `priority`, not `primary`). `sprintAllocation.deriveTierCheck` and `backlogDetailPanel._renderPriorityPicker` reference these (Stage 2 dedupe; only the `app.js:819` literal remains, frozen by strangler-fig).
 
 ## Hierarchy
 Priority Level → Focus → Sub-Focus → Epic → Story
@@ -88,4 +94,4 @@ Addendum alignment — after any CLAUDE.md update, verify that
 the addendum is stale, flag it to the user before the next spec authoring session.
 CLAUDE.md is authoritative. The addendum must match it, not the reverse.
 
-`Last updated: 2026-06-19 after Task C2-additive — added js/storyWrites.js coordinated story-write path (commitStoryUpdate) with structured 'story' notification payload; migrated backlogDetailPanel.saveField onto it; NotificationRegistry.emit now accepts an optional payload (backward compatible).`
+`Last updated: 2026-06-27 after Task Self-Host-Import-Hardening — full 357-record JSON import into self-hosted Supabase verified. Fixed latent barricade.js bug: dangling VALID_FIBONACCI import (never exported) threw inside store:stories and rejected every story with a fibonacciSize on import — now imports FIBONACCI_SIZES from constants.js. Relaxed 4 store: schemas to match production data (calendar year/week accept string|number via new _requireStringOrNumber helper; priorities canonical field is 'period' with periodType alias; dailyLogs dayType optional; monthlyPlans month optional). validateStory import domain gate restored after one-time historical restore.`

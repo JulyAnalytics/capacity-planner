@@ -20,7 +20,7 @@ import {
   addToCache,
   invalidateCache
 } from './hierarchyCache.js';
-import { SPRINT_STATUS } from './constants.js';
+import { STORY_STATUS, EPIC_STATUS, FOCUS_STATUS, SPRINT_STATUS } from './constants.js';
 import { getMergedDefaults, saveCreationDefaults } from './contextDetection.js';
 import { validateEntity } from './dbValidator.js';
 import {
@@ -43,7 +43,6 @@ import {
 } from './accessibility.js';
 import { setButtonLoading } from './performance.js';
 import { optimizeModalForMobile } from './mobileOptimizations.js';
-import { SPRINT_STATUS } from './constants.js';
 
 // ============================================================================
 // STATE
@@ -663,7 +662,7 @@ function getFormData() {
     case 'story': {
       const fib      = document.getElementById('cm-story-fib')?.value;
       const est      = document.getElementById('cm-story-estimate')?.value;
-      const status   = document.getElementById('cm-story-status')?.value || 'active';
+      const status   = document.getElementById('cm-story-status')?.value || STORY_STATUS.ACTIVE;
       const priority = document.getElementById('cm-story-priority')?.value || null;
       const epicId   = document.getElementById('story-epic')?.value || null;
       const sprintId = document.getElementById('story-sprint')?.value || null;
@@ -679,11 +678,16 @@ function getFormData() {
       const _maxOrder = _peers.reduce((m, s) => Math.max(m, s.sortOrder ?? -1), -1);
       const _sortOrder = _maxOrder + 1;
 
+      const _cellPeers = (window.app?.data?.stories || []).filter(s => (s.epicId || null) === (epicId || null) && (s.sprintId || null) === (sprintId || null));
+      const _maxCellOrder = _cellPeers.reduce((m, s) => Math.max(m, s.cellSortOrder ?? -1), -1);
+      const _cellSortOrder = _maxCellOrder + 1;
+
       return {
         ...base,
         epicId,
         sprintId,
         sortOrder: _sortOrder,
+        cellSortOrder: _cellSortOrder,
         focus: focusStr,
         description: document.getElementById('cm-story-description')?.value || '',
         priority,
@@ -698,7 +702,7 @@ function getFormData() {
         unblockedBy: null,
         estimateVariance: null,
         estimateAccuracy: null,
-        activatedAt:  status === 'active' ? now : null,
+        activatedAt:  status === STORY_STATUS.ACTIVE ? now : null,
         completedAt:  null,
         abandonedAt:  null,
         abandonReason: '',
@@ -713,7 +717,7 @@ function getFormData() {
       return {
         ...base,
         vision:     document.getElementById('cm-epic-vision')?.value || '',
-        status:     document.getElementById('cm-epic-status')?.value || 'planning',
+        status:     document.getElementById('cm-epic-status')?.value || EPIC_STATUS.PLANNING,
         focusId,
         subFocusId
       };
@@ -735,7 +739,7 @@ function getFormData() {
       return {
         ...base,
         color:  document.getElementById('cm-focus-color')?.value || '#007bff',
-        status: 'active'
+        status: FOCUS_STATUS.ACTIVE
       };
 
     default:

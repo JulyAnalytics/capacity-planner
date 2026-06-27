@@ -7,13 +7,13 @@ import DB from './db.js';
 import { esc } from './utils.js';
 import { daysBetween } from './locationCapacity.js';
 import { deriveSprintMeta } from './sprintCapacity.js';
-import { STORY_STATUS, EPIC_STATUS, SPRINT_STATUS } from './constants.js';
+import { STORY_STATUS, EPIC_STATUS, FOCUS_STATUS, SPRINT_STATUS, PRIORITY_LEVELS, PRIORITY_LABELS } from './constants.js';
 
 // ── State ─────────────────────────────────────────────────────────────────────
 
 let _blGroupBy = 'sprint'; // 'sprint' | 'focus' | 'calendar' | 'storymap'
 let activeFocus = null; // focus.id | null (null = All)
-let activeStatuses = new Set(['active']);
+let activeStatuses = new Set([STORY_STATUS.ACTIVE]);
 let openPanelType = null; // 'story' | 'epic' | 'focus' | 'subFocus' | null
 let openPanelId = null;
 let epicFilter = null; // epic.id | null
@@ -145,6 +145,7 @@ async function _loadSprintCapacityHeaders() {
       const allocation = deriveFocusAllocation(sprintStories, allFocuses);
       const tierCheck  = deriveTierCheck(sprintStories, cap);
       const allocHtml  = _renderAllocDots(allocation) + _renderTierStatus(tierCheck);
+      _fillBandCapacities(hdrEl.closest('[data-section-id]'), tierCheck);
 
       tier2El.innerHTML = `
         <div class="bl-cov-track-wrap">
@@ -180,6 +181,7 @@ async function _loadSprintCapacityHeaders() {
     const allocation = deriveFocusAllocation(sprintStories, allFocuses);
     const tierCheck  = deriveTierCheck(sprintStories, cap);
     const allocHtml  = _renderAllocDots(allocation) + _renderTierStatus(tierCheck);
+    _fillBandCapacities(hdrEl.closest('[data-section-id]'), tierCheck);
 
     tier2El.innerHTML = `
       <div class="bl-cov-track-wrap">
@@ -195,6 +197,18 @@ async function _loadSprintCapacityHeaders() {
       <span class="bl-sprint-cap-priority">· ${cap.priority.toFixed(1)} priority</span>
       ${allocHtml ? `<span class="bl-cap-sep">·</span><span class="bl-sprint-alloc">${allocHtml}</span>` : ''}
     `;
+  }
+}
+
+// Fill a sprint section's per-band capacity labels from a computed tierCheck.
+// Reuses deriveTierCheck output (allocated/available per tier) — no new capacity math.
+function _fillBandCapacities(sectionEl, tierCheck) {
+  if (!sectionEl) return;
+  for (const t of tierCheck.tiers) {
+    const span = sectionEl.querySelector(`.bl-band-capacity[data-band-capacity="${t.tier}"]`);
+    if (!span) continue;
+    span.textContent = `${t.allocated.toFixed(1)} / ${t.available.toFixed(1)}`;
+    span.classList.toggle('bl-band-capacity--over', !t.ok && t.available > 0);
   }
 }
 
@@ -225,6 +239,12 @@ function _getStoryFromData(storyId) {
 
 function _storyOrderCmp(a, b) {
   return (a.sortOrder ?? 0) - (b.sortOrder ?? 0) || a.id.localeCompare(b.id);
+}
+
+// Intra-cell rank in the story map (epicId × sprintId). Sibling to _storyOrderCmp
+// (sprint rank). Seeded by migrateStoriesToIncludeCellSortOrder; max+1 at creation.
+function _cellOrderCmp(a, b) {
+  return (a.cellSortOrder ?? 0) - (b.cellSortOrder ?? 0) || a.id.localeCompare(b.id);
 }
 
 function _currentUrl() {
@@ -308,9 +328,9 @@ function _renderToolbar(focuses, allEpics) {
   // Status chips (row 2)
   const chipDefs = [
     { key: 'all',       label: 'All'     },
-    { key: 'active',    label: 'Active'  },
-    { key: 'blocked',   label: 'Blocked' },
-    { key: 'completed', label: 'Done'    },
+    { key: STORY_STATUS.ACTIVE,    label: 'Active'  },
+    { key: STORY_STATUS.BLOCKED,   label: 'Blocked' },
+    { key: STORY_STATUS.COMPLETED, label: 'Done'    },
   ];
   const chips = chipDefs.map(c => {
     const isActive = activeStatuses.has(c.key);
@@ -433,6 +453,7 @@ function _renderStoryRow(story, mode, allData) {
 
   return `<div class="bl-story-row bl-story-row--${mode}${isSelected ? ' bl-story-row--selected' : ''}"
     data-story-id="${esc(story.id)}"
+    data-priority="${esc(story.priority || '')}"
     onclick="window.backlogView._onStoryRowClick('${esc(story.id)}', event)">
     <span class="bl-drag-handle" title="Drag to move">⠿</span>
     ${starBtn}
@@ -454,9 +475,9 @@ function _renderSprintHeader(sprint, allStoriesInSprint, isExpanded) {
   const startFmt = _fmtBacklogDate(sprint.startDate);
   const endFmt = _fmtBacklogDate(endDate);
   // Count chips (unfiltered)
-  const todoCount = allStoriesInSprint.filter(s => s.status === 'backlog').length;
-  const activeCount = allStoriesInSprint.filter(s => s.status === 'active').length;
-  const doneCount = allStoriesInSprint.filter(s => s.status === 'completed').length;
+  const todoCount = allStoriesInSprint.filter(s => s.status === STORY_STATUS.BACKLOG).length;
+  const activeCount = allStoriesInSprint.filter(s => s.status === STORY_STATUS.ACTIVE).length;
+  const doneCount = allStoriesInSprint.filter(s => s.status === STORY_STATUS.COMPLETED).length;
 
   const todoChip = todoCount > 0
     ? `<span class="bl-sprint-chip bl-sprint-chip--todo">${todoCount} todo</span>` : '';
@@ -542,7 +563,7 @@ function _getSectionExpanded(type, id, sprint) {
   // defaults
   if (type === 'sprint') {
     if (id === 'backlog-bucket') return false;
-    return sprint?.status === 'active';
+    return sprint?.status === SPRINT_STATUS.ACTIVE;
   }
   if (type === 'focus' || type === 'sf') return true;
   return false;
@@ -683,20 +704,18 @@ function _onStoryRowClick(storyId, _event) {
 async function _toggleStoryStatus(storyId) {
   const story = _getStoryFromData(storyId);
   if (!story) return;
-  const cycle = ['active', 'completed', 'blocked', 'backlog'];
+  const cycle = [STORY_STATUS.ACTIVE, STORY_STATUS.COMPLETED, STORY_STATUS.BLOCKED, STORY_STATUS.BACKLOG];
   const idx   = cycle.indexOf(story.status);
   const next  = cycle[(idx + 1) % cycle.length];
-  story.status = next;
-  story.updatedAt = new Date().toISOString();
-  if (next === 'completed') story.completedAt = story.updatedAt;
-  try {
-    await DB.put(DB.STORES.STORIES, story);
-    window.app?.updateStoryInMemory(storyId, { status: story.status, completedAt: story.completedAt, updatedAt: story.updatedAt });
-    patchStoryRow(storyId);
-  } catch (err) {
-    story.status = cycle[idx] || 'backlog';
-    if (window.showToastWithActions) window.showToastWithActions('Status toggle failed', 'error', { duration: 3000 });
-  }
+
+  const now     = new Date().toISOString();
+  const updates = { status: next, updatedAt: now };
+  if (next === STORY_STATUS.COMPLETED) updates.completedAt = now;
+
+  // Spine owns the write + rollback + toast. The structured 'story' emit patches the row
+  // badge (sprint) / card (storymap) and re-syncs an open detail panel; on failure the
+  // rollback emit repaints the row from the restored status — no manual revert here.
+  await window.storyWrites.commitStoryUpdate(storyId, updates);
 }
 
 function _setGroupBy(mode) {
@@ -765,11 +784,40 @@ function _onSprintTagClick(sprintId) {
 
 // ── By-sprint mode ────────────────────────────────────────────────────────────
 
+// Render the 5 priority bands (4 PRIORITY_LEVELS + unassigned) inside a section body.
+// `stories` is pre-sorted by _storyOrderCmp; partition by story.priority, preserving order.
+// withCapacity → emit a per-band capacity placeholder (sprint sections; filled async by
+// _loadSprintCapacityHeaders). The backlog bucket passes withCapacity:false.
+function _renderPriorityBands(stories, allData, { withCapacity }) {
+  const zones  = [...PRIORITY_LEVELS, ''];           // '' = unassigned, rendered last
+  const byBand = new Map(zones.map(z => [z, []]));
+  for (const s of stories) {
+    const zone = (s.priority && PRIORITY_LEVELS.includes(s.priority)) ? s.priority : '';
+    byBand.get(zone).push(s);
+  }
+
+  return zones.map(zone => {
+    const label = zone ? PRIORITY_LABELS[zone] : 'Unassigned';
+    const rows  = byBand.get(zone).map(s => _renderStoryRow(s, 'sprint', allData)).join('');
+    const cap   = (withCapacity && zone)
+      ? `<span class="bl-band-capacity" data-band-capacity="${zone}"></span>`
+      : '';
+    return `<div class="bl-priority-band bl-priority-band--${zone || 'unassigned'}">
+      <div class="bl-band-header">
+        <span class="bl-band-accent"></span>
+        <span class="bl-band-label">${label}</span>
+        ${cap}
+      </div>
+      <div class="bl-band-body" data-priority-zone="${zone}">${rows}</div>
+    </div>`;
+  }).join('');
+}
+
 async function _renderBySprintMode(allSprints, allStories, filteredStories, allEpics, allFocuses, allSubFocuses) {
   const allData = { allEpics, allFocuses, allSubFocuses };
 
-  const activeSprints  = allSprints.filter(s => s.status === 'active').sort((a,b) => a.startDate.localeCompare(b.startDate));
-  const planningSprints = allSprints.filter(s => s.status === 'planning').sort((a,b) => a.startDate.localeCompare(b.startDate));
+  const activeSprints  = allSprints.filter(s => s.status === SPRINT_STATUS.ACTIVE).sort((a,b) => a.startDate.localeCompare(b.startDate));
+  const planningSprints = allSprints.filter(s => s.status === SPRINT_STATUS.PLANNING).sort((a,b) => a.startDate.localeCompare(b.startDate));
   const doneSprints    = allSprints.filter(s => s.status === SPRINT_STATUS.COMPLETED).sort((a,b) => b.startDate.localeCompare(a.startDate));
 
   const parts = [];
@@ -785,9 +833,8 @@ async function _renderBySprintMode(allSprints, allStories, filteredStories, allE
       displayStories = _applyFocusFilter(displayStories, allEpics, allFocuses, activeFocus);
     }
 
-    const storyHtml = displayStories.length > 0
-      ? displayStories.map(s => _renderStoryRow(s, 'sprint', allData)).join('')
-      : '<div class="bl-story-empty">No stories — drag here or use +</div>';
+    // Partition into priority bands (each band is its own SortableJS drop zone).
+    const storyHtml = _renderPriorityBands(displayStories, allData, { withCapacity: true });
 
     const doneClass = sprint.status === SPRINT_STATUS.COMPLETED ? ' bl-section-sprint--completed' : '';
     return `<div class="bl-section-sprint${doneClass}" data-section-id="${esc(sprint.id)}" data-sprint-id="${esc(sprint.id)}">
@@ -809,9 +856,7 @@ async function _renderBySprintMode(allSprints, allStories, filteredStories, allE
     visibleBacklog = _applyFocusFilter(visibleBacklog, allEpics, allFocuses, activeFocus);
   }
   const backlogExpanded = _getSectionExpanded('sprint', 'backlog-bucket');
-  const backlogStoryHtml = visibleBacklog.length > 0
-    ? visibleBacklog.map(s => _renderStoryRow(s, 'sprint', allData)).join('')
-    : '<div class="bl-story-empty">No stories in backlog</div>';
+  const backlogStoryHtml = _renderPriorityBands(visibleBacklog, allData, { withCapacity: false });
 
   parts.push(`<div class="bl-section-backlog" data-section-id="backlog-bucket">
     ${_renderBacklogHeader(allBacklog, backlogExpanded)}
@@ -832,7 +877,7 @@ async function _renderBySprintMode(allSprints, allStories, filteredStories, allE
 
 function _renderByFocusMode(allFocuses, allSubFocuses, allEpics, _allStories, filteredStories) {
   const allData = { allEpics, allFocuses, allSubFocuses };
-  const activeFocuses = allFocuses.filter(f => f.status === 'active');
+  const activeFocuses = allFocuses.filter(f => f.status === FOCUS_STATUS.ACTIVE);
   const parts = [];
 
   for (const focus of activeFocuses) {
@@ -930,9 +975,9 @@ function _renderSprintSidebarCell(sprint, allStories) {
   const chevCls     = isExpanded ? '' : ' sm2-sprint-chevron--collapsed';
 
   const inSprint = allStories.filter(s => s.sprintId === sprint.id);
-  const active   = inSprint.filter(s => s.status === 'active').length;
-  const done     = inSprint.filter(s => s.status === 'completed').length;
-  const blocked  = inSprint.filter(s => s.status === 'blocked').length;
+  const active   = inSprint.filter(s => s.status === STORY_STATUS.ACTIVE).length;
+  const done     = inSprint.filter(s => s.status === STORY_STATUS.COMPLETED).length;
+  const blocked  = inSprint.filter(s => s.status === STORY_STATUS.BLOCKED).length;
 
   const chips = [
     active  > 0 ? `<span class='sm2-sprint-chip sm2-chip--active'>${active} active</span>`    : '',
@@ -992,12 +1037,12 @@ function _renderEpicCardCell(epic, allStories, allFocuses) {
   const accentColor = focus?.color || '#6B7784';
 
   const epicStories  = allStories.filter(s => s.epicId === epic.id);
-  const completedCnt = epicStories.filter(s => s.status === 'completed').length;
+  const completedCnt = epicStories.filter(s => s.status === STORY_STATUS.COMPLETED).length;
   const pct = epicStories.length > 0
     ? Math.round((completedCnt / epicStories.length) * 100) : 0;
 
-  const stBadgeCls = epic.status === 'active'   ? 'sm2-epic-badge--active'
-    : epic.status === 'planning' ? 'sm2-epic-badge--planning' : 'sm2-epic-badge--other';
+  const stBadgeCls = epic.status === EPIC_STATUS.ACTIVE   ? 'sm2-epic-badge--active'
+    : epic.status === EPIC_STATUS.PLANNING ? 'sm2-epic-badge--planning' : 'sm2-epic-badge--other';
 
   return `
     <div class='sm2-epic-col'
@@ -1036,7 +1081,7 @@ function _sm2StatusStyle(status) {
 }
 
 function _renderStoryMapCard(story) {
-  const status = story.status || 'backlog';
+  const status = story.status || STORY_STATUS.BACKLOG;
   const { border, bg } = _sm2StatusStyle(status);
 
   const fibBadge = story.fibonacciSize
@@ -1071,9 +1116,14 @@ function _renderCell(epicId, sprintId, cellStories) {
     + Story
   </div>`;
 
+  // Cards live in .sm2-cell-body (the SortableJS drop zone); the + Story button stays
+  // OUTSIDE it so it is never draggable and never a reorder peer.
   return `<div class='sm2-cell'
     data-epic-id='${esc(epicId)}'
-    data-sprint-id='${esc(sprintAttr)}'>${cards}${addBtn}</div>`;
+    data-sprint-id='${esc(sprintAttr)}'>
+    <div class='sm2-cell-body' data-epic-id='${esc(epicId)}' data-sprint-id='${esc(sprintAttr)}'>${cards}</div>
+    ${addBtn}
+  </div>`;
 }
 
 function _renderBodyRow(sprintId, visibleEpics, allStories) {
@@ -1091,7 +1141,7 @@ function _renderBodyRow(sprintId, visibleEpics, allStories) {
     const cellStories = allStories.filter(s =>
       s.epicId === epic.id &&
       (isBacklog ? !s.sprintId : s.sprintId === sprintId)
-    );
+    ).sort(_cellOrderCmp);
     return _renderCell(epic.id, sprintId, cellStories);
   }).join('');
 
@@ -1269,7 +1319,7 @@ function _patchStoryMapCard(storyId, changed) {
   if (!card) { _renderBacklogView(); return; }
 
   if ('status' in changed) {
-    const status = changed.status || 'backlog';
+    const status = changed.status || STORY_STATUS.BACKLOG;
     const { border, bg } = _sm2StatusStyle(status);
     // An sm2 card carries exactly two classes: 'sm2-card' + one 'sm2-card--<status>'.
     // Storymap has no drag, so no transient classes exist — reconstruction is safe.
@@ -1304,6 +1354,13 @@ async function _refreshCapacityBars(sprintId) {
 // (which also refreshes an open detail panel via _refreshRowContent). A legacy
 // payload-less emit has no id → prior no-op behaviour is preserved (I8).
 function _handleStoryNotification(payload) {
+  // Batch reindex (sortOrder / cellSortOrder): SortableJS already left the DOM in the new
+  // order, so there is nothing to patch. renderSprintCapacityHeaders() in the 'story'
+  // listener wrapper is the only refresh a reorder needs. Stage 3's storymap cell reorder
+  // relies on this early return to avoid a full rebuild that would destroy the cell's
+  // element-attached Sortable.
+  if (payload?.reorder) return;
+
   if (_blGroupBy !== 'storymap') {
     if (payload?.id) patchStoryRow(payload.id);
     return;
@@ -1331,7 +1388,7 @@ async function _renderByStoryMapMode(
   if (!container) return;
 
   const visibleEpics = allEpics
-    .filter(e => e.status === 'active' || e.status === 'planning')
+    .filter(e => e.status === EPIC_STATUS.ACTIVE || e.status === EPIC_STATUS.PLANNING)
     .filter(e => !activeFocus || e.focusId === activeFocus);
 
   if (visibleEpics.length === 0) {
@@ -1346,9 +1403,9 @@ async function _renderByStoryMapMode(
   const focusGroups = _buildFocusGroups(visibleEpics, allFocuses, allSubFocuses);
 
   const orderedSprints = [
-    ...allSprints.filter(s => s.status === 'active')
+    ...allSprints.filter(s => s.status === SPRINT_STATUS.ACTIVE)
        .sort((a,b) => a.startDate.localeCompare(b.startDate)),
-    ...allSprints.filter(s => s.status === 'planning')
+    ...allSprints.filter(s => s.status === SPRINT_STATUS.PLANNING)
        .sort((a,b) => a.startDate.localeCompare(b.startDate)),
     ...allSprints.filter(s => s.status === SPRINT_STATUS.COMPLETED)
        .sort((a,b) => b.startDate.localeCompare(a.startDate)),
@@ -1372,15 +1429,54 @@ async function _renderByStoryMapMode(
   _attachStoryMapDelegatedHandlers(container);
   _restoreStoryMapCollapseState(container, orderedSprints);
   _loadStoryMapCapacityBars(orderedSprints, allStories);
+  _initStoryMapSortables(container); // element-attached cell Sortables (intra-cell reorder)
 }
 
 // ── Main render ───────────────────────────────────────────────────────────────
+
+// ── Story-map cell SortableJS (intra-cell reorder; mirrors the sprint lifecycle) ───
+
+// Reorder cards within one cell → batch-reindex cellSortOrder through the spine. The
+// {reorder:true} emit is a no-op patch (U1b), so the cell's Sortable survives untouched.
+async function _handleStoryMapReorder(cellBodyEl) {
+  const orderedIds = [...cellBodyEl.querySelectorAll('[data-sm2-story-id]')]
+    .map(el => el.dataset.sm2StoryId);
+  const ok = await window.storyWrites.commitStoryReorder(orderedIds, 'cellSortOrder');
+  if (!ok) _renderBacklogView(); // spine rolled cellSortOrder back; re-render restores the DOM order
+}
+
+function _initStoryMapSortables(container) {
+  container.querySelectorAll('.sm2-cell-body').forEach(el => {
+    el._sortable?.destroy();
+    el._sortable = new Sortable(el, {
+      // NO `group` → intra-cell only; cross-cell (epic reassignment) is out of scope.
+      animation:           150,
+      ghostClass:          'sm2-card--ghost',
+      chosenClass:         'sm2-card--chosen',
+      dragClass:           'sm2-card--drag',
+      dataIdAttr:          'data-sm2-story-id',
+      delay:               50,
+      delayOnTouchOnly:    false,
+      touchStartThreshold: 5,
+
+      onUpdate(evt) { _handleStoryMapReorder(evt.to); },
+    });
+  });
+}
+
+function _destroyStoryMapSortables(rootEl) {
+  rootEl.querySelectorAll('.sm2-cell-body').forEach(el => {
+    el._sortable?.destroy();
+    delete el._sortable;
+  });
+}
 
 export async function _renderBacklogView() {
   const root = document.getElementById('backlog-root');
   if (!root) return;
 
   _destroySprintSortables(root);
+  _destroyStoryMapSortables(root); // tear down cell Sortables before #bl-list is rebuilt (no leak)
 
   const [allSprints, allStories, allEpics, allFocuses, allSubFocuses] = await Promise.all([
     DB.getAll(DB.STORES.SPRINTS),
@@ -1395,7 +1491,7 @@ export async function _renderBacklogView() {
   if (epicFilter) filteredStories = _applyEpicFilter(filteredStories);
 
   // Build HTML
-  const toolbarHtml = _renderToolbar(allFocuses.filter(f => f.status === 'active'), allEpics);
+  const toolbarHtml = _renderToolbar(allFocuses.filter(f => f.status === FOCUS_STATUS.ACTIVE), allEpics);
 
   // Calendar view is rendered by calendarView.js
   if (_blGroupBy === 'calendar') {
@@ -1484,6 +1580,8 @@ function _refreshRowContent(storyId) {
   const fibEl = row.querySelector('.bl-fib-badge');
   if (fibEl) fibEl.textContent = story.fibonacciSize ? String(story.fibonacciSize) : '';
 
+  row.dataset.priority = story.priority || ''; // recolour the priority border after a move
+
   window.backlogDetailPanel?.refreshIfShowing(storyId);
 }
 
@@ -1516,58 +1614,41 @@ async function _handleSortableCross(evt) {
   if (newSprintId !== story.sprintId)            updates.sprintId = newSprintId;
   if (toZone !== null && toZone !== fromZone)    updates.priority = toZone || null;
 
-  if (Object.keys(updates).length === 0) return;
+  if (Object.keys(updates).length === 0) return; // same-cell drop — nothing to persist
 
-  const prev     = { ...story };
-  const oldIndex = evt.oldIndex;
+  // Spine owns the write: in-place mutate → DB.put → structured 'story' emit (which
+  // patches the row via _handleStoryNotification → patchStoryRow) → rollback + toast on
+  // failure. We add only the container refresh the row patch does not cover.
+  const ok = await window.storyWrites.commitStoryUpdate(storyId, updates);
+  if (!ok) { _renderBacklogView(); return; } // spine rolled memory back; full render restores DOM
 
-  Object.assign(story, updates);
-  try {
-    await DB.put(DB.STORES.STORIES, story);
-    window.app?.updateStoryInMemory(story.id, updates);
-    _refreshRowContent(storyId);
-    _refreshContainers(evt.from, evt.to);
-  } catch (err) {
-    Object.assign(story, prev);
-    window.app?.updateStoryInMemory(story.id, prev);
-    const refNode = evt.from.children[oldIndex] ?? null;
-    evt.from.insertBefore(evt.item, refNode);
-    window.showToast?.('Failed to save — change reverted', 'error', { duration: 4000 });
-  }
+  // A cross-band/cross-sprint move fires onAdd (not onUpdate), so sortOrder is not otherwise
+  // reindexed. Persist the drop position within the DESTINATION band so it survives reload.
+  const destIds = [...evt.to.querySelectorAll('[data-story-id]')].map(el => el.dataset.storyId);
+  const reordered = await window.storyWrites.commitStoryReorder(destIds, 'sortOrder');
+  if (!reordered) { _renderBacklogView(); return; }
+
+  // Backlog-bucket count on a move into/out of the bucket. (Capacity headers refresh via the
+  // 'story' listener wrapper + the reorder no-op; the reindex emit is a no-op patch — U1b.)
+  _refreshContainers(evt.from, evt.to);
 }
 
 async function _handleSortableReorder(evt) {
-  const containerEl = evt.to;
-  const orderedIds  = [...containerEl.querySelectorAll('[data-story-id]')]
+  const orderedIds = [...evt.to.querySelectorAll('[data-story-id]')]
     .map(el => el.dataset.storyId);
 
-  const stories = window.app?.data?.stories || [];
-  const writes  = [];
-
-  for (let i = 0; i < orderedIds.length; i++) {
-    const story    = stories.find(s => s.id === orderedIds[i]);
-    const newOrder = i;
-    if (!story || story.sortOrder === newOrder) continue;
-    story.sortOrder = newOrder;
-    writes.push(DB.put(DB.STORES.STORIES, story));
-  }
-
-  if (writes.length === 0) return;
-
-  try {
-    await Promise.all(writes);
-    NotificationRegistry.emit('story');
-  } catch {
-    window.showToast?.('Failed to save order', 'error', { duration: 4000 });
-    _renderBacklogView();
-  }
+  // Spine owns the batch reindex: snapshots, assigns sortOrder = DOM index across every
+  // affected story, writes as one unit, emits a SINGLE {reorder:true,…} 'story' (a no-op
+  // patch — Sortable already placed the rows), rolls all values back + toasts on failure.
+  const ok = await window.storyWrites.commitStoryReorder(orderedIds, 'sortOrder');
+  if (!ok) _renderBacklogView();
 }
 
 // ── SortableJS lifecycle ─────────────────────────────────────────────────────
 
 function _initSprintSortables(rootEl) {
   const sortableEls = rootEl.querySelectorAll(
-    '.bl-section-sprint .bl-section-body, .bl-section-backlog .bl-section-body'
+    '.bl-section-sprint .bl-band-body, .bl-section-backlog .bl-band-body'
   );
 
   for (const el of sortableEls) {
@@ -1593,7 +1674,7 @@ function _initSprintSortables(rootEl) {
 }
 
 function _destroySprintSortables(rootEl) {
-  rootEl.querySelectorAll('.bl-section-body').forEach(el => {
+  rootEl.querySelectorAll('.bl-band-body').forEach(el => {
     el._sortable?.destroy();
     delete el._sortable;
   });
@@ -1658,36 +1739,25 @@ async function _toggleStoryFocus(storyId) {
   const story = _getStoryFromData(storyId);
   if (!story) return;
 
-  const prev = !!story.inFocus;
-  story.inFocus = !prev;
+  // Compute the target WITHOUT mutating the model — commitStoryUpdate owns the write and
+  // its rollback snapshots `prev` from the un-toggled story (pre-mutating would poison it).
+  const next = !story.inFocus;
 
-  // DOM patch — update all matching star buttons (sprint view + overlay)
-  document.querySelectorAll(`[data-story-id="${storyId}"] .bl-focus-star`).forEach(btn => {
-    btn.textContent = story.inFocus ? '★' : '☆';
-    btn.title = story.inFocus ? 'Remove from focus' : 'Add to focus';
-    btn.setAttribute('aria-label', btn.title);
-    btn.setAttribute('aria-pressed', story.inFocus ? 'true' : 'false');
-    btn.classList.toggle('bl-focus-star--on', story.inFocus);
-  });
-
-  try {
-    await DB.put(DB.STORES.STORIES, story);
-    if (window.app?.data) {
-      window.app.data.stories = await DB.getAll(DB.STORES.STORIES);
-    }
-    NotificationRegistry.emit('story');
-  } catch (err) {
-    // Revert DOM on failure
-    story.inFocus = prev;
+  // Optimistic DOM patch — all matching star buttons (sprint view + overlay), driven by
+  // `next` (not story.inFocus, which we intentionally leave untouched).
+  const paintStar = (on) => {
     document.querySelectorAll(`[data-story-id="${storyId}"] .bl-focus-star`).forEach(btn => {
-      btn.textContent = prev ? '★' : '☆';
-      btn.setAttribute('aria-pressed', prev ? 'true' : 'false');
-      btn.classList.toggle('bl-focus-star--on', prev);
+      btn.textContent = on ? '★' : '☆';
+      btn.title = on ? 'Remove from focus' : 'Add to focus';
+      btn.setAttribute('aria-label', btn.title);
+      btn.setAttribute('aria-pressed', on ? 'true' : 'false');
+      btn.classList.toggle('bl-focus-star--on', on);
     });
-    if (window.showToastWithActions) {
-      window.showToastWithActions("Couldn't save focus — try again", 'error', { duration: 3000 });
-    }
-  }
+  };
+  paintStar(next);
+
+  const ok = await window.storyWrites.commitStoryUpdate(storyId, { inFocus: next });
+  if (!ok) paintStar(!next); // spine already reverted the model; repaint the star to match
 }
 
 // ── Epic filter exposure for backlogDetailPanel ───────────────────────────────

@@ -110,6 +110,39 @@ async function migrateStoriesToIncludeSortOrder(DB) {
   console.log(`migrateStoriesToIncludeSortOrder: ${writes.length} stories seeded`);
 }
 
+async function migrateStoriesToIncludeCellSortOrder(DB) {
+  const metadata = await DB.get(DB.STORES.METADATA, 'migration:cell-sort-order');
+  if (metadata?.value) return;
+
+  const stories = await DB.getAll(DB.STORES.STORIES);
+  const byCell = new Map();
+  for (const story of stories) {
+    const key = `${story.epicId || '__noepic__'}::${story.sprintId || '__backlog__'}`;
+    if (!byCell.has(key)) byCell.set(key, []);
+    byCell.get(key).push(story);
+  }
+
+  const writes = [];
+  for (const group of byCell.values()) {
+    // Seed cell order from the existing sprint order so the first paint is sensible.
+    group.sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0) || a.id.localeCompare(b.id));
+    for (let i = 0; i < group.length; i++) {
+      const story = group[i];
+      if (story.cellSortOrder === i) continue;
+      story.cellSortOrder = i;
+      writes.push(DB.put(DB.STORES.STORIES, story));
+    }
+  }
+  await Promise.all(writes);
+
+  await DB.put(DB.STORES.METADATA, {
+    key: 'migration:cell-sort-order',
+    value: true,
+    timestamp: new Date().toISOString(),
+  });
+  console.log(`migrateStoriesToIncludeCellSortOrder: ${writes.length} stories seeded`);
+}
+
 async function migrateWeeksToIncludeArchiveFields(DB) {
   const metadata = await DB.get(DB.STORES.METADATA, 'migration:week-archive');
   if (metadata?.value) return;
@@ -265,6 +298,7 @@ const MIGRATIONS = [
   migrateCalendarToIncludeFocuses,
   migrateStoriesToIncludeActionItems,
   migrateStoriesToIncludeSortOrder,
+  migrateStoriesToIncludeCellSortOrder,
   migrateWeeksToIncludeArchiveFields,
   migrateSeedFocuses,
   migrateEpicsToFocusId,

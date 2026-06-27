@@ -98,7 +98,12 @@
       "Bash(cat /private/tmp/claude-501/-Users-jun-Library-CloudStorage-OneDrive-Personal-Tools/capacity-planner/a824c434-1e96-4557-adb2-e462fac0859f/tasks/bb27qktpx.output 2>/dev/null || echo \"no output file\")",
       "Read(//private/tmp/claude-501/-Users-jun-Library-CloudStorage-OneDrive-Personal-Tools/capacity-planner/a824c434-1e96-4557-adb2-e462fac0859f/tasks/**)",
       "Bash(kill 28250)",
-      "Bash(esbuild --version)"
+      "Bash(esbuild --version)",
+      "Bash(grep -q \"window.storyWrites.commitStoryUpdate\\(storyId, { inFocus: next }\\)\" js/backlogView.js)",
+      "Bash(awk '/Migration details/{f=1} f{print; if\\(/^$/ && f>1\\) exit; f++}' docs/architecture/SCHEMA_REFERENCE.md)",
+      "Bash(grep -q \"^| 5 | \\\\`migrateStoriesToIncludeCellSortOrder\\\\`\" docs/architecture/SCHEMA_REFERENCE.md)",
+      "Read(//Users/jun/Downloads/**)",
+      "WebFetch(domain:raw.githubusercontent.com)"
     ],
     "additionalDirectories": [
       "/Users/jun/Downloads"

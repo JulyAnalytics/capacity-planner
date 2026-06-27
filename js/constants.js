@@ -37,6 +37,21 @@ export const SPRINT_STATUS = {
 
 export const FIBONACCI_SIZES = [1, 2, 3, 5, 8, 13, 21];
 
+// ── Story priority levels (sprint-view bands) ──────────────────────────────────
+// Canonical source for story.priority values. NOTE: distinct from DAY_CAPACITY pool
+// keys (priority/secondary1/secondary2/floor) — story priority uses 'primary', not
+// 'priority'. They are different vocabularies; do not conflate.
+export const PRIORITY_LEVELS = ['primary', 'secondary1', 'secondary2', 'floor'];
+
+// Display labels for the 4 levels (band headers + tier checks). Absorbs the former
+// sprintAllocation.TIER_LABEL (Stage 2 dedupe — keep values identical).
+export const PRIORITY_LABELS = {
+  primary:    'Primary',
+  secondary1: 'Secondary 1',
+  secondary2: 'Secondary 2',
+  floor:      'Floor',
+};
+
 // ── Entity type → store name lookup (English pluralization is not a function) ──
 
 export const ENTITY_TO_STORE = {

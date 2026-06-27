@@ -199,7 +199,7 @@ class ModalManager {
   _roEpic(epic) {
     const sf = this.app.data.subFocuses.find(s => s.id === epic.subFocusId);
     const stories = this.app.data.stories.filter(s => s.epicId === epic.id);
-    const done = stories.filter(s => ['completed','abandoned'].includes(s.status)).length;
+    const done = stories.filter(s => [STORY_STATUS.COMPLETED, STORY_STATUS.ABANDONED].includes(s.status)).length;
     // priority and month now live in monthlyPlans (v4 schema)
     const plan = (this.app.data.monthlyPlans || []).flatMap(p => p.epics.map(e => ({...e, year: p.year, month: p.month}))).filter(e => e.epicId === epic.id);
     const latestPlan = plan[plan.length - 1];
@@ -704,6 +704,7 @@ class CapacityManager {
     this.data.monthlyPlans    = await DB.getAll(DB.STORES.MONTHLY_PLANS);
     this.data.focuses         = await DB.getAll(DB.STORES.FOCUSES);
     this.data.sprints         = await DB.getAll(DB.STORES.SPRINTS);
+    this.data.travelSegments  = await DB.getAll(DB.STORES.TRAVEL_SEGMENTS);
     this.data.locationPeriods  = await DB.getAll(DB.STORES.LOCATION_PERIODS);
     this.data.dayTypeOverrides = await DB.getAll(DB.STORES.DAY_TYPE_OVERRIDES);
   }
@@ -1432,8 +1433,13 @@ class CapacityManager {
       epics: this.data.epics,
       stories: this.data.stories,
       dailyLogs: this.data.dailyLogs,
+      monthlyPlans: this.data.monthlyPlans,
+      sprints: this.data.sprints,
+      travelSegments: this.data.travelSegments,
+      locationPeriods: this.data.locationPeriods,
+      dayTypeOverrides: this.data.dayTypeOverrides,
       exportedAt: new Date().toISOString(),
-      version: 4
+      version: 5
     };
 
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
@@ -1449,7 +1455,8 @@ class CapacityManager {
   importData(file) {
     // Step 1: top-level shape key constants — single source of truth for shape validation
     const KNOWN_STORE_KEYS = ['focuses', 'calendar', 'priorities', 'subFocuses',
-                              'epics', 'stories', 'dailyLogs'];
+                              'epics', 'stories', 'dailyLogs', 'monthlyPlans',
+                              'sprints', 'travelSegments', 'locationPeriods', 'dayTypeOverrides'];
 
     const reader = new FileReader();
     reader.onload = async (e) => {
@@ -1518,6 +1525,11 @@ class CapacityManager {
       const validSubFocuses = _gateStore(data.subFocuses, 'store:subFocuses');
       const validEpics      = _gateStore(data.epics,      'store:epics');
       const validDailyLogs  = _gateStore(data.dailyLogs,  'store:dailyLogs');
+      const validMonthlyPlans     = _gateStore(data.monthlyPlans,     'store:monthlyPlans');
+      const validSprints          = _gateStore(data.sprints,          'store:sprints');
+      const validTravelSegments   = _gateStore(data.travelSegments,   'store:travelSegments');
+      const validLocationPeriods  = _gateStore(data.locationPeriods,  'store:locationPeriods');
+      const validDayTypeOverrides = _gateStore(data.dayTypeOverrides, 'store:dayTypeOverrides');
 
       // Stories: barricade gate first (structural), then domain validation.
       // DECISION: epicId is enforced at two layers.
@@ -1569,6 +1581,11 @@ class CapacityManager {
         await DB.clear(DB.STORES.EPICS);
         await DB.clear(DB.STORES.STORIES);
         await DB.clear(DB.STORES.DAILY_LOGS);
+        await DB.clear(DB.STORES.MONTHLY_PLANS);
+        await DB.clear(DB.STORES.SPRINTS);
+        await DB.clear(DB.STORES.TRAVEL_SEGMENTS);
+        await DB.clear(DB.STORES.LOCATION_PERIODS);
+        await DB.clear(DB.STORES.DAY_TYPE_OVERRIDES);
 
         if (validFocuses.length > 0)    await DB.putAll(DB.STORES.FOCUSES,     validFocuses);
         if (validCalendar.length > 0)   await DB.putAll(DB.STORES.CALENDAR,    validCalendar);
@@ -1577,6 +1594,11 @@ class CapacityManager {
         if (validEpics.length > 0)      await DB.putAll(DB.STORES.EPICS,       validEpics);
         if (validStories.length > 0)    await DB.putAll(DB.STORES.STORIES,     validStories);
         if (validDailyLogs.length > 0)  await DB.putAll(DB.STORES.DAILY_LOGS,  validDailyLogs);
+        if (validMonthlyPlans.length > 0)     await DB.putAll(DB.STORES.MONTHLY_PLANS,      validMonthlyPlans);
+        if (validSprints.length > 0)          await DB.putAll(DB.STORES.SPRINTS,            validSprints);
+        if (validTravelSegments.length > 0)   await DB.putAll(DB.STORES.TRAVEL_SEGMENTS,    validTravelSegments);
+        if (validLocationPeriods.length > 0)  await DB.putAll(DB.STORES.LOCATION_PERIODS,   validLocationPeriods);
+        if (validDayTypeOverrides.length > 0) await DB.putAll(DB.STORES.DAY_TYPE_OVERRIDES, validDayTypeOverrides);
       } catch (writeErr) {
         // Step 8: Write failed — attempt restore
         console.error('Import write error:', writeErr);

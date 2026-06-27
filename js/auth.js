@@ -1,8 +1,8 @@
 // Supabase Auth Module
 // Loaded as a regular script before module scripts so globals are available.
 
-const SUPABASE_URL = 'https://yxvcjnlbekzchbuvzfis.supabase.co';
-const SUPABASE_ANON_KEY = 'sb_publishable_XtVYkTNQt8p6IC9CJfvDOQ_aYMDtnHr';
+const SUPABASE_URL = 'https://jun-mini.tailfbd588.ts.net:8452';
+const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5vbiIsImlzcyI6InN1cGFiYXNlIiwiaWF0IjoxNzgyNTI1MjA1LCJleHAiOjE5NDAyMDUyMDV9.QC6t_l0WJ1OgvNkZq0ghPibIp9TyoVcFZFH4bYUIAbM';
 
 // window.supabase is the library object from CDN at this point
 const _supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);

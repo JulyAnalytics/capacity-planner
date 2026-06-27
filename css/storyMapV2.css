@@ -405,3 +405,18 @@
 .sm2-empty p {
   margin: 0 0 var(--space-sm);
 }
+
+/* ── Story-map cell drag (Stage 3) ──────────────────────────────────────────── */
+
+/* The cards' SortableJS drop zone. Must replicate .sm2-cell's column stack + gap,
+   since wrapping the cards in this div changes .sm2-cell's flex children. */
+.sm2-cell-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+}
+
+/* Drag states (SortableJS adds these alongside the .sm2-card--<status> modifier). */
+.sm2-card--ghost  { opacity: 0.4; }
+.sm2-card--chosen { box-shadow: 0 0 0 2px var(--accent, #6366f1); }
+.sm2-card--drag   { cursor: grabbing; }

@@ -944,6 +944,17 @@ button.bl-focus-name {
   --sprint-bar-border: #6366f1;
   --sprint-bar-done:   #e5e7eb;
   --sprint-bar-active: #eef2ff;
+
+  /* ── Story priority bands (consumed by Stage 2 rendering) ── */
+  --priority-primary-bg:    #dbeafe;  /* blue-100   */
+  --priority-primary-fg:    #1d4ed8;  /* blue-700   */
+  --priority-secondary1-bg: #ede9fe;  /* violet-100 */
+  --priority-secondary1-fg: #6d28d9;  /* violet-700 */
+  --priority-secondary2-bg: #fef3c7;  /* amber-100  */
+  --priority-secondary2-fg: #b45309;  /* amber-700  */
+  --priority-floor-bg:      #f1f5f9;  /* slate-100  */
+  --priority-floor-fg:      #475569;  /* slate-600  */
+  /* unassigned: no token — transparent row border */
 }
 
 /* ── Mode bar ───────────────────────────────────────────────────────────────── */
@@ -1034,6 +1045,19 @@ button.bl-focus-name {
   overflow-x: auto;
 }
 
+/* Calendar scales fluidly with the window, capped for readability on wide screens.
+   Canvas/cap split: #calendar (full-width via panel-expanded) supplies the fluid
+   width; #calendar-root caps and centers within it. #calendar-root wraps both the
+   mode bar and the grid, so capping it keeps them aligned as one unit.
+   TUNABLE: max-width is the single knob (7 columns ≈ 171px each at the cap, vs
+   ~103px at the old 720px panel width). If a second comparable cap is ever needed,
+   promote this to a :root custom property (e.g. --comfortable-max) at that time —
+   deferred now as a one-off (see "Review Notes"). */
+#calendar-root {
+  max-width: 1200px; /* TUNABLE */
+  margin: 0 auto;
+}
+
 .cv-day-headers {
   display: grid;
   grid-template-columns: repeat(7, 1fr);
@@ -1080,14 +1104,20 @@ button.bl-focus-name {
 
 .cal-loc-spacer { height: 4px; }
 
+/* Calendar rows scale fluidly with the window HEIGHT, floored + capped for
+   readability — the vertical counterpart to the #calendar-root max-width cap.
+   clamp(floor, vh, cap): floor preserves the short-window min (matches
+   .cv-day-cell min-height); cap stops cells from sprawling on tall monitors.
+   TUNABLE: the two clamp() triples are the knobs. --tall (week view, single row)
+   tracks 2× the month-view range at every breakpoint to keep the relative density. */
 .cv-week-cells {
   display: grid;
   grid-template-columns: repeat(7, minmax(0, 1fr));
-  grid-auto-rows: minmax(80px, auto);
+  grid-auto-rows: minmax(clamp(80px, 13vh, 140px), auto);
 }
 
 .cv-week-cells--tall {
-  grid-auto-rows: minmax(160px, auto);
+  grid-auto-rows: minmax(clamp(160px, 26vh, 280px), auto);
 }
 
 /* ── Day cell ───────────────────────────────────────────────────────────────── */
@@ -2565,3 +2595,61 @@ button.bl-focus-name {
 .bl-story-row--chosen { box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12);
                         transform: rotate(1.5deg); }
 .bl-story-row--drag   { opacity: 0; }
+
+/* ── Priority bands (Stage 0 scaffolding; activated by Stage 2 rendering) ─────── */
+
+.bl-priority-band { display: flex; flex-direction: column; }
+
+.bl-band-header {
+  display: flex; align-items: center; gap: 8px;
+  padding: 4px 12px 4px 0;
+  font-size: 11px; font-weight: 600; letter-spacing: 0.05em; text-transform: uppercase;
+  color: var(--text-muted, #6b7280);
+}
+.bl-band-accent   { width: 3px; align-self: stretch; border-radius: 0 2px 2px 0; flex-shrink: 0; }
+.bl-band-capacity { font-weight: 400; color: var(--text-muted, #6b7280); font-variant-numeric: tabular-nums; }
+
+.bl-band-body { min-height: 40px; padding: 2px 0; transition: background 120ms ease; }
+.bl-band-body.bl-drop-over { background: color-mix(in srgb, var(--priority-primary-bg) 22%, transparent); }
+
+.bl-band-empty {
+  display: flex; align-items: center; justify-content: center;
+  height: 40px; margin: 4px 12px;
+  border: 1.5px dashed var(--border-medium, #d1d5db); border-radius: 6px;
+  font-size: 12px; color: var(--text-muted, #6b7280);
+}
+
+/* Row priority accent — driven by data-priority (set in Stage 2) */
+.bl-story-row[data-priority]              { border-left: 3px solid transparent; }
+.bl-story-row[data-priority="primary"]    { border-left-color: var(--priority-primary-fg); }
+.bl-story-row[data-priority="secondary1"] { border-left-color: var(--priority-secondary1-fg); }
+.bl-story-row[data-priority="secondary2"] { border-left-color: var(--priority-secondary2-fg); }
+.bl-story-row[data-priority="floor"]      { border-left-color: var(--priority-floor-fg); }
+
+/* ── Priority bands — Stage 2 activation (consumes Stage 0 tokens) ───────────── */
+
+/* Per-tier accent stripe in the band header */
+.bl-priority-band--primary    .bl-band-accent { background: var(--priority-primary-fg); }
+.bl-priority-band--secondary1 .bl-band-accent { background: var(--priority-secondary1-fg); }
+.bl-priority-band--secondary2 .bl-band-accent { background: var(--priority-secondary2-fg); }
+.bl-priority-band--floor      .bl-band-accent { background: var(--priority-floor-fg); }
+.bl-priority-band--unassigned .bl-band-accent { background: var(--border-medium, #d1d5db); }
+
+.bl-band-label    { flex: 0 0 auto; }
+.bl-band-capacity--over { color: #dc2626; font-weight: 600; }
+
+/* Empty-band drop affordance — CSS-driven so it auto-updates as Sortable moves rows
+   WITHOUT a re-render (Stage 1's cross-drop success path does not full-render). */
+.bl-band-body:not(:has(.bl-story-row)) { display: flex; align-items: center; }
+.bl-band-body:not(:has(.bl-story-row))::before {
+  content: "Drop here";
+  flex: 1;
+  margin: 2px 12px;
+  padding: 9px 0;
+  text-align: center;
+  border: 1.5px dashed var(--border-medium, #d1d5db);
+  border-radius: 6px;
+  font-size: 12px;
+  color: var(--text-muted, #6b7280);
+  pointer-events: none;
+}

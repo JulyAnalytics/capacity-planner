@@ -11,6 +11,8 @@
  * @returns {FocusAllocation[]}
  *   { focusName, weight, pct, color }
  */
+import { PRIORITY_LEVELS, PRIORITY_LABELS } from './constants.js';
+
 export function deriveFocusAllocation(stories, allFocuses = []) {
   const colorMap = Object.fromEntries(
     allFocuses.map(f => [f.name, f.color || '#888'])
@@ -44,13 +46,8 @@ export function deriveFocusAllocation(stories, allFocuses = []) {
  *   { tiers: TierCheck[], unassignedWeight, totalAllocated }
  */
 export function deriveTierCheck(stories, sprintCapacity) {
-  const TIERS = ['primary', 'secondary1', 'secondary2', 'floor'];
-  const TIER_LABEL = {
-    primary:    'Primary',
-    secondary1: 'Secondary 1',
-    secondary2: 'Secondary 2',
-    floor:      'Floor',
-  };
+  const TIERS = PRIORITY_LEVELS;           // canonical source (constants.js)
+  const TIER_LABEL = PRIORITY_LABELS;      // canonical source (constants.js)
 
   const allocated = { primary: 0, secondary1: 0, secondary2: 0, floor: 0 };
   for (const s of stories) {

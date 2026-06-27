@@ -312,7 +312,8 @@ const DB = {
 
   async migrateFromIndexedDB(onProgress) {
     const IDB_NAME = 'capacity-planner';
-    const STORE_NAMES = ['calendar', 'priorities', 'subFocuses', 'epics', 'stories', 'dailyLogs', 'monthlyPlans', 'focuses'];
+    const STORE_NAMES = ['calendar', 'priorities', 'subFocuses', 'epics', 'stories', 'dailyLogs',
+                         'monthlyPlans', 'focuses', 'sprints', 'travelSegments', 'locationPeriods', 'dayTypeOverrides'];
 
     // Open the old IndexedDB (read-only, don't upgrade)
     const idb = await new Promise((resolve, reject) => {
