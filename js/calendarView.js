@@ -1214,6 +1214,7 @@ function _bindCalendarEvents() {
 }
 
 // ── Global export ──────────────────────────────────────────────────────────────
+// @owns calendarView — calendar render + navigation; emits locationPeriod/dayTypeOverride.
 
 window.calendarView = {
   render,

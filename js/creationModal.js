@@ -939,6 +939,10 @@ function escapeAttr(str) {
 // ============================================================================
 // EXPORTS
 // ============================================================================
+// @owns openCreationModal — opens the entity creation modal; routes form config.
+// @owns closeCreationModal — tears down the modal + restores scroll/focus.
+// @owns isModalOpen — predicate used by mobile/key handlers.
+// @owns renderForm — renders the creation form fields from a config object.
 
 window.openCreationModal  = openCreationModal;
 window.closeCreationModal = closeCreationModal;

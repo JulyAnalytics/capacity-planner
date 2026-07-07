@@ -109,6 +109,7 @@ function _broadcast(entity, action, data) {
 }
 
 // ── Global export ──────────────────────────────────────────────────────────────
+// @owns locationManager — location-period CRUD (id `loc-<uuid>`); emits locationPeriod.
 
 window.locationManager = {
   createLocationPeriod,

@@ -1469,6 +1469,9 @@ function _renderFieldRow(label, content) {
 }
 
 // ── Global export ─────────────────────────────────────────────────────────────
+// @owns backlogDetailPanel — detail panel for focus/epic/story; emits focus/subFocus/epic/travelSegment/sprint.
+// @owns _bdpRankingCurrent — transient in-progress ranking snapshot (edit state).
+// @owns _bdpRankingEdit — transient edit-mode ranking draft (edit state).
 
 window.backlogDetailPanel = {
   open,

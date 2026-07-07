@@ -265,5 +265,6 @@ export function checkFileSizeLimit(file, maxSizeMB = 10) {
 // Expose the canonical toast utility globally so cross-tab listeners
 // (hierarchyCache.js) and recovery flows (errorHandler.js) can call it without
 // importing. Authoritative source — do not re-assign window.showToast elsewhere.
+// @owns showToast — canonical toast surface; single global, no duplicates.
 window.showToast = showToast;
 

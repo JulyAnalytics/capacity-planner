@@ -361,6 +361,7 @@ window.addEventListener('beforeunload', () => {
 });
 
 // Expose for use by creationModal.js sprint dropdown
+// @owns hierarchyCache — synchronous lookup index for mid-render/mid-validation sites.
 window.hierarchyCache = hierarchyCache;
 // DECISION: window.invalidateCache added by R04 — was not pre-existing.
 // The R04 spec prescribed window.invalidateCache() for portfolioUpdater.js (a globals
@@ -370,6 +371,7 @@ window.hierarchyCache = hierarchyCache;
 // The R04 constraint "hierarchyCache.js — zero changes" was written assuming this
 // exposure already existed. This is the only R04 change to this file.
 // Date: 2026-04-16
+// @owns invalidateCache — rebuilds hierarchyCache for focuses/epics/subFocuses only. @see ADR-0001
 window.invalidateCache = invalidateCache;
 
 // ============================================================================

@@ -87,3 +87,18 @@ Check each surface this feature could break. Run the corresponding check before 
 - [ ] **Capacity math** — is the `DAY_CAPACITY` object in `js/constants.js` unchanged?
 - [ ] **Drag/drop** — does `sortOrder` survive a full page reload?
 - [ ] **Build order** — is any new JS file inserted at the correct position in `build.js` JS_FILES?
+
+---
+
+## Knowledge deltas (close-out — route each new piece of knowledge)
+
+Before merge, route everything this feature learned. `npm run docs:generate && npm run docs:check` must pass.
+
+- [ ] **New decision** → ADR in `docs/architecture/adr/`; reference `@see ADR-000N`
+- [ ] **Non-obvious branch / deliberate weirdness** → `@intent` docblock at the site
+- [ ] **New export** (`window.X = …`) → `@owns X` docblock (coverage gate requires it)
+- [ ] **Deprecation / field lineage / known data quirk** → `schema.yaml` (`store.field: note`)
+- [ ] **Topic note (notification/channel/cache behavior)** → `system.yaml`
+- [ ] **Invariant (must-always-hold)** → `knowledge/GEOMETRY.md`
+- [ ] **Transient / working note** → `STATE.md` (with a promote-by date)
+- [ ] **None** — this feature added no new knowledge to capture

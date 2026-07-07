@@ -130,6 +130,18 @@ class ModalManager {
     }
     const item = this._find(type, this._currentId);
     if (!item) return;
+
+    // Stage 1: story edits funnel through the canonical write spine (structured
+    // 'story' emit + rollback). app.saveStory is bypassed here; its other callers keep it.
+    if (type === 'story') {
+      const updated = this._collectFormValues('story', item);
+      if (!updated) return;                       // validation failed (blank name)
+      const { id, ...updates } = updated;
+      const ok = await window.storyWrites.commitStoryUpdate(id, updates);
+      if (ok) this.close();                       // on failure keep modal open (toast already shown)
+      return;
+    }
+
     try {
       const updated = this._collectFormValues(type, item);
       if (!updated) return;
@@ -494,7 +506,6 @@ class ModalManager {
       },
       subFocus: () => this.app.saveSubFocus(data),
       epic:     () => this.app.saveEpic(data),
-      story:    () => this.app.saveStory(data),
     };
     await savers[type]?.();
   }
@@ -648,6 +659,7 @@ class CapacityManager {
 
   async init() {
     try {
+      // @owns app — CapacityManager singleton; the view-layer coordinator + god-class.
       window.app = this;  // must precede any render call that reads window.app.data
       await DB.init();
       const migrated = await DB.migrateFromLocalStorage();

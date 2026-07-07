@@ -2,6 +2,9 @@
 // Strangler-fig extraction: the story-write responsibility lives here, not in the
 // CapacityManager god-class (js/app.js is untouched by this feature).
 // References shared IIFE globals: DB, NotificationRegistry, window.app, window.showToast.
+// @owns storyWrites — the single coordinated write spine for the stories store.
+// @rationale single-writer contract — every story mutation funnels here so optimistic mutation, rollback, and the 'story' notification payload are uniform.
+// @see ADR-0006
 
 const storyWrites = {
   // Update a story in memory + DB as one unit. Emits a structured 'story'
@@ -38,6 +41,7 @@ const storyWrites = {
   // and emits a SINGLE structured 'story' notification {reorder, field, ids} so a
   // view patches once per drag, not once per story. Rolls every value back on
   // failure. Field-agnostic — carries no status/priority literals.
+  // @intent the {reorder:true} payload is a NO-OP patch — Sortable already placed the DOM, so _handleStoryNotification early-returns and the view patches once per drag, not once per story.
   async commitStoryReorder(orderedIds, field) {
     const stories = window.app?.data?.stories;
     if (!Array.isArray(stories) || !orderedIds?.length) return false;

@@ -120,6 +120,7 @@ const DB = {
   // DB method. This guarantees SessionExpiredError surfaces as a rejected promise
   // to the caller rather than being caught by internal error handling.
   // Verify this holds whenever a new DB method is added.
+  // @intent _uid()-before-await ordering — SessionExpiredError must reject the caller's promise, never be swallowed internally.
   _uid() {
     if (!window.currentUserId) throw new _SessionExpiredError();
     return window.currentUserId;
@@ -490,5 +491,6 @@ const DB = {
   }
 };
 
+// @owns DB — Supabase client wrapper; the only read/write path for all synced stores (stories also via storyWrites).
 window.DB = DB;
 export default DB;

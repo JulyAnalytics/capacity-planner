@@ -3,7 +3,9 @@
   "private": true,
   "scripts": {
     "build": "node build.js",
-    "reauth": "node scripts/reauth.mjs"
+    "reauth": "node scripts/reauth.mjs",
+    "docs:generate": "node scripts/docgen.mjs",
+    "docs:check": "node scripts/doc-checks.mjs"
   },
   "dependencies": {
     "cssnano": "^7",

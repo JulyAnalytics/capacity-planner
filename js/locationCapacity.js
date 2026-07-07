@@ -252,4 +252,6 @@ export function getSprintCoveringDate(dateStr, sprints) {
   }) || null;
 }
 
+// @owns _locationCapacityUtils — date helpers (isoAddDays) shared with sprint capacity math.
+
 window._locationCapacityUtils = { addDays: isoAddDays };

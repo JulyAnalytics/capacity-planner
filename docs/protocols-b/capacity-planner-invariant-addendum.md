@@ -1,8 +1,8 @@
 # Project Invariant Addendum
 **Applies to:** Capacity Planner
-**Repo root:** `/Users/jun/Library/CloudStorage/OneDrive-Personal/Tools/capacity-planner`
+**Repo root:** `/Users/jun/Nextcloud/Tools/capacity-planner`
 **Protocol base:** `docs/architecture/gap_prevention_protocol_v3.md`
-**Last updated:** 2026-06-20 after drag-and-drop Stage 4 (storyWrites canonical file added; priority-tier source corrected to PRIORITY_LEVELS/PRIORITY_LABELS)
+**Last updated:** 2026-06-27 after self-host cutover sync — REPO_ROOT OneDrive→Nextcloud; URL_CONSTANTS cloud→Mini (Spec 02); barricade confirm/emit strings updated (priorities→period, dailyLog dayType optional, fibonacciSize via FIBONACCI_SIZES) to match CLAUDE.md
 
 > This document is loaded into every Claude.ai spec authoring session alongside
 > the base protocol. Together they replace all placeholders in the protocol
@@ -36,8 +36,8 @@ to match, then continue.
 These values substitute into every bash block in every spec.
 
 ```
-REPO_ROOT:         /Users/jun/Library/CloudStorage/OneDrive-Personal/Tools/capacity-planner
-WORKING_DIR_CMD:   cd /Users/jun/Library/CloudStorage/OneDrive-Personal/Tools/capacity-planner
+REPO_ROOT:         /Users/jun/Nextcloud/Tools/capacity-planner
+WORKING_DIR_CMD:   cd /Users/jun/Nextcloud/Tools/capacity-planner
 DEV_SERVER_CMD:    python3 -m http.server 8080
 DEV_SERVER_PORT:   8080
 DEV_SERVER_WAIT:   2
@@ -51,7 +51,7 @@ EXCLUDE_DIRS:      node_modules|dist|.claude
 
 **Substitution example — port clear + server start block:**
 ```bash
-cd /Users/jun/Library/CloudStorage/OneDrive-Personal/Tools/capacity-planner
+cd /Users/jun/Nextcloud/Tools/capacity-planner
 lsof -ti:8080 | xargs kill -9 2>/dev/null; sleep 1
 timeout 7 python3 -m http.server 8080 &
 sleep 2
@@ -120,8 +120,8 @@ PATH_CONSTANTS:
     use_instead: playwright.config.ts testDir
 
 URL_CONSTANTS:
-  - literal: https://yxvcjnlbekzchbuvzfis.supabase.co
-    use_instead: js/auth.js SUPABASE_URL (currently hardcoded — treat as canonical for now)
+  - literal: https://jun-mini.tailfbd588.ts.net:8452
+    use_instead: js/auth.js SUPABASE_URL (canonical home — self-hosted Supabase over Tailscale; cloud URL yxvcjnlbekzchbuvzfis.supabase.co retired after Spec 02 cutover)
   - literal: http://localhost:8080
     use_instead: playwright.config.ts baseURL
 
@@ -188,7 +188,7 @@ ALWAYS_READ:
   - path:    js/businessRules.js
     confirm: "Exports: validateStatusTransition(entityType, from, to), validateSprint(sprint), validateLocationPeriod(period, allPeriods), detectCircularDependencies(stories). Status transition whitelists for story(5 states), epic(4), focus(2), sprint(3). Sprint duration: 1-2 weeks."
   - path:    js/barricade.js
-    confirm: "Structural validation before writes. Required fields per entity: focus(id,name), calendar(id,month,year,week,dayTypes,capacities), priorities(id,periodType,month,focuses), subFocus(id,name), epic(id,name), story(id,name), dailyLog(id,date,dayType). Does NOT enforce epicId on stories (domain rule)."
+    confirm: "Structural validation before writes. Required fields per entity: focus(id,name), calendar(id,month,year,week,dayTypes,capacities), priorities(id,period,month,focuses), subFocus(id,name), epic(id,name), story(id,name), dailyLog(id,date). Does NOT enforce epicId on stories (domain rule). dailyLogs dayType optional (nullable — day may rely on dayTypeOverride); story fibonacciSize validated against FIBONACCI_SIZES (constants.js)."
 ```
 
 **Read list block (copy into every spec pre-flight, then append task-specific files):**
@@ -199,7 +199,7 @@ ALWAYS_READ:
 - `js/constants.js` — emit: "DAY_CAPACITY keys: travel(0.25), buffer(1.5), stable(3.5), project(3.5), social(0.5). Status enums: STORY_STATUS(5), EPIC_STATUS(4), FOCUS_STATUS(2), SPRINT_STATUS(3). ENTITY_TO_STORE: 11 mappings. FIBONACCI_SIZES: [1,2,3,5,8,13,21]. Channels: hierarchy-cache-sync, capacity_planner."
 - `js/db.js` — emit: "DB.STORES: 12 stores (11 entity + metadata). DB._uid() called synchronously before first await in every method. Standard post-write pattern: put/delete → reload slice → invalidateCache (hierarchy stores only) → NotificationRegistry.emit."
 - `js/businessRules.js` — emit: "Exports: validateStatusTransition(entityType, from, to), validateSprint(sprint), validateLocationPeriod(period, allPeriods), detectCircularDependencies(stories). Status transition whitelists for story(5 states), epic(4), focus(2), sprint(3). Sprint duration: 1-2 weeks."
-- `js/barricade.js` — emit: "Structural validation before writes. Required fields per entity: focus(id,name), calendar(id,month,year,week,dayTypes,capacities), priorities(id,periodType,month,focuses), subFocus(id,name), epic(id,name), story(id,name), dailyLog(id,date,dayType). Does NOT enforce epicId on stories (domain rule)."
+- `js/barricade.js` — emit: "Structural validation before writes. Required fields per entity: focus(id,name), calendar(id,month,year,week,dayTypes,capacities), priorities(id,period,month,focuses), subFocus(id,name), epic(id,name), story(id,name), dailyLog(id,date). Does NOT enforce epicId on stories (domain rule). dailyLogs dayType optional (nullable — day may rely on dayTypeOverride); story fibonacciSize validated against FIBONACCI_SIZES (constants.js)."
 
 [Task-specific files appended here by spec author:]
 - `[path]` — emit: [what reading this file must produce as output]
@@ -218,7 +218,7 @@ Suite section, then task-specific checks are appended after it.
 
 ```bash
 # ── Standing regression suite ──────────────────────────────────────────
-cd /Users/jun/Library/CloudStorage/OneDrive-Personal/Tools/capacity-planner
+cd /Users/jun/Nextcloud/Tools/capacity-planner
 lsof -ti:8080 | xargs kill -9 2>/dev/null; sleep 1
 
 # Build must succeed

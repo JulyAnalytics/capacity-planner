@@ -469,6 +469,7 @@ export function _refreshStoryRow(storyId) {
 }
 
 // Global export for calendarView and backlogView calls
+// @owns dailyLogOverlay — per-day log overlay; reads/writes dailyLogs (id `log-<date>`).
 window.dailyLogOverlay = {
   open:  openDayLog,
   close: closeDayLog,

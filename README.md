@@ -1,37 +1,23 @@
 # Capacity Planner
 
-A weekly capacity planning tool with Supabase persistence and multi-tab sync.
+A weekly capacity-planning tool: Supabase-backed, multi-tab synced, no framework.
 
 ## What it does
-
-- **Calendar** — Plan weeks with day types (travel, buffer, stable, project, social). Each day type contributes a fixed block allocation to primary, secondary1, secondary2, and floor capacity tiers.
-- **Sprints** — Organize stories into active sprints with drag-and-drop reordering (SortableJS). Sprint status: planning → active → completed.
-- **Backlog** — Group stories by epic, sprint, or status. Inline status cycling. Drag between groups.
-- **Daily Log** — Track actual vs planned day type for each date. Auto-close incomplete days. Retroactive logging with conflict detection.
-- **Hierarchy** — Priority Level → Focus → Sub-Focus → Epic → Story. Cascading selectors in creation modal. Calendar-based monthly planning with epic selection by priority lane.
-- **Import/Export** — Full JSON export covering all stores. Import validates structurally before writing.
-
-## Architecture
-
-Pure HTML/CSS/JS — no framework. Single IIFE bundle built by `node build.js`. Supabase backend for auth and storage. For the full module map, data flow diagram, and coordination contract, see [`docs/architecture/SYSTEM_MAP.md`](docs/architecture/SYSTEM_MAP.md).
+- **Calendar** — plan weeks with day types (travel/buffer/stable/project/social); each contributes fixed blocks to primary/secondary1/secondary2/floor tiers.
+- **Sprints** — stories in active sprints with drag-and-drop reordering (SortableJS). Status: planning → active → completed.
+- **Backlog** — group stories by epic, sprint, or status; inline status cycling; drag between groups.
+- **Daily Log** — actual vs planned day type per date; auto-close incomplete days; retroactive logging with conflict detection.
+- **Hierarchy** — Priority Level → Focus → Sub-Focus → Epic → Story; cascading selectors; calendar-based monthly planning by priority lane.
+- **Import/Export** — full JSON export across all stores; import validates structurally before writing.
 
 ## Quick start
-
 ```bash
-# Install
 npm install
-
-# Build
 npm run build
-
-# Serve
-python3 -m http.server 8080
+python3 -m http.server 8080   # open http://localhost:8080, sign in with Supabase
 ```
 
-Open `http://localhost:8080` and sign in with Supabase.
-
 ## Keyboard shortcuts
-
 | Key | Action |
 |-----|--------|
 | `Cmd+K` | Open creation modal |
@@ -40,22 +26,25 @@ Open `http://localhost:8080` and sign in with Supabase.
 | `Cmd+Z` | Undo last action (within 5s) |
 
 ## For developers
+Architecture is documented as a **hybrid doc system**: generated facts joined with
+authored meaning. Start with the generated map, then knowledge/ADRs.
 
-Architecture docs live in `docs/architecture/`:
+- [`generated/SYSTEM_MAP.md`](docs/architecture/generated/SYSTEM_MAP.md) — module table, build order, migration ordering, notification map *(start here)*
+- [`generated/REGISTRY.md`](docs/architecture/generated/REGISTRY.md) — stores (13), enums, ID patterns, counts
+- [`generated/SCHEMA_REFERENCE.md`](docs/architecture/generated/SCHEMA_REFERENCE.md) — per-store fields + annotations
+- [`knowledge/`](docs/architecture/knowledge) — GEOMETRY (invariants), PHILOSOPHY, `annotations/*.yaml`, STATE
+- [`adr/`](docs/architecture/adr) — Architecture Decision Records (0001–0006)
+- [`AGENT_NOTES.md`](docs/architecture/AGENT_NOTES.md) — operational detail + pre-merge checklist
 
-- [`SYSTEM_MAP.md`](docs/architecture/SYSTEM_MAP.md) — module table, data flow, coordination contract
-- [`CONVENTIONS.md`](docs/architecture/CONVENTIONS.md) — "where does X go?" with exemplars
-- [`EXTENSION_MANIFEST.md`](docs/architecture/EXTENSION_MANIFEST.md) — friction heatmap for scoping
-- [`SCHEMA_REFERENCE.md`](docs/architecture/SCHEMA_REFERENCE.md) — all 12 stores with fields and types
-- [`adr/`](docs/architecture/adr/) — Architecture Decision Records
-- [`gap_prevention_protocol_v3.md`](docs/architecture/gap_prevention_protocol_v3.md) — spec authoring rules
-
-Before adding a feature, fill out the template at [`docs/templates/FEATURE_BRIEF.md`](docs/templates/FEATURE_BRIEF.md).
+`generated/` is an artifact — edit `knowledge/` or source `@owns`/`@intent` docblocks, then:
+```bash
+npm run docs:generate && npm run docs:check   # must pass before merge
+```
+Before adding a feature, fill out [`docs/templates/FEATURE_BRIEF.md`](docs/templates/FEATURE_BRIEF.md).
+Deploy/rollback details: [`docs/protocols-b/DEPLOYMENT.md`](docs/protocols-b/DEPLOYMENT.md).
 
 ## Tests
-
 ```bash
-npx playwright test --reporter=line
+npx playwright test --reporter=line    # requires SUPABASE_AUTH_STATE in .env
 ```
-
-Requires `SUPABASE_AUTH_STATE` in `.env`. See [`CLAUDE.md`](CLAUDE.md) for auth seeding instructions.
+See [`CLAUDE.md`](CLAUDE.md) for the reading path, capture protocol, and auth seeding.

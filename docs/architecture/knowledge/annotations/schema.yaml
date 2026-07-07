@@ -1,0 +1,45 @@
+# schema.yaml — per-store / per-field annotations joined into SCHEMA_REFERENCE.md
+# Format: flat dotted keys (valid YAML). Top-level key = store (must match DB.STORES).
+#   store._store:        one-line store description (store-level note)
+#   store.field:         field-level note
+#   store._<name>:       store-level meta note (e.g. dead code) — not field-checked
+# Field sets are NOT structurally declared in source (deferred); only top-level
+# store keys are orphan-checked against DB.STORES.
+
+calendar._store: Weekly capacity calendar (day-type assignments per week).
+calendar.year: accepts string|number — mixed prod data (legacy writes).
+calendar.week: accepts string|number — mixed prod data (legacy writes).
+
+priorities._store: DEPRECATED — superseded by monthlyPlans. Retained for read-back of legacy rows.
+priorities._savePriority: dead code — savePriority() is unreachable; do not revive, migrate callers to monthlyPlans.
+priorities.period: legacy alias for periodType.
+
+subFocuses._store: Sub-focuses grouped under a focus.
+subFocuses.id: TWO coexisting id patterns — legacy `sf-<focus>-general` (migrationRunner) vs timestamp `<type>-<ts>-<rand>` (creationModal). Do not assume one shape.
+subFocuses.icon: max 2 chars.
+
+epics._store: Epics owned by a focus/sub-focus; parent of stories.
+
+stories._store: Stories (backlog items) owned by an epic; the write-spine store (see ADR-0006).
+stories.id: created via creationModal generic `${type}-${Date.now()}-${rand}`.
+stories.focus: denormalized from epic (legacy); prefer epic.focusId.
+stories.epicId: DB CHECK NOT NULL — a story must pin an epic.
+stories.sortOrder: sprint-scoped rank; seeded by migrateStoriesToIncludeSortOrder.
+stories.cellSortOrder: per-cell (epic×sprint) rank in the story map; sibling of sortOrder.
+stories.actionItems: array; seeded by migrateStoriesToIncludeActionItems.
+
+dailyLogs._store: Per-day log entries keyed `log-<dateStr>`.
+
+metadata._store: localStorage-only key/value store (not synced to Supabase); holds migration guards + misc.
+
+monthlyPlans._store: Monthly epic-priority plans keyed `plan-<year>-<MM>`; successor to priorities.
+
+focuses._store: Top-level focus areas (Priority Level → Focus → …).
+
+sprints._store: Sprints; status enum SPRINT_STATUS. Bare `crypto.randomUUID()` id.
+
+travelSegments._store: Travel segments per sprint, id `seg-<uuid>`.
+
+locationPeriods._store: Location-bound capacity periods, id `loc-<uuid>`.
+
+dayTypeOverrides._store: Per-day capacity overrides, feed sprint capacity headers.

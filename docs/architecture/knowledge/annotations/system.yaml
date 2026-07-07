@@ -1,0 +1,12 @@
+# system.yaml — topic notes joined into SYSTEM_MAP.md (notification/channel/cache/*).
+# Format: flat dotted keys (valid YAML). Rendered under matching section headings.
+
+notification.story.handler: backlogView._handleStoryNotification routes the structured 'story' payload.
+notification.story.reorder: "{reorder:true} is a NO-OP patch — Sortable already placed the DOM; the handler early-returns so a batch reindex patches once per drag, not once per story. See ADR-0006."
+
+channel.capacity_planner.lifecycle: a write posts {entity,action,data}; other tabs' onmessage dispatch to per-entity handlers (onSprint/onLocationPeriod/onDayTypeOverride).
+channel.capacity_planner.localStorage_fallback: when BroadcastChannel is unavailable or a handler needs fresh state, listeners re-read the slice from DB (DB._cache) on message.
+channel.hierarchy-cache-sync.persistence: on message, hierarchyCache.refreshHierarchyCache() rebuilds the synchronous lookup index from DB so mid-render sites stay current cross-tab.
+
+cache.invalidate.scope: window.invalidateCache() rebuilds hierarchyCache for focuses/epics/subFocuses ONLY (the hierarchy stores).
+cache.invalidate.rationale: those three feeds contextDetection.js, creationModal.js, dbValidator.js — all genuinely mid-render/mid-validation and cannot await. Non-hierarchy stores read through DB.getAll() and need no invalidation.

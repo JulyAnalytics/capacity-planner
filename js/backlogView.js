@@ -1761,10 +1761,12 @@ async function _toggleStoryFocus(storyId) {
 }
 
 // ── Epic filter exposure for backlogDetailPanel ───────────────────────────────
+// @owns _backlogEpicFilter — accessor exposing the current epic filter to the detail panel.
 
 window._backlogEpicFilter = () => epicFilter;
 
 // ── Global export ─────────────────────────────────────────────────────────────
+// @owns backlogView — backlog + sprint + story-map views; listens on story/epic/sprint/travelSegment/locationPeriod/dayTypeOverride.
 
 window.backlogView = {
   render: _renderBacklogView,

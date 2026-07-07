@@ -139,6 +139,7 @@ class _SprintValidationError extends Error {
 }
 
 // ── Global export ─────────────────────────────────────────────────────────────
+// @owns sprintManager — sprint + travel-segment CRUD; emits sprint/travelSegment.
 
 window.sprintManager = {
   createSprint, updateSprint, completeSprint,

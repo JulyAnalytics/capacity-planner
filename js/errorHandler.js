@@ -350,6 +350,13 @@ function clearFormState() {
 // ============================================================================
 
 // Expose on window for console testing per spec
+// @owns showInlineError — inline field error renderer.
+// @owns clearInlineErrors — clears inline field errors.
+// @owns createSnapshot — captures form state snapshot for recovery.
+// @owns restoreSnapshot — restores a form state snapshot.
+// @owns saveFormState — persists in-progress form state (recovery).
+// @owns restoreFormState — rehydrates saved form state.
+// @owns showToastWithActions — toast with action buttons (undo/retry).
 window.showInlineError    = showInlineError;
 window.clearInlineErrors  = clearInlineErrors;
 window.createSnapshot     = createSnapshot;

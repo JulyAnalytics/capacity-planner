@@ -7,6 +7,12 @@ const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5v
 // window.supabase is the library object from CDN at this point
 const _supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 // Replace library reference with the client instance for use in db.js
+// @owns supabase — the Supabase client instance (replaces the CDN library ref).
+// @owns initAuth — idempotent session bootstrap (resolves on first valid session).
+// @owns currentUserId — active user id; read synchronously by DB._uid() before any await.
+// @owns authSubmit — sign-in handler (form submit).
+// @owns authSignOut — sign-out handler.
+// @owns migrateFromIDB — one-shot IndexedDB→Supabase migration trigger.
 window.supabase = _supabaseClient;
 
 // initAuth() is safe to call multiple times (idempotent) — the AbortController
