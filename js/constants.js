@@ -17,6 +17,15 @@ export const STORY_STATUS = {
   BLOCKED:   'blocked',
 };
 
+// Story review lifecycle — candidate-import Inbox (Stage 5). ABSENT = approved:
+// all legacy rows + modal-created stories are treated as approved. Only 'proposed'
+// rows surface in the Inbox; approve → 'approved', discard → 'discarded'.
+export const REVIEW_STATE = {
+  PROPOSED:  'proposed',
+  APPROVED:  'approved',
+  DISCARDED: 'discarded',
+};
+
 export const EPIC_STATUS = {
   PLANNING:  'planning',
   ACTIVE:    'active',
@@ -51,6 +60,15 @@ export const PRIORITY_LABELS = {
   secondary2: 'Secondary 2',
   floor:      'Floor',
 };
+
+// ── Story document attachments (F3) ────────────────────────────────────────────
+// 'spec' = first upload of a filename; 'update' = a newer version of an existing
+// filename (version increments). Storage bucket is private, RLS user-scoped.
+export const ATTACHMENT_TYPES = {
+  SPEC:   'spec',
+  UPDATE: 'update',
+};
+export const ATTACHMENT_BUCKET = 'capacity-planner-docs';
 
 // ── Entity type → store name lookup (English pluralization is not a function) ──
 

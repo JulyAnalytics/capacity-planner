@@ -7,4 +7,4 @@
 
 <!-- Seed entries below. Keep newest at top. -->
 
-2026-06-30 | `app.saveStory` retained for ~7 dependency/blocking/status callers; full retirement onto `storyWrites` deferred | promote-by: next app.js-touching feature
+2026-07-07 | `app.saveStory` retained for ~7 dependency/blocking/status callers; full retirement onto `storyWrites` deferred (Candidate-Import Stage 1 + Stage 5 kept the deferral deliberately — modal path migrated, the rest untouched) | promote-by: Conversational Assistant chatbot (js/app.js tab + modal registration)

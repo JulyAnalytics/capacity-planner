@@ -7,8 +7,8 @@
 - **DB.STORES count:** 13
 - **Supabase tables:** 12 (+ 1 localStorage-only `metadata`)
 - **ENTITY_TO_STORE count:** 11
-- **JS_FILES (build order) count:** 29
-- **MIGRATIONS count:** 10
+- **JS_FILES (build order) count:** 33
+- **MIGRATIONS count:** 13
 
 ## Stores ↔ entities ↔ tables
 
@@ -38,6 +38,10 @@
 
 **SPRINT_STATUS** (3): `planning` · `active` · `completed`
 
+**REVIEW_STATE** (3): `proposed` · `approved` · `discarded`
+
+**ATTACHMENT_TYPES** (2): `spec` · `update`
+
 ## ID construction patterns (derived sites)
 
 > Records are not structurally declared; ids are built ad hoc. This lists
@@ -48,17 +52,18 @@
 | stem | sites |
 |---|---|
 | `${prefix}-{…}` | `utils.js:235` |
-| `${type}-{…}` | `creationModal.js:657` |
-| `ai-{…}` | `app.js:1140`, `app.js:435`, `backlogDetailPanel.js:602` |
-| `bdp-ai-input-{…}` | `backlogDetailPanel.js:597` |
-| `bdp-seg-dt-{…}` | `backlogDetailPanel.js:1376` |
-| `capacity-data-{…}` | `app.js:1461` |
+| `${type}-{…}` | `creationModal.js:657`, `dataPortability.js:210` |
+| `ai-{…}` | `app.js:1147`, `app.js:442`, `backlogDetailPanel.js:603`, `dataPortability.js:272` |
+| `att-{…}` | `storyAttachmentPanel.js:90` |
+| `bdp-ai-input-{…}` | `backlogDetailPanel.js:598` |
+| `bdp-seg-dt-{…}` | `backlogDetailPanel.js:1377` |
+| `capacity-data-{…}` | `dataPortability.js:54` |
 | `crypto.randomUUID(){…}` | `locationManager.js:24`, `sprintManager.js:23`, `sprintManager.js:69` |
 | `cv-dt-val-{…}` | `calendarView.js:1119` |
-| `focus-{…}` | `app.js:789`, `migrationRunner.js:186` |
+| `focus-{…}` | `app.js:796`, `migrationRunner.js:186` |
 | `loc-{…}` | `locationManager.js:24` |
 | `log-{…}` | `dailyLogOverlay.js:155`, `dailyLogOverlay.js:183`, `dailyLogOverlay.js:313`, `dailyLogOverlay.js:423` |
-| `plan-{…}` | `db.js:363`, `db.js:372`, `db.js:387`, `db.js:419`, `db.js:431`, `db.js:446` |
+| `plan-{…}` | `db.js:393`, `db.js:402`, `db.js:417`, `db.js:449`, `db.js:461`, `db.js:476` |
 | `seg-{…}` | `sprintManager.js:69` |
 | `sf-{…}` | `migrationRunner.js:16`, `migrationRunner.js:30` |
 | `snapshot-{…}` | `errorHandler.js:136` |
@@ -69,32 +74,36 @@
 1. `js/constants.js`
 2. `js/notificationRegistry.js`
 3. `vendor/sortablejs/Sortable.min.js`
-4. `js/utils.js`
-5. `js/auth.js`
-6. `js/db.js`
-7. `js/storyWrites.js`
-8. `js/businessRules.js`
-9. `js/hierarchyCache.js`
-10. `js/contextDetection.js`
-11. `js/locationCapacity.js`
-12. `js/locationManager.js`
-13. `js/errorHandler.js`
-14. `js/dbValidator.js`
-15. `js/accessibility.js`
-16. `js/performance.js`
-17. `js/mobileOptimizations.js`
-18. `js/creationModal.js`
-19. `js/sprintManager.js`
-20. `js/sprintCapacity.js`
-21. `js/sprintAllocation.js`
-22. `js/backlogView.js`
-23. `js/backlogDetailPanel.js`
-24. `js/barricade.js`
-25. `js/calendarView.js`
-26. `js/dailyLogOverlay.js`
-27. `js/importUtils.js`
-28. `js/migrationRunner.js`
-29. `js/app.js`
+4. `vendor/marked/marked.min.js`
+5. `js/utils.js`
+6. `js/auth.js`
+7. `js/db.js`
+8. `js/storyWrites.js`
+9. `js/businessRules.js`
+10. `js/hierarchyCache.js`
+11. `js/contextDetection.js`
+12. `js/locationCapacity.js`
+13. `js/locationManager.js`
+14. `js/errorHandler.js`
+15. `js/dbValidator.js`
+16. `js/accessibility.js`
+17. `js/performance.js`
+18. `js/mobileOptimizations.js`
+19. `js/creationModal.js`
+20. `js/sprintManager.js`
+21. `js/sprintCapacity.js`
+22. `js/sprintAllocation.js`
+23. `js/backlogView.js`
+24. `js/storyAttachmentPanel.js`
+25. `js/backlogDetailPanel.js`
+26. `js/inboxView.js`
+27. `js/barricade.js`
+28. `js/calendarView.js`
+29. `js/dailyLogOverlay.js`
+30. `js/importUtils.js`
+31. `js/dataPortability.js`
+32. `js/migrationRunner.js`
+33. `js/app.js`
 
 ## Migration list (ordered, with guard keys)
 
@@ -108,4 +117,7 @@
 8. `migrateEpicsToFocusId` — guard: `migration:epics-focus-id`
 9. `migrateSubFocusesToFocusId` — guard: `migration:subfocuses-focus-id`
 10. `migrateSprintStatusToCompleted` — guard: `migration:sprint-status-completed`
+11. `migrateStoriesToIncludeReviewState` — guard: `migration:review-state`
+12. `migrateStoriesToIncludeAttachments` — guard: `migration:story-attachments`
+13. `migrateStoriesToIncludeSourceRef` — guard: `migration:source-ref`
 

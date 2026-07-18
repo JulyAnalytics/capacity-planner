@@ -37,7 +37,7 @@
 // Date: 2026-04-14 | Author: [initials]
 
 import { VALID_STATUSES } from './businessRules.js';
-import { FIBONACCI_SIZES } from './constants.js';
+import { FIBONACCI_SIZES, REVIEW_STATE, ATTACHMENT_TYPES } from './constants.js';
 
 // ============================================================================
 // SCHEMA DEFINITIONS
@@ -167,6 +167,33 @@ const SCHEMAS = {
         errors.push({
           field: 'fibonacciSize',
           message: `'fibonacciSize' must be one of: ${FIBONACCI_SIZES.join(', ')}`
+        });
+      }
+    }
+    // Enum check: if reviewState is present it must be a known review-state value.
+    if (data.reviewState !== undefined && data.reviewState !== null) {
+      if (!Object.values(REVIEW_STATE).includes(data.reviewState)) {
+        errors.push({
+          field: 'reviewState',
+          message: `'reviewState' must be one of: ${Object.values(REVIEW_STATE).join(', ')}`
+        });
+      }
+    }
+    // Shape check: attachments, if present, must be an array of well-formed records.
+    if (data.attachments !== undefined && data.attachments !== null) {
+      if (!Array.isArray(data.attachments)) {
+        errors.push({ field: 'attachments', message: `'attachments' must be an array` });
+      } else {
+        data.attachments.forEach((a, i) => {
+          const bad = (msg) => errors.push({ field: `attachments[${i}]`, message: msg });
+          if (!a || typeof a !== 'object') { bad('must be an object'); return; }
+          if (typeof a.id !== 'string' || !a.id)                 bad(`'id' required string`);
+          if (typeof a.filename !== 'string' || !a.filename)     bad(`'filename' required string`);
+          if (typeof a.storageKey !== 'string' || !a.storageKey) bad(`'storageKey' required string`);
+          if (typeof a.size !== 'number')                        bad(`'size' required number`);
+          if (!Object.values(ATTACHMENT_TYPES).includes(a.type)) bad(`'type' must be one of: ${Object.values(ATTACHMENT_TYPES).join(', ')}`);
+          if (typeof a.version !== 'number' || a.version < 1)    bad(`'version' must be a number ≥ 1`);
+          if (typeof a.createdAt !== 'string' || !a.createdAt)   bad(`'createdAt' required string`);
         });
       }
     }

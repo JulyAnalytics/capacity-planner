@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Capacity Planner</title>                                                                                                                                                                                                                                                                                        <link rel="stylesheet" href="dist/styles.a0229342.min.css">
+    <title>Capacity Planner</title>                                                                                                                                                                                                                                                                                                                                                    <link rel="stylesheet" href="dist/styles.68d7f673.min.css">
   </head>
 <body>
     <!-- Auth Overlay — shown when no session exists -->
@@ -22,7 +22,7 @@
     <nav id="floatingSidebar" class="floating-sidebar">
         <div class="sidebar-content">
             <div class="sidebar-header">
-                <h4>Quick Nav</h4>
+                <h4>Menu</h4>
                 <button class="sidebar-toggle" onclick="app.toggleSidebar()">&#9664;</button>
             </div>
             <div class="sidebar-sections" id="sidebarSections"></div>
@@ -102,6 +102,9 @@
           <div id="backlog-root"></div>
         </div>
 
+        <!-- Inbox — sidebar-only view (no nav-tab); rendered by inboxView.js -->
+        <div id="inbox" class="tab-content panel-expanded"></div>
+
     </div>
 
     <!-- Backlog detail panel -->
@@ -133,6 +136,6 @@
     </div>
 
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-                                                                                                                                                                                                                                                                                <script src="dist/app.8eeffbea.min.js"></script>
+                                                                                                                                                                                                                                                                                                                                            <script src="dist/app.461166f2.min.js"></script>
   </body>
 </html>

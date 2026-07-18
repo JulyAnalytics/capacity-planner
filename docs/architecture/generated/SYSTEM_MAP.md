@@ -9,32 +9,36 @@
 1. `js/constants.js`
 2. `js/notificationRegistry.js`
 3. `vendor/sortablejs/Sortable.min.js`
-4. `js/utils.js`
-5. `js/auth.js`
-6. `js/db.js`
-7. `js/storyWrites.js`
-8. `js/businessRules.js`
-9. `js/hierarchyCache.js`
-10. `js/contextDetection.js`
-11. `js/locationCapacity.js`
-12. `js/locationManager.js`
-13. `js/errorHandler.js`
-14. `js/dbValidator.js`
-15. `js/accessibility.js`
-16. `js/performance.js`
-17. `js/mobileOptimizations.js`
-18. `js/creationModal.js`
-19. `js/sprintManager.js`
-20. `js/sprintCapacity.js`
-21. `js/sprintAllocation.js`
-22. `js/backlogView.js`
-23. `js/backlogDetailPanel.js`
-24. `js/barricade.js`
-25. `js/calendarView.js`
-26. `js/dailyLogOverlay.js`
-27. `js/importUtils.js`
-28. `js/migrationRunner.js`
-29. `js/app.js`
+4. `vendor/marked/marked.min.js`
+5. `js/utils.js`
+6. `js/auth.js`
+7. `js/db.js`
+8. `js/storyWrites.js`
+9. `js/businessRules.js`
+10. `js/hierarchyCache.js`
+11. `js/contextDetection.js`
+12. `js/locationCapacity.js`
+13. `js/locationManager.js`
+14. `js/errorHandler.js`
+15. `js/dbValidator.js`
+16. `js/accessibility.js`
+17. `js/performance.js`
+18. `js/mobileOptimizations.js`
+19. `js/creationModal.js`
+20. `js/sprintManager.js`
+21. `js/sprintCapacity.js`
+22. `js/sprintAllocation.js`
+23. `js/backlogView.js`
+24. `js/storyAttachmentPanel.js`
+25. `js/backlogDetailPanel.js`
+26. `js/inboxView.js`
+27. `js/barricade.js`
+28. `js/calendarView.js`
+29. `js/dailyLogOverlay.js`
+30. `js/importUtils.js`
+31. `js/dataPortability.js`
+32. `js/migrationRunner.js`
+33. `js/app.js`
 
 ## Module table
 
@@ -43,38 +47,45 @@
 | 1 | `constants.js` | — | — |
 | 2 | `notificationRegistry.js` | — | — |
 | 3 | `vendor/sortablejs/Sortable.min.js` | — | — |
-| 4 | `utils.js` | `showToast` | showToast — canonical toast surface; single global, no duplicates. |
-| 5 | `auth.js` | `authSignOut`, `authSubmit`, `currentUserId`, `initAuth`, `migrateFromIDB`, `supabase` | supabase — the Supabase client instance (replaces the CDN library ref).; initAuth — idempotent session bootstrap (resolves on first valid session).; currentUserId — active user id; read synchronously by DB._uid() before any await.; authSubmit — sign-in handler (form submit).; authSignOut — sign-out handler.; migrateFromIDB — one-shot IndexedDB→Supabase migration trigger. |
-| 6 | `db.js` | `DB` | DB — Supabase client wrapper; the only read/write path for all synced stores (stories also via storyWrites). |
-| 7 | `storyWrites.js` | `storyWrites` | storyWrites — the single coordinated write spine for the stories store. |
-| 8 | `businessRules.js` | — | — |
-| 9 | `hierarchyCache.js` | `hierarchyCache`, `invalidateCache` | hierarchyCache — synchronous lookup index for mid-render/mid-validation sites.; invalidateCache — rebuilds hierarchyCache for focuses/epics/subFocuses only. @see ADR-0001 |
-| 10 | `contextDetection.js` | — | — |
-| 11 | `locationCapacity.js` | `_locationCapacityUtils` | _locationCapacityUtils — date helpers (isoAddDays) shared with sprint capacity math. |
-| 12 | `locationManager.js` | `locationManager` | locationManager — location-period CRUD (id `loc-<uuid>`); emits locationPeriod. |
-| 13 | `errorHandler.js` | `clearInlineErrors`, `createSnapshot`, `restoreFormState`, `restoreSnapshot`, `saveFormState`, `showInlineError`, `showToastWithActions` | showInlineError — inline field error renderer.; clearInlineErrors — clears inline field errors.; createSnapshot — captures form state snapshot for recovery.; restoreSnapshot — restores a form state snapshot.; saveFormState — persists in-progress form state (recovery).; restoreFormState — rehydrates saved form state.; showToastWithActions — toast with action buttons (undo/retry). |
-| 14 | `dbValidator.js` | — | — |
-| 15 | `accessibility.js` | — | — |
-| 16 | `performance.js` | — | — |
-| 17 | `mobileOptimizations.js` | — | — |
-| 18 | `creationModal.js` | `closeCreationModal`, `isModalOpen`, `openCreationModal`, `renderForm` | openCreationModal — opens the entity creation modal; routes form config.; closeCreationModal — tears down the modal + restores scroll/focus.; isModalOpen — predicate used by mobile/key handlers.; renderForm — renders the creation form fields from a config object. |
-| 19 | `sprintManager.js` | `sprintManager` | sprintManager — sprint + travel-segment CRUD; emits sprint/travelSegment. |
-| 20 | `sprintCapacity.js` | — | — |
-| 21 | `sprintAllocation.js` | — | — |
-| 22 | `backlogView.js` | `_backlogEpicFilter`, `backlogView` | _backlogEpicFilter — accessor exposing the current epic filter to the detail panel.; backlogView — backlog + sprint + story-map views; listens on story/epic/sprint/travelSegment/locationPeriod/dayTypeOverride. |
-| 23 | `backlogDetailPanel.js` | `_bdpRankingCurrent`, `_bdpRankingEdit`, `backlogDetailPanel` | backlogDetailPanel — detail panel for focus/epic/story; emits focus/subFocus/epic/travelSegment/sprint.; _bdpRankingCurrent — transient in-progress ranking snapshot (edit state).; _bdpRankingEdit — transient edit-mode ranking draft (edit state). |
-| 24 | `barricade.js` | — | — |
-| 25 | `calendarView.js` | `calendarView` | calendarView — calendar render + navigation; emits locationPeriod/dayTypeOverride. |
-| 26 | `dailyLogOverlay.js` | `dailyLogOverlay` | dailyLogOverlay — per-day log overlay; reads/writes dailyLogs (id `log-<date>`). |
-| 27 | `importUtils.js` | — | — |
-| 28 | `migrationRunner.js` | — | — |
-| 29 | `app.js` | `app` | app — CapacityManager singleton; the view-layer coordinator + god-class. |
+| 4 | `vendor/marked/marked.min.js` | — | — |
+| 5 | `utils.js` | `showToast` | showToast — canonical toast surface; single global, no duplicates. |
+| 6 | `auth.js` | `authSignOut`, `authSubmit`, `currentUserId`, `initAuth`, `migrateFromIDB`, `supabase` | supabase — the Supabase client instance (replaces the CDN library ref).; initAuth — idempotent session bootstrap (resolves on first valid session).; currentUserId — active user id; read synchronously by DB._uid() before any await.; authSubmit — sign-in handler (form submit).; authSignOut — sign-out handler.; migrateFromIDB — one-shot IndexedDB→Supabase migration trigger. |
+| 7 | `db.js` | `DB` | DB — Supabase client wrapper; the only read/write path for all synced stores (stories also via storyWrites). |
+| 8 | `storyWrites.js` | `storyWrites` | storyWrites — the single coordinated write spine for the stories store. |
+| 9 | `businessRules.js` | — | — |
+| 10 | `hierarchyCache.js` | `hierarchyCache`, `invalidateCache` | hierarchyCache — synchronous lookup index for mid-render/mid-validation sites.; invalidateCache — rebuilds hierarchyCache for focuses/epics/subFocuses only. @see ADR-0001 |
+| 11 | `contextDetection.js` | — | — |
+| 12 | `locationCapacity.js` | `_locationCapacityUtils` | _locationCapacityUtils — date helpers (isoAddDays) shared with sprint capacity math. |
+| 13 | `locationManager.js` | `locationManager` | locationManager — location-period CRUD (id `loc-<uuid>`); emits locationPeriod. |
+| 14 | `errorHandler.js` | `clearInlineErrors`, `createSnapshot`, `restoreFormState`, `restoreSnapshot`, `saveFormState`, `showInlineError`, `showToastWithActions` | showInlineError — inline field error renderer.; clearInlineErrors — clears inline field errors.; createSnapshot — captures form state snapshot for recovery.; restoreSnapshot — restores a form state snapshot.; saveFormState — persists in-progress form state (recovery).; restoreFormState — rehydrates saved form state.; showToastWithActions — toast with action buttons (undo/retry). |
+| 15 | `dbValidator.js` | — | — |
+| 16 | `accessibility.js` | — | — |
+| 17 | `performance.js` | — | — |
+| 18 | `mobileOptimizations.js` | — | — |
+| 19 | `creationModal.js` | `closeCreationModal`, `isModalOpen`, `openCreationModal`, `renderForm` | openCreationModal — opens the entity creation modal; routes form config.; closeCreationModal — tears down the modal + restores scroll/focus.; isModalOpen — predicate used by mobile/key handlers.; renderForm — renders the creation form fields from a config object. |
+| 20 | `sprintManager.js` | `sprintManager` | sprintManager — sprint + travel-segment CRUD; emits sprint/travelSegment. |
+| 21 | `sprintCapacity.js` | — | — |
+| 22 | `sprintAllocation.js` | — | — |
+| 23 | `backlogView.js` | `_backlogEpicFilter`, `backlogView` | _backlogEpicFilter — accessor exposing the current epic filter to the detail panel.; backlogView — backlog + sprint + story-map views; listens on story/epic/sprint/travelSegment/locationPeriod/dayTypeOverride. |
+| 24 | `storyAttachmentPanel.js` | `storyAttachmentPanel` | storyAttachmentPanel — story .md attachments: section renderer, viewer modal, upload/replace/delete, version history. |
+| 25 | `backlogDetailPanel.js` | `_bdpRankingCurrent`, `_bdpRankingEdit`, `backlogDetailPanel` | backlogDetailPanel — detail panel for focus/epic/story; emits focus/subFocus/epic/travelSegment/sprint.; _bdpRankingCurrent — transient in-progress ranking snapshot (edit state).; _bdpRankingEdit — transient edit-mode ranking draft (edit state). |
+| 26 | `inboxView.js` | `inboxView` | inboxView — review Inbox for proposed (candidate-imported) stories; sidebar badge; candidates file-pick → mergeImport; history import preview → importHistoryManifest. |
+| 27 | `barricade.js` | — | — |
+| 28 | `calendarView.js` | `calendarView` | calendarView — calendar render + navigation; emits locationPeriod/dayTypeOverride. |
+| 29 | `dailyLogOverlay.js` | `dailyLogOverlay` | dailyLogOverlay — per-day log overlay; reads/writes dailyLogs (id `log-<date>`). |
+| 30 | `importUtils.js` | — | — |
+| 31 | `dataPortability.js` | `dataPortability` | dataPortability — whole-store export (version 5) + destructive full-replace import; every data-in/out path lives here. |
+| 32 | `migrationRunner.js` | — | — |
+| 33 | `app.js` | `app` | app — CapacityManager singleton; the view-layer coordinator + god-class. |
 
 ## Behavioral notes (source docblocks: @intent / @rationale / @see)
 
 - `db.js:119` — **@intent:** _uid()-before-await ordering — SessionExpiredError must reject the caller's promise, never be swallowed internally.
 - `storyWrites.js:1` — **@rationale:** single-writer contract — every story mutation funnels here so optimistic mutation, rollback, and the 'story' notification payload are uniform. **@see:** ADR-0006
 - `storyWrites.js:39` — **@intent:** the {reorder:true} payload is a NO-OP patch — Sortable already placed the DOM, so _handleStoryNotification early-returns and the view patches once per drag, not once per story.
+- `storyAttachmentPanel.js:149` — **@intent:** innerHTML of marked output — single-user app rendering the user's own
+- `dataPortability.js:178` — **@intent:** bulk additive import — putAll (never clear); the sanctioned bulk path
+- `dataPortability.js:333` — **@intent:** bulk additive import — putAll, no clear; sanctioned bulk path.
 
 ## Migration ordering
 
@@ -88,18 +99,21 @@
 8. `migrateEpicsToFocusId` — guard `migration:epics-focus-id`
 9. `migrateSubFocusesToFocusId` — guard `migration:subfocuses-focus-id`
 10. `migrateSprintStatusToCompleted` — guard `migration:sprint-status-completed`
+11. `migrateStoriesToIncludeReviewState` — guard `migration:review-state`
+12. `migrateStoriesToIncludeAttachments` — guard `migration:story-attachments`
+13. `migrateStoriesToIncludeSourceRef` — guard `migration:source-ref`
 
 ## Notification emit / listen map
 
 | type | emitted by | listened by |
 |---|---|---|
 | `dayTypeOverride` | `app.js`, `hierarchyCache.js` | `backlogView.js`, `calendarView.js` |
-| `epic` | `app.js`, `backlogDetailPanel.js` | `app.js`, `backlogView.js` |
-| `focus` | `app.js`, `backlogDetailPanel.js` | — |
+| `epic` | `app.js`, `backlogDetailPanel.js`, `dataPortability.js` | `app.js`, `backlogView.js` |
+| `focus` | `app.js`, `backlogDetailPanel.js`, `dataPortability.js` | — |
 | `locationPeriod` | `app.js`, `calendarView.js`, `hierarchyCache.js` | `backlogView.js`, `calendarView.js` |
-| `sprint` | `app.js`, `backlogDetailPanel.js`, `backlogView.js`, `hierarchyCache.js` | `backlogView.js`, `calendarView.js` |
-| `story` | `app.js`, `storyWrites.js` | `backlogView.js` |
-| `subFocus` | `app.js`, `backlogDetailPanel.js` | `app.js` |
+| `sprint` | `app.js`, `backlogDetailPanel.js`, `backlogView.js`, `dataPortability.js`, `hierarchyCache.js` | `backlogView.js`, `calendarView.js` |
+| `story` | `app.js`, `dataPortability.js`, `storyWrites.js` | `backlogView.js`, `inboxView.js` |
+| `subFocus` | `app.js`, `backlogDetailPanel.js`, `dataPortability.js` | `app.js` |
 | `travelSegment` | `backlogDetailPanel.js` | `backlogView.js` |
 
 ## Topic notes (from `system.yaml`)

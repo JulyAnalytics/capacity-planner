@@ -50,4 +50,4 @@ sharing a store, describable in one sentence without "and").
 `Last updated: YYYY-MM-DD after Task NNN — [one sentence]`
 - Completion reports must state: `CLAUDE.md updated: YES` (or `NO — reason: …`).
 
-`Last updated: 2026-07-01 after Task Hybrid-Docs — CLAUDE.md rewritten lean (reading path + capture protocol); facts moved to generated/ docs (docgen + 3 doc-gates); overflow → AGENT_NOTES.md. Stores now 13 (metadata counted).`
+`Last updated: 2026-07-07 after Task Candidate-Import+Attachments+History — dataPortability extracted (exportData/importData/mergeImport/importHistoryManifest); Inbox view + Inbox-only sidebar (jump-links removed); reviewState/attachments/sourceRef story fields + 3 migrations; storyAttachmentPanel + Storage bucket; parseCandidates.mjs. Stores still 13.`

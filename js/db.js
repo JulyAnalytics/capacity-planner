@@ -2,7 +2,7 @@
 // Maintains same public API as the IndexedDB version so app.js requires zero changes.
 // Records are stored as a JSONB `data` column to avoid field-name mapping issues.
 
-import { EPIC_STATUS } from './constants.js';
+import { EPIC_STATUS, ATTACHMENT_BUCKET } from './constants.js';
 
 const _TABLE_MAP = {
   calendar:        'calendar',
@@ -303,6 +303,36 @@ const DB = {
     if (error) { console.error('clear error', storeName, error); throw new Error(error.message); }
 
     this._cache[storeName] = [];
+  },
+
+  // ── Storage (attachments) ─────────────────────────────────────────────────
+  // Supabase Storage, NOT a DB store: no _TABLE_MAP entry, no cache, no preload.
+  // Bucket is private; paths are '{userId}/…' and RLS-scoped (see
+  // migrations/20260707_storage_attachments.sql). Callers build keys via
+  // DB.storage.keyFor() so the RLS prefix can't be gotten wrong.
+  storage: {
+    _from() { return DB._sb().storage.from(ATTACHMENT_BUCKET); },
+    keyFor(storyId, attId, filename) {
+      return `${DB._uid()}/${storyId}/${attId}/${filename}`;
+    },
+    async upload(key, fileOrBlob) {
+      const { error } = await this._from().upload(key, fileOrBlob, { upsert: true });
+      if (error) throw new Error(`Storage upload failed: ${error.message}`);
+    },
+    async fetchText(key) {
+      const { data, error } = await this._from().download(key);
+      if (error) throw new Error(`Storage download failed: ${error.message}`);
+      return await data.text();
+    },
+    async getSignedUrl(key, expiresIn = 3600) {
+      const { data, error } = await this._from().createSignedUrl(key, expiresIn);
+      if (error) throw new Error(`Storage sign failed: ${error.message}`);
+      return data.signedUrl;
+    },
+    async remove(key) {
+      const { error } = await this._from().remove([key]);
+      if (error) throw new Error(`Storage remove failed: ${error.message}`);
+    },
   },
 
   // Stubs kept for API compatibility

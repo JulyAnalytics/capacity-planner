@@ -58,11 +58,14 @@ Supabase table: `stories`
 | field | note |
 |---|---|
 | `actionItems` | array; seeded by migrateStoriesToIncludeActionItems. |
+| `attachments` | array (default []); items {id 'att-…', filename, storageKey '{uid}/{storyId}/{attId}/{filename}', size, type ATTACHMENT_TYPES, version ≥1, createdAt}. Content lives in private Storage bucket capacity-planner-docs (RLS user-scoped); records here are pointers only. Seeded by migrateStoriesToIncludeAttachments. |
 | `cellSortOrder` | per-cell (epic×sprint) rank in the story map; sibling of sortOrder. |
 | `epicId` | DB CHECK NOT NULL — a story must pin an epic. |
 | `focus` | denormalized from epic (legacy); prefer epic.focusId. |
 | `id` | created via creationModal generic `${type}-${Date.now()}-${rand}`. |
+| `reviewState` | enum 'proposed'\|'approved'\|'discarded'; ABSENT = approved (legacy + modal-created rows). Set 'proposed' by candidate import (Stage 4 mergeImport); Inbox (Stage 5) sets 'approved' on save, 'discarded' on discard. Existing rows seeded 'approved' by migrateStoriesToIncludeReviewState. |
 | `sortOrder` | sprint-scoped rank; seeded by migrateStoriesToIncludeSortOrder. |
+| `sourceRef` | string\|null — provenance of imported/historical stories (spec filename or git commit hash). Set by importHistoryManifest; null for app-created rows (seeded by migrateStoriesToIncludeSourceRef). |
 
 ## DAILY_LOGS → `dailyLogs`
 

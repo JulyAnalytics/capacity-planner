@@ -27,6 +27,9 @@ stories.epicId: DB CHECK NOT NULL — a story must pin an epic.
 stories.sortOrder: sprint-scoped rank; seeded by migrateStoriesToIncludeSortOrder.
 stories.cellSortOrder: per-cell (epic×sprint) rank in the story map; sibling of sortOrder.
 stories.actionItems: array; seeded by migrateStoriesToIncludeActionItems.
+stories.reviewState: enum 'proposed'|'approved'|'discarded'; ABSENT = approved (legacy + modal-created rows). Set 'proposed' by candidate import (Stage 4 mergeImport); Inbox (Stage 5) sets 'approved' on save, 'discarded' on discard. Existing rows seeded 'approved' by migrateStoriesToIncludeReviewState.
+stories.attachments: array (default []); items {id 'att-…', filename, storageKey '{uid}/{storyId}/{attId}/{filename}', size, type ATTACHMENT_TYPES, version ≥1, createdAt}. Content lives in private Storage bucket capacity-planner-docs (RLS user-scoped); records here are pointers only. Seeded by migrateStoriesToIncludeAttachments.
+stories.sourceRef: string|null — provenance of imported/historical stories (spec filename or git commit hash). Set by importHistoryManifest; null for app-created rows (seeded by migrateStoriesToIncludeSourceRef).
 
 dailyLogs._store: Per-day log entries keyed `log-<dateStr>`.
 

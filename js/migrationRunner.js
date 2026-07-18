@@ -289,6 +289,76 @@ async function migrateSprintStatusToCompleted(DB) {
   });
 }
 
+async function migrateStoriesToIncludeReviewState(DB) {
+  const metadata = await DB.get(DB.STORES.METADATA, 'migration:review-state');
+  if (metadata?.value) return;
+
+  const stories = await DB.getAll(DB.STORES.STORIES);
+  const writes = [];
+  for (const story of stories) {
+    if (!story.reviewState) {
+      story.reviewState = REVIEW_STATE.APPROVED;   // absent = approved: existing rows are live
+      writes.push(DB.put(DB.STORES.STORIES, story));
+    }
+  }
+  await Promise.all(writes);
+
+  // NOTE: use `key:` (not `id:`) — DB.put(metadata) stores by record.key. The
+  // migrateSprintStatusToCompleted guard uses `id:` and is latently broken; do not copy that.
+  await DB.put(DB.STORES.METADATA, {
+    key: 'migration:review-state',
+    value: true,
+    timestamp: new Date().toISOString(),
+  });
+  console.log(`migrateStoriesToIncludeReviewState: ${writes.length} stories seeded`);
+}
+
+async function migrateStoriesToIncludeAttachments(DB) {
+  const metadata = await DB.get(DB.STORES.METADATA, 'migration:story-attachments');
+  if (metadata?.value) return;
+
+  const stories = await DB.getAll(DB.STORES.STORIES);
+  const writes = [];
+  for (const story of stories) {
+    if (!story.attachments) {
+      story.attachments = [];
+      writes.push(DB.put(DB.STORES.STORIES, story));
+    }
+  }
+  await Promise.all(writes);
+
+  // NOTE: `key:` (not `id:`) — DB.put(metadata) stores by record.key.
+  await DB.put(DB.STORES.METADATA, {
+    key: 'migration:story-attachments',
+    value: true,
+    timestamp: new Date().toISOString(),
+  });
+  console.log(`migrateStoriesToIncludeAttachments: ${writes.length} stories seeded`);
+}
+
+async function migrateStoriesToIncludeSourceRef(DB) {
+  const metadata = await DB.get(DB.STORES.METADATA, 'migration:source-ref');
+  if (metadata?.value) return;
+
+  const stories = await DB.getAll(DB.STORES.STORIES);
+  const writes = [];
+  for (const story of stories) {
+    if (!('sourceRef' in story)) {
+      story.sourceRef = null;
+      writes.push(DB.put(DB.STORES.STORIES, story));
+    }
+  }
+  await Promise.all(writes);
+
+  // NOTE: `key:` (not `id:`) — DB.put(metadata) stores by record.key.
+  await DB.put(DB.STORES.METADATA, {
+    key: 'migration:source-ref',
+    value: true,
+    timestamp: new Date().toISOString(),
+  });
+  console.log(`migrateStoriesToIncludeSourceRef: ${writes.length} stories seeded`);
+}
+
 // ── Ordered migration list ─────────────────────────────────────────────
 // Order matters — migrations run sequentially. Add new entries at the end
 // unless they must run before an existing migration.
@@ -304,6 +374,9 @@ const MIGRATIONS = [
   migrateEpicsToFocusId,
   migrateSubFocusesToFocusId,
   migrateSprintStatusToCompleted,
+  migrateStoriesToIncludeReviewState,
+  migrateStoriesToIncludeAttachments,
+  migrateStoriesToIncludeSourceRef,
 ];
 
 const MigrationRunner = {

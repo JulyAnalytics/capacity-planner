@@ -1,10 +1,8 @@
 // Capacity Planner - Main Application Logic
 
 import DB from './db.js';
-import { validateStory } from './businessRules.js';
 import { validateExternalInput } from './barricade.js';
-import { snapshotAllStores, restoreFromSnapshot } from './importUtils.js';
-import { DAY_CAPACITY, STORY_STATUS, EPIC_STATUS, FOCUS_STATUS, CHANNEL_CAPACITY_PLANNER } from './constants.js';
+import { DAY_CAPACITY, STORY_STATUS, EPIC_STATUS, FOCUS_STATUS, REVIEW_STATE, CHANNEL_CAPACITY_PLANNER } from './constants.js';
 import { deriveCapacityForDateRange } from './locationCapacity.js';
 
 // ── localStorage/sessionStorage fallback defaults ────────────────────────────
@@ -117,6 +115,12 @@ class ModalManager {
     this._renderEditForm(this._currentType, item);
   }
 
+  // Inbox card → prefilled edit form in one call (Stage 5).
+  openForApproval(type, id) {
+    this.open(type, id);
+    this.enterEditMode();
+  }
+
   async save() {
     const type = this._currentType;
     if (type === 'newFocus') {
@@ -137,6 +141,9 @@ class ModalManager {
       const updated = this._collectFormValues('story', item);
       if (!updated) return;                       // validation failed (blank name)
       const { id, ...updates } = updated;
+      // Inbox approval contract: saving a proposed story approves it (leaves the
+      // queue). No-op for normal edits — absent/approved rows are already approved.
+      if (item.reviewState === REVIEW_STATE.PROPOSED) updates.reviewState = REVIEW_STATE.APPROVED;
       const ok = await window.storyWrites.commitStoryUpdate(id, updates);
       if (ok) this.close();                       // on failure keep modal open (toast already shown)
       return;
@@ -988,12 +995,12 @@ class CapacityManager {
     document.getElementById('generateAnalytics').addEventListener('click', () => this.generateAnalytics());
 
     // Import/Export
-    document.getElementById('exportBtn').addEventListener('click', () => this.exportData());
+    document.getElementById('exportBtn').addEventListener('click', () => window.dataPortability.exportData());
     document.getElementById('importBtn').addEventListener('click', () => {
       document.getElementById('fileInput').click();
     });
     document.getElementById('fileInput').addEventListener('change', (e) => {
-      if (e.target.files[0]) this.importData(e.target.files[0]);
+      if (e.target.files[0]) window.dataPortability.importData(e.target.files[0]);
     });
 
     // F-1: Click-to-modal delegation on card containers (§4.4)
@@ -1435,237 +1442,6 @@ class CapacityManager {
       </div>` : '<p class="empty-state">No daily logs for this period</p>'}`;
   }
 
-  // Export/Import
-  async exportData() {
-    const data = {
-      focuses: this.data.focuses,
-      calendar: this.data.calendar,
-      priorities: this.data.priorities,
-      subFocuses: this.data.subFocuses,
-      epics: this.data.epics,
-      stories: this.data.stories,
-      dailyLogs: this.data.dailyLogs,
-      monthlyPlans: this.data.monthlyPlans,
-      sprints: this.data.sprints,
-      travelSegments: this.data.travelSegments,
-      locationPeriods: this.data.locationPeriods,
-      dayTypeOverrides: this.data.dayTypeOverrides,
-      exportedAt: new Date().toISOString(),
-      version: 5
-    };
-
-    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = `capacity-data-${new Date().toISOString().split('T')[0]}.json`;
-    link.click();
-    URL.revokeObjectURL(url);
-    this.showNotification('Data exported', 'success');
-  }
-
-  importData(file) {
-    // Step 1: top-level shape key constants — single source of truth for shape validation
-    const KNOWN_STORE_KEYS = ['focuses', 'calendar', 'priorities', 'subFocuses',
-                              'epics', 'stories', 'dailyLogs', 'monthlyPlans',
-                              'sprints', 'travelSegments', 'locationPeriods', 'dayTypeOverrides'];
-
-    const reader = new FileReader();
-    reader.onload = async (e) => {
-      // Step 1: Parse JSON — fail fast, no state change
-      let data;
-      try {
-        data = JSON.parse(e.target.result);
-      } catch (parseErr) {
-        this.showNotification('Import failed: file is not valid JSON.', 'error');
-        return;
-      }
-
-      // Step 2: Top-level shape check — version present, keys known
-      if (!data.version) {
-        this.showNotification('Import failed: file has no version field.', 'error');
-        return;
-      }
-      const unknownKeys = Object.keys(data).filter(
-        k => !KNOWN_STORE_KEYS.includes(k) && k !== 'version' && k !== 'exportedAt'
-      );
-      if (unknownKeys.length > 0) {
-        // Warn only — do not reject; forward-compatibility
-        console.warn('Import: unknown top-level keys (future format?):', unknownKeys);
-      }
-
-      // Step 3: Snapshot current data — abort if snapshot fails (nothing written yet)
-      let snapshot;
-      try {
-        snapshot = await snapshotAllStores();
-      } catch (snapshotErr) {
-        console.error('Import snapshot error:', snapshotErr);
-        this.showNotification(
-          `Import aborted: could not read current data for backup (${snapshotErr.message}). ` +
-          `Your data has not been changed.`,
-          'error'
-        );
-        return;
-      }
-
-      // Step 4: Barricade validation — R20 gate; called per record per store
-      // Per-store accepted/rejected counts are surfaced in the notification.
-      // Only structurally valid records are written; rejections are logged.
-      const storeImportResult = {};
-
-      /** Gate a store array: returns only records that pass the barricade. */
-      const _gateStore = (records, schemaKey) => {
-        const storeName = schemaKey.replace('store:', '');
-        storeImportResult[storeName] = { accepted: 0, rejected: 0 };
-        const valid = [];
-        for (const record of records ?? []) {
-          const result = validateExternalInput(schemaKey, record);
-          if (result.valid) {
-            valid.push(record);
-            storeImportResult[storeName].accepted++;
-          } else {
-            storeImportResult[storeName].rejected++;
-            console.warn(`Barricade rejected ${storeName} record:`, result.errors, record);
-          }
-        }
-        return valid;
-      };
-
-      const validFocuses    = _gateStore(data.focuses,    'store:focuses');
-      const validCalendar   = _gateStore(data.calendar,   'store:calendar');
-      const validPriorities = _gateStore(data.priorities, 'store:priorities');
-      const validSubFocuses = _gateStore(data.subFocuses, 'store:subFocuses');
-      const validEpics      = _gateStore(data.epics,      'store:epics');
-      const validDailyLogs  = _gateStore(data.dailyLogs,  'store:dailyLogs');
-      const validMonthlyPlans     = _gateStore(data.monthlyPlans,     'store:monthlyPlans');
-      const validSprints          = _gateStore(data.sprints,          'store:sprints');
-      const validTravelSegments   = _gateStore(data.travelSegments,   'store:travelSegments');
-      const validLocationPeriods  = _gateStore(data.locationPeriods,  'store:locationPeriods');
-      const validDayTypeOverrides = _gateStore(data.dayTypeOverrides, 'store:dayTypeOverrides');
-
-      // Stories: barricade gate first (structural), then domain validation.
-      // DECISION: epicId is enforced at two layers.
-      // Layer 1 (JS): validateStory() rejects stories missing epicId before write.
-      // Layer 2 (DB): CHECK ((data->>'epicId') IS NOT NULL) on the Supabase stories
-      // table — applied 2026-04-14 via migrations/20260414_stories_epic_id_not_null.sql.
-      // Revisit if: stories table is refactored to individual columns (use NOT NULL column then).
-      // Date: 2026-04-14 | Author: [initials]
-      const domainRejections = [];
-      const barricadePassedStories = _gateStore(data.stories ?? [], 'store:stories');
-      // _gateStore tallied barricade rejections into storeImportResult.stories; reset accepted
-      // count so the domain pass below populates it correctly
-      storeImportResult.stories = { accepted: 0, rejected: storeImportResult.stories.rejected };
-
-      const validStories = [];
-      for (const story of barricadePassedStories) {
-        const validation = validateStory(story);
-        if (validation.valid) {
-          validStories.push(story);
-          storeImportResult.stories.accepted++;
-        } else {
-          storeImportResult.stories.rejected++;
-          domainRejections.push({ story: story.name || story.id, errors: validation.errors });
-          console.warn('Import: rejected story (domain)', story.name || story.id, validation.errors);
-        }
-      }
-
-      // Step 5: Abort if zero valid records across all stores and input was non-empty
-      const totalAccepted = Object.values(storeImportResult).reduce((n, s) => n + s.accepted, 0);
-      const totalRejected = Object.values(storeImportResult).reduce((n, s) => n + s.rejected, 0);
-      const inputWasNonEmpty = KNOWN_STORE_KEYS.some(k => (data[k]?.length ?? 0) > 0);
-      if (totalAccepted === 0 && inputWasNonEmpty) {
-        console.warn('Import: all records rejected by barricade — aborting without write.');
-        this.showNotification(
-          `Import aborted: all ${totalRejected} records were rejected by validation. ` +
-          `Your data has not been changed. See console for details.`,
-          'error'
-        );
-        return;
-      }
-
-      // Steps 6–7: Clear all stores then write valid records
-      // On any failure: restore from snapshot and notify
-      try {
-        await DB.clear(DB.STORES.FOCUSES);
-        await DB.clear(DB.STORES.CALENDAR);
-        await DB.clear(DB.STORES.PRIORITIES);
-        await DB.clear(DB.STORES.SUB_FOCUSES);
-        await DB.clear(DB.STORES.EPICS);
-        await DB.clear(DB.STORES.STORIES);
-        await DB.clear(DB.STORES.DAILY_LOGS);
-        await DB.clear(DB.STORES.MONTHLY_PLANS);
-        await DB.clear(DB.STORES.SPRINTS);
-        await DB.clear(DB.STORES.TRAVEL_SEGMENTS);
-        await DB.clear(DB.STORES.LOCATION_PERIODS);
-        await DB.clear(DB.STORES.DAY_TYPE_OVERRIDES);
-
-        if (validFocuses.length > 0)    await DB.putAll(DB.STORES.FOCUSES,     validFocuses);
-        if (validCalendar.length > 0)   await DB.putAll(DB.STORES.CALENDAR,    validCalendar);
-        if (validPriorities.length > 0) await DB.putAll(DB.STORES.PRIORITIES,  validPriorities);
-        if (validSubFocuses.length > 0) await DB.putAll(DB.STORES.SUB_FOCUSES, validSubFocuses);
-        if (validEpics.length > 0)      await DB.putAll(DB.STORES.EPICS,       validEpics);
-        if (validStories.length > 0)    await DB.putAll(DB.STORES.STORIES,     validStories);
-        if (validDailyLogs.length > 0)  await DB.putAll(DB.STORES.DAILY_LOGS,  validDailyLogs);
-        if (validMonthlyPlans.length > 0)     await DB.putAll(DB.STORES.MONTHLY_PLANS,      validMonthlyPlans);
-        if (validSprints.length > 0)          await DB.putAll(DB.STORES.SPRINTS,            validSprints);
-        if (validTravelSegments.length > 0)   await DB.putAll(DB.STORES.TRAVEL_SEGMENTS,    validTravelSegments);
-        if (validLocationPeriods.length > 0)  await DB.putAll(DB.STORES.LOCATION_PERIODS,   validLocationPeriods);
-        if (validDayTypeOverrides.length > 0) await DB.putAll(DB.STORES.DAY_TYPE_OVERRIDES, validDayTypeOverrides);
-      } catch (writeErr) {
-        // Step 8: Write failed — attempt restore
-        console.error('Import write error:', writeErr);
-        const restore = await restoreFromSnapshot(snapshot);
-        if (restore.restored) {
-          // State 3: write failure + successful restore
-          this.showNotification(
-            `Import failed: ${writeErr.message}. Your previous data has been restored.`,
-            'error'
-          );
-        } else {
-          // State 4: write failure + failed restore (critical)
-          console.error('Import restore error:', restore.error);
-          this.showNotification(
-            `Import failed and data restore failed at store "${restore.failedStore}". ` +
-            `Stores restored before failure: ${restore.restoredStores.join(', ') || 'none'}. ` +
-            `Your data may be incomplete — export a backup immediately.`,
-            'error'
-          );
-        }
-        return;
-      }
-
-      await this.loadAllData();
-      this.renderAll();
-
-      // Step 9: Full success — State 2 notification with optional rejection note
-      if (totalRejected > 0) {
-        const storeSummary = Object.entries(storeImportResult)
-          .filter(([, s]) => s.rejected > 0)
-          .map(([name, s]) => `${name}: ${s.accepted} accepted, ${s.rejected} rejected`)
-          .join('\n');
-        const domainSummary = domainRejections.length > 0
-          ? '\n' + domainRejections
-              .map(r => `• ${r.story}: ${r.errors.map(err => err.message).join(', ')}`)
-              .join('\n')
-          : '';
-        // State 2 (partial): success with rejection note
-        this.showNotification(
-          `Import complete: ${totalAccepted} records imported. ` +
-          `${totalRejected} records rejected — see console for details.\n${storeSummary}${domainSummary}`,
-          'warning'
-        );
-        console.warn('Import store results:', storeImportResult);
-      } else {
-        // State 2 (clean): full success
-        this.showNotification(
-          `Import complete: ${totalAccepted} records imported.`,
-          'success'
-        );
-      }
-    };
-    reader.readAsText(file);
-  }
-
   // Sidebar Navigation
 
   initSidebar() {
@@ -1682,7 +1458,6 @@ class CapacityManager {
       this.sidebarCollapsed = true;
     }
     this.updateSidebarLinks();
-    this.setupSidebarScrollSpy();
   }
 
   toggleSidebar() {
@@ -1699,134 +1474,27 @@ class CapacityManager {
   updateSidebarLinks() {
     const container = document.getElementById('sidebarSections');
     if (!container) return;
-
-    const links = this.getSidebarLinksForTab(this.currentTab);
-
-    if (links.length === 0) {
-      container.innerHTML = '<p class="sidebar-empty">No sections</p>';
-      return;
-    }
-
-    let html = '';
-    links.forEach(link => {
-      const indentClass = link.indent ? ' sidebar-link-indent' : '';
-      html += `
-        <div class="sidebar-section">
-          <a class="sidebar-link${indentClass}"
-             href="#${link.id}"
-             data-target="${link.id}"
-             onclick="app.scrollToSection('${link.id}'); return false;">
-            <span class="sidebar-icon">${link.icon}</span>
-            <span class="sidebar-text">${link.label}</span>
-          </a>
-        </div>
-      `;
-    });
-
-    container.innerHTML = html;
+    // Inbox-only sidebar (2026-07-07): per-tab jump-links removed — most targeted
+    // tabs no longer existed. The sidebar is now the Inbox entry point.
+    container.innerHTML = `
+      <div class="sidebar-section">
+        <a class="sidebar-link" href="#inbox" data-target="inbox"
+           onclick="app.showInbox(); return false;">
+          <span class="sidebar-icon">\u{1F4E5}</span>
+          <span class="sidebar-text">Inbox</span>
+          <span class="sidebar-badge" id="sidebar-inbox-badge" style="display:none"></span>
+        </a>
+      </div>`;
+    window.inboxView?.refreshBadge();
   }
 
-  getSidebarLinksForTab(tabName) {
-    const links = [];
-    switch (tabName) {
-      case 'calendar':
-        links.push(
-          { id: 'calendar-root', icon: '\u{1F4C5}', label: 'Calendar' }
-        );
-        break;
-      case 'epics':
-        links.push(
-          { id: 'epicTimelineCard', icon: '\u{1F4CA}', label: 'Epic Timeline' },
-          { id: 'subFocusManagement', icon: '\u{1F3AF}', label: 'Sub-Focus Mgmt' },
-          { id: 'epicManagement', icon: '\u{1F4E6}', label: 'Epic Management' },
-          { id: 'epicsListCard', icon: '\u{1F4CB}', label: 'Epics List' },
-          { id: 'epicArchiveCard', icon: '\u{1F4E6}', label: 'Epic Archive' }
-        );
-        break;
-      case 'stories':
-        links.push(
-          { id: 'storyManagement', icon: '\u{1F4DD}', label: 'Add Story' },
-          { id: 'storyMapCard', icon: '\u{1F5FA}\u{FE0F}', label: 'Story Map' }
-        );
-        break;
-      case 'analytics':
-        links.push(
-          { id: 'analyticsCard', icon: '\u{1F4CA}', label: 'Analytics' }
-        );
-        break;
-    }
-    return links;
-  }
-
-  scrollToSection(sectionId) {
-    const element = document.getElementById(sectionId);
-    if (!element) return;
-
-    const yOffset = -20;
-    const y = element.getBoundingClientRect().top + window.pageYOffset + yOffset;
-    window.scrollTo({ top: y, behavior: 'smooth' });
-
-    this.updateActiveSidebarLink(sectionId);
-    this.expandSectionIfCollapsed(sectionId);
-  }
-
-  updateActiveSidebarLink(sectionId) {
-    document.querySelectorAll('.sidebar-link').forEach(link => {
-      link.classList.remove('active');
-    });
-    const activeLink = document.querySelector(`.sidebar-link[data-target="${sectionId}"]`);
-    if (activeLink) {
-      activeLink.classList.add('active');
-    }
-  }
-
-  expandSectionIfCollapsed(sectionId) {
-    const element = document.getElementById(sectionId);
-    if (!element) return;
-
-    const card = element.closest('.card') || element;
-    const h2 = card.querySelector('h2');
-    if (h2 && h2.classList.contains('collapsed')) {
-      const cardContent = h2.nextElementSibling;
-      if (cardContent && cardContent.classList.contains('card-content')) {
-        h2.classList.remove('collapsed');
-        cardContent.classList.remove('collapsed');
-      }
-    }
-  }
-
-  setupSidebarScrollSpy() {
-    let ticking = false;
-    window.addEventListener('scroll', () => {
-      if (!ticking) {
-        window.requestAnimationFrame(() => {
-          this.updateSidebarBasedOnScroll();
-          ticking = false;
-        });
-        ticking = true;
-      }
-    });
-  }
-
-  updateSidebarBasedOnScroll() {
-    const links = this.getSidebarLinksForTab(this.currentTab);
-    let activeSection = null;
-    let minDistance = Infinity;
-
-    links.forEach(link => {
-      const element = document.getElementById(link.id);
-      if (!element) return;
-      const rect = element.getBoundingClientRect();
-      const distance = Math.abs(rect.top);
-      if (distance < minDistance && rect.top < window.innerHeight / 2) {
-        minDistance = distance;
-        activeSection = link.id;
-      }
-    });
-
-    if (activeSection) {
-      this.updateActiveSidebarLink(activeSection);
-    }
+  showInbox() {
+    document.querySelectorAll('.nav-tab').forEach(t => t.classList.remove('active'));
+    document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+    this.currentTab = 'inbox';
+    const el = document.getElementById('inbox');
+    if (el) el.classList.add('active');
+    window.inboxView?.render();
   }
 
   // Collapsible Cards

@@ -4,6 +4,7 @@
   "scripts": {
     "build": "node build.js",
     "reauth": "node scripts/reauth.mjs",
+    "parse:candidates": "node scripts/parseCandidates.mjs",
     "docs:generate": "node scripts/docgen.mjs",
     "docs:check": "node scripts/doc-checks.mjs"
   },

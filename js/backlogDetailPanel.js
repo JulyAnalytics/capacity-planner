@@ -145,6 +145,7 @@ async function _render(storyId) {
         ${_renderFieldRow('Estimate', _renderEstimateInput(story))}
         ${_renderFieldRow('Priority', _renderPriorityPicker(story))}
         ${_renderFieldRow('Actions', _renderActionItems(story))}
+        ${_renderFieldRow('Files', window.storyAttachmentPanel.renderSection(story))}
       </div>
     </div>
   `;

@@ -60,7 +60,7 @@ function deriveConstants() {
   const entityBody = captureBraced(src, /export const ENTITY_TO_STORE\s*=\s*\{/);
   const entityToStore = entityBody ? parsePairs(entityBody) : [];
   const enums = {};
-  for (const name of ['STORY_STATUS', 'EPIC_STATUS', 'FOCUS_STATUS', 'SPRINT_STATUS']) {
+  for (const name of ['STORY_STATUS', 'EPIC_STATUS', 'FOCUS_STATUS', 'SPRINT_STATUS', 'REVIEW_STATE', 'ATTACHMENT_TYPES']) {
     const body = captureBraced(src, new RegExp(`export const ${name}\\s*=\\s*\\{`));
     enums[name] = body ? parsePairs(body) : [];
   }

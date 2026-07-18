@@ -9,6 +9,9 @@ A weekly capacity-planning tool: Supabase-backed, multi-tab synced, no framework
 - **Daily Log** — actual vs planned day type per date; auto-close incomplete days; retroactive logging with conflict detection.
 - **Hierarchy** — Priority Level → Focus → Sub-Focus → Epic → Story; cascading selectors; calendar-based monthly planning by priority lane.
 - **Import/Export** — full JSON export across all stores; import validates structurally before writing.
+- **Inbox** — review queue for candidate-imported stories (sidebar 📥): Save approves, Cancel keeps, Discard soft-deletes; hosts "Import candidates…" / "Import history…".
+- **Attachments** — attach `.md` docs to stories (private Supabase Storage bucket); rendered viewer, versioned Replace, signed-URL download.
+- **History import** — one-shot additive import of this project's own construction history (12 epics, 6 sprints) from `docs/history/history-manifest.json`.
 
 ## Quick start
 ```bash
