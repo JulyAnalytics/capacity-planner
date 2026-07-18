@@ -2,3 +2,18 @@
 tests/.auth/
 node_modules/
 dist/
+
+# OS / editor / tooling artifacts
+.DS_Store
+.zcode/
+.claude/
+.pytest_cache/
+
+# Python
+__pycache__/
+*.pyc
+
+# Local databases (runtime data, not source)
+*.db
+*.db-shm
+*.db-wal
