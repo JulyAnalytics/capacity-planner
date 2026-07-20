@@ -27,6 +27,22 @@ const _nameSimilarity = (a, b) => {
 };
 const NEAR_MISS_THRESHOLD = 0.8; // "Travel" vs "Travel Planning" flags; unrelated names don't
 
+// ── Import serialization ──────────────────────────────────────────────────────
+// @intent mergeImport / attachNewStoryToEpic resolve-or-create sub-focuses and
+// epics with a check-then-create against an app.data snapshot taken at call start.
+// The triage reconciliation drove these concurrently (overlapping drains, or a
+// manual import overlapping a drain), so two callers each read a stale snapshot
+// and both created the same epic/sub-focus — the audit found 61 duplicate epic
+// name-groups, 57 of them same-sub-focus (i.e. pure race, not a scoping hole).
+// This shared mutex serializes every import-create path, the store-level analogue
+// of sprintManager's _withSprintLock. @see ADR-0007.
+let _importLock = Promise.resolve();
+function _withImportLock(fn) {
+  const run = _importLock.then(fn, fn);
+  _importLock = run.then(() => {}, () => {});
+  return run;
+}
+
 // Shared story-record builder — used by mergeImport's per-candidate loop and
 // by the standalone attachNewStoryToEpic (spec-triage queue drain, matched an
 // existing epic but no existing story). Pure except for the sprint lookup:
@@ -217,7 +233,12 @@ const dataPortability = {
   // carries triage/adapter provenance — see js/triageQueue.js.
   // @intent bulk additive import — putAll (never clear); the sanctioned bulk path
   // beside importData; single-story edits still funnel through storyWrites.
-  async mergeImport(data) {
+  mergeImport(data) {
+    // Serialized against every other import-create path — see _withImportLock.
+    return _withImportLock(() => this._mergeImportImpl(data));
+  },
+
+  async _mergeImportImpl(data) {
     const app = window.app;
     const result = {
       ok: false,
@@ -276,8 +297,13 @@ const dataPortability = {
         liveSubFocuses.push(sf); newSubFocuses.push(sf); result.created.subFocuses++;
       }
 
-      // 3. Resolve-or-create epic by normalized title within the sub-focus.
-      let epic = liveEpics.find(e => e.subFocusId === sf.id && _norm(e.name) === _norm(cand.epic.title));
+      // 3. Resolve-or-create epic by normalized title. Prefer an epic in the
+      // resolved sub-focus; else reuse any same-named epic elsewhere in THIS focus
+      // (Option A — closes the cross-folderStage duplication hole). Scope stays
+      // within the target focus (Admin for triage) so a triaged spec never lands
+      // under a user-curated epic in another focus. @see ADR-0007.
+      let epic = liveEpics.find(e => e.subFocusId === sf.id && _norm(e.name) === _norm(cand.epic.title))
+              || liveEpics.find(e => e.focusId === focus.id && _norm(e.name) === _norm(cand.epic.title));
       if (epic) { result.reused.epics++; }
       else {
         epic = { id: newId('epic'), name: cand.epic.title, vision: cand.epic.vision || '',
@@ -355,7 +381,12 @@ const dataPortability = {
   // epic resolution entirely (the epic is already known) and create just the
   // one story under it. Sibling of mergeImport, same additive/putAll/rollback
   // shape, scaled to a batch of one. @see ADR-0007
-  async attachNewStoryToEpic(epicId, candidate) {
+  attachNewStoryToEpic(epicId, candidate) {
+    // Shares the import mutex with mergeImport — see _withImportLock.
+    return _withImportLock(() => this._attachNewStoryToEpicImpl(epicId, candidate));
+  },
+
+  async _attachNewStoryToEpicImpl(epicId, candidate) {
     const app = window.app;
     const epic = app.data.epics.find(e => e.id === epicId);
     if (!epic) return { ok: false, reason: `epic ${epicId} not found` };

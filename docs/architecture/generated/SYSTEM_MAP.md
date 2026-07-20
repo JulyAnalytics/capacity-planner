@@ -85,13 +85,15 @@
 - `db.js:123` — **@intent:** _uid()-before-await ordering — SessionExpiredError must reject the caller's promise, never be swallowed internally.
 - `storyWrites.js:1` — **@rationale:** single-writer contract — every story mutation funnels here so optimistic mutation, rollback, and the 'story' notification payload are uniform. **@see:** ADR-0006
 - `storyWrites.js:39` — **@intent:** the {reorder:true} payload is a NO-OP patch — Sortable already placed the DOM, so _handleStoryNotification early-returns and the view patches once per drag, not once per story.
-- `sprintManager.js:115` — **@intent:** process candidates in ascending date order (caller's responsibility)
+- `sprintManager.js:11` — **@intent:** Sprint creation is a non-atomic check-then-create (resolveOrCreateSprintForDate
+- `sprintManager.js:138` — **@intent:** process candidates in ascending date order (caller's responsibility)
 - `storyAttachmentPanel.js:149` — **@intent:** innerHTML of marked output — single-user app rendering the user's own
 - `inboxView.js:20` — **@intent:** this is the
-- `dataPortability.js:211` — **@intent:** bulk additive import — putAll (never clear); the sanctioned bulk path
-- `dataPortability.js:394` — **@intent:** bulk additive import — putAll, no clear; sanctioned bulk path.
-- `dataPortability.js:523` — **@intent:** expose the existing normalized-Levenshtein helper + its near-miss
-- `triageQueue.js:141` — **@intent:** process in ascending inferred-date order — resolveOrCreateSprintForDate
+- `dataPortability.js:30` — **@intent:** mergeImport / attachNewStoryToEpic resolve-or-create sub-focuses and **@see:** ADR-0007
+- `dataPortability.js:227` — **@intent:** bulk additive import — putAll (never clear); the sanctioned bulk path
+- `dataPortability.js:425` — **@intent:** bulk additive import — putAll, no clear; sanctioned bulk path.
+- `dataPortability.js:554` — **@intent:** expose the existing normalized-Levenshtein helper + its near-miss
+- `triageQueue.js:141` — **@intent:** process in ascending inferred-date order — resolveOrCreateSprintForDate **@intent:** re-entrancy guard: start() drains immediately AND on a 5-min interval,
 
 ## Migration ordering
 
@@ -108,6 +110,9 @@
 11. `migrateStoriesToIncludeReviewState` — guard `migration:review-state`
 12. `migrateStoriesToIncludeAttachments` — guard `migration:story-attachments`
 13. `migrateStoriesToIncludeSourceRef` — guard `migration:source-ref`
+14. `migrateDedupeSubFocusesByName` — guard `migration:dedupe-sprints`
+15. `migrateDedupeEpicsByName` — guard `migration:dedupe-subfocuses`
+16. `migrateDedupeSprintsByWindow` — guard `migration:dedupe-epics`
 
 ## Notification emit / listen map
 

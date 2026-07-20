@@ -8,7 +8,7 @@
 - **Supabase tables:** 13 (+ 1 localStorage-only `metadata`)
 - **ENTITY_TO_STORE count:** 11
 - **JS_FILES (build order) count:** 34
-- **MIGRATIONS count:** 13
+- **MIGRATIONS count:** 16
 
 ## Stores ↔ entities ↔ tables
 
@@ -53,19 +53,19 @@
 | stem | sites |
 |---|---|
 | `${prefix}-{…}` | `utils.js:235` |
-| `${type}-{…}` | `creationModal.js:657`, `dataPortability.js:247`, `dataPortability.js:38` |
-| `ai-{…}` | `app.js:1148`, `app.js:442`, `backlogDetailPanel.js:603`, `dataPortability.js:55` |
+| `${type}-{…}` | `creationModal.js:657`, `dataPortability.js:268`, `dataPortability.js:54` |
+| `ai-{…}` | `app.js:1148`, `app.js:442`, `backlogDetailPanel.js:603`, `dataPortability.js:71` |
 | `att-{…}` | `storyAttachmentPanel.js:90`, `triageQueue.js:69` |
 | `bdp-ai-input-{…}` | `backlogDetailPanel.js:598` |
 | `bdp-seg-dt-{…}` | `backlogDetailPanel.js:1377` |
-| `capacity-data-{…}` | `dataPortability.js:87` |
-| `crypto.randomUUID(){…}` | `locationManager.js:24`, `sprintManager.js:23`, `sprintManager.js:69` |
-| `cv-dt-val-{…}` | `calendarView.js:1119` |
+| `capacity-data-{…}` | `dataPortability.js:103` |
+| `crypto.randomUUID(){…}` | `locationManager.js:24`, `sprintManager.js:46`, `sprintManager.js:92` |
+| `cv-dt-val-{…}` | `calendarView.js:1127` |
 | `focus-{…}` | `app.js:797`, `migrationRunner.js:186` |
 | `loc-{…}` | `locationManager.js:24` |
 | `log-{…}` | `dailyLogOverlay.js:155`, `dailyLogOverlay.js:183`, `dailyLogOverlay.js:313`, `dailyLogOverlay.js:423` |
 | `plan-{…}` | `db.js:397`, `db.js:406`, `db.js:421`, `db.js:453`, `db.js:465`, `db.js:480` |
-| `seg-{…}` | `sprintManager.js:69` |
+| `seg-{…}` | `sprintManager.js:92` |
 | `sf-{…}` | `migrationRunner.js:16`, `migrationRunner.js:30` |
 | `snapshot-{…}` | `errorHandler.js:136` |
 | `tab-{…}` | `hierarchyCache.js:39` |
@@ -122,4 +122,7 @@
 11. `migrateStoriesToIncludeReviewState` — guard: `migration:review-state`
 12. `migrateStoriesToIncludeAttachments` — guard: `migration:story-attachments`
 13. `migrateStoriesToIncludeSourceRef` — guard: `migration:source-ref`
+14. `migrateDedupeSubFocusesByName` — guard: `migration:dedupe-sprints`
+15. `migrateDedupeEpicsByName` — guard: `migration:dedupe-subfocuses`
+16. `migrateDedupeSprintsByWindow` — guard: `migration:dedupe-epics`
 

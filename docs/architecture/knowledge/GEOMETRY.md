@@ -29,6 +29,26 @@ ascending inferred-date order so a later row never needs a sprint an earlier
 row's window should have created. Pre-existing gaps between hand-made sprints
 are respected (nearest-edge assignment), not filled. See ADR-0007.
 
+## One sprint per window
+
+At most one sprint may exist for a given `(startDate, durationWeeks)`. Sprint
+creation is a non-atomic check-then-create, so `sprintManager` serializes every
+creation path through `_withSprintLock`; `triageQueue.drain()` additionally
+guards against overlapping runs. Without this, concurrent callers resolve
+against a stale snapshot and mint duplicate sprints for the same window — which
+the calendar renders as stacked bars (one full-width row per overlapping sprint,
+no packing). `migrateDedupeSprintsByWindow` repairs any pre-existing duplicates.
+
+## One record per name within a focus (triage)
+
+Triage may hold at most one sub-focus per `(focusId, normalized-name)` and one epic
+per `(focusId, normalized-name)`. `mergeImport`/`attachNewStoryToEpic` serialize
+every create through `_withImportLock` (store-level analogue of the sprint mutex),
+and epic reuse is checked focus-wide, not just within the resolved sub-focus. Reuse
+is exact-name only — near-name epics (e.g. a "… (Rev 2)") are deliberately distinct
+and never auto-merged. `migrateDedupeSubFocusesByName` / `migrateDedupeEpicsByName`
+repair pre-existing duplicates (children repointed, then extras deleted).
+
 ## Import-queue idempotency
 
 `import_queue` rows are status-flipped (`pending → processed`), never deleted:

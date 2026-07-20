@@ -142,21 +142,32 @@ async function _processRow(row) {
 // @intent process in ascending inferred-date order — resolveOrCreateSprintForDate
 // only ever has to extend the sprint schedule at one end per call this way,
 // never fill a hole a later, earlier-dated row would have needed instead.
+// @intent re-entrancy guard: start() drains immediately AND on a 5-min interval,
+// so a slow initial drain can overlap an interval tick. Overlapping drains each
+// resolve sprints against a stale snapshot and mint duplicate sprints (see
+// sprintManager _withSprintLock). Bail if a drain is already in flight.
+let _draining = false;
 async function drain() {
+  if (_draining) return;
   if (!window.app?.data) return;
   const rows = (await DB.getAll(DB.STORES.IMPORT_QUEUE)).filter(r => r.status === 'pending');
   if (!rows.length) return;
   rows.sort((a, b) => (a.extractedDates?.date || '').localeCompare(b.extractedDates?.date || ''));
 
-  for (const row of rows) {
-    let ok = false;
-    try { ok = await _processRow(row); }
-    catch (err) { console.warn('[triageQueue] row failed:', row.id, err); }
-    if (ok) {
-      await DB.put(DB.STORES.IMPORT_QUEUE, {
-        ...row, status: 'processed', processedAt: new Date().toISOString(),
-      });
+  _draining = true;
+  try {
+    for (const row of rows) {
+      let ok = false;
+      try { ok = await _processRow(row); }
+      catch (err) { console.warn('[triageQueue] row failed:', row.id, err); }
+      if (ok) {
+        await DB.put(DB.STORES.IMPORT_QUEUE, {
+          ...row, status: 'processed', processedAt: new Date().toISOString(),
+        });
+      }
     }
+  } finally {
+    _draining = false;
   }
 }
 

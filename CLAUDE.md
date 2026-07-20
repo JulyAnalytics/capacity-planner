@@ -50,4 +50,4 @@ sharing a store, describable in one sentence without "and").
 `Last updated: YYYY-MM-DD after Task NNN — [one sentence]`
 - Completion reports must state: `CLAUDE.md updated: YES` (or `NO — reason: …`).
 
-`Last updated: 2026-07-19 after Task Spec-Triage-Queue — import_queue store (14th) + triageQueue.js drain/match/dispatch (ADR-0007); resolveOrCreateSprintForDate; mergeImport startDate/sourceRef + attachNewStoryToEpic; Inbox live near-miss advisories. Mini-side writers live in the knowledge-library repo.`
+`Last updated: 2026-07-20 after Task Triage-Dedup — Phase 1: calendar _sprintLabel, sprintManager _withSprintLock + triageQueue _draining guard, migrateDedupeSprintsByWindow. Phase 2: audit found ~103 triage drain-race dup records; dataPortability _withImportLock serializes epic/subfocus creation + focus-wide epic reuse (Option A); migrateDedupeSubFocusesByName/EpicsByName ran on live data (merged 5 subfocus/91 epic/6 sprint, 0 stories lost). MigrationRunner __CP_SKIP_MIGRATIONS__ audit seam.`

@@ -8,13 +8,36 @@ import { validateTravelSegment, validateSprint } from './businessRules.js';
 import { detectGaps, deriveSprintMeta } from './sprintCapacity.js';
 import { CHANNEL_HIERARCHY_SYNC, SPRINT_STATUS } from './constants.js';
 
+// ── Creation serialization ──────────────────────────────────────────────────────
+// @intent Sprint creation is a non-atomic check-then-create (resolveOrCreateSprintForDate
+// reads a snapshot, finds no covering sprint, then awaits createSprint) and a
+// read-then-increment (_incrementSprintCounter). Concurrent / re-entrant callers —
+// overlapping triageQueue.drain() ticks, parallel import flows — each act on a
+// stale snapshot and each mint a sprint for the same window, producing duplicate
+// records that stack in the calendar. This mutex serializes every creation path
+// so at most one runs at a time. INVARIANT: one sprint per (startDate,durationWeeks).
+let _sprintLock = Promise.resolve();
+function _withSprintLock(fn) {
+  const run = _sprintLock.then(fn, fn); // run fn regardless of the prior op's outcome
+  _sprintLock = run.then(() => {}, () => {}); // keep the chain alive after any result
+  return run;
+}
+
 // ── Sprint CRUD ────────────────────────────────────────────────────────────────
 
 /**
  * Create a new sprint. Handles counter increment + ID generation.
  * Returns the saved sprint or throws.
  */
-export async function createSprint({ startDate, durationWeeks, goal = null, focusRanking = null }) {
+export function createSprint(args) {
+  // Public entry runs the impl under the serialization lock so direct callers
+  // (backlogView, calendarView) can't race the counter or interleave with
+  // resolveOrCreateSprintForDate. Internal callers already holding the lock
+  // must use _createSprintImpl directly to avoid deadlocking on re-entry.
+  return _withSprintLock(() => _createSprintImpl(args));
+}
+
+async function _createSprintImpl({ startDate, durationWeeks, goal = null, focusRanking = null }) {
   const draft = { startDate, durationWeeks, status: SPRINT_STATUS.PLANNING, goal };
   const errors = validateSprint(draft);
   if (errors.length) throw new _SprintValidationError(errors[0].message, errors[0].field);
@@ -120,7 +143,14 @@ const _isoDate = (ms) => new Date(ms).toISOString().slice(0, 10);
  * so each call only ever has to extend the schedule at one end, never fill
  * a hole in the middle — that's what keeps it gap-free by construction.
  */
-export async function resolveOrCreateSprintForDate(dateStr) {
+export function resolveOrCreateSprintForDate(dateStr) {
+  // Serialized so the snapshot read below and any resulting create form one
+  // atomic unit — see _withSprintLock. Uses _createSprintImpl internally
+  // (already holding the lock; calling public createSprint would deadlock).
+  return _withSprintLock(() => _resolveOrCreateImpl(dateStr));
+}
+
+async function _resolveOrCreateImpl(dateStr) {
   const target = new Date(dateStr + 'T00:00:00Z').getTime();
   const all = (await DB.getAll(DB.STORES.SPRINTS))
     .slice().sort((a, b) => a.startDate.localeCompare(b.startDate));
@@ -129,7 +159,7 @@ export async function resolveOrCreateSprintForDate(dateStr) {
   if (covering) return covering;
 
   if (!all.length) {
-    return createSprint({ startDate: dateStr, durationWeeks: _DEFAULT_DURATION_WEEKS });
+    return _createSprintImpl({ startDate: dateStr, durationWeeks: _DEFAULT_DURATION_WEEKS });
   }
 
   const first = all[0], last = all[all.length - 1];
@@ -137,7 +167,7 @@ export async function resolveOrCreateSprintForDate(dateStr) {
   if (target >= _endMs(last)) {
     let cursor = last;
     while (target >= _endMs(cursor)) {
-      cursor = await createSprint({
+      cursor = await _createSprintImpl({
         startDate: _isoDate(_endMs(cursor)), durationWeeks: _DEFAULT_DURATION_WEEKS,
       });
     }
@@ -147,7 +177,7 @@ export async function resolveOrCreateSprintForDate(dateStr) {
   if (target < _startMs(first)) {
     let cursor = first;
     while (target < _startMs(cursor)) {
-      cursor = await createSprint({
+      cursor = await _createSprintImpl({
         startDate: _isoDate(_startMs(cursor) - _DEFAULT_DURATION_WEEKS * 7 * _DAY_MS),
         durationWeeks: _DEFAULT_DURATION_WEEKS,
       });

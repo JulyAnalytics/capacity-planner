@@ -37,6 +37,14 @@ function _defaultMode() {
 
 // esc imported from utils.js — single source (R08, 2026-04-25).
 
+// Human-readable sprint label for calendar bars. Sprints carry no `name` field;
+// createSprint always sets sprintNumber and an optional goal (sprintManager.js).
+// The raw UUID `id` is kept only for click-through, never shown to the user.
+function _sprintLabel(sprint) {
+  const base = sprint.sprintNumber ? `Sprint ${sprint.sprintNumber}` : 'Sprint';
+  return sprint.goal ? `${base} · ${sprint.goal}` : base;
+}
+
 function _data() {
   return window.app?.data || { locationPeriods: [], dayTypeOverrides: [], sprints: [], stories: [] };
 }
@@ -300,7 +308,7 @@ function _renderSprintBar(sm, week, periods, overrides, allStories) {
   const colStart = startIdx + 1;
   const colSpan  = endIdx - startIdx + 1;
 
-  const sprintLabel = sprint.id || 'Sprint';
+  const sprintLabel = _sprintLabel(sprint);
   const endDateFull = isoAddDays(sprint.startDate, sprint.durationWeeks * 7 - 1);
   const dateRange   = `${_fmtCalDate(sprint.startDate)}–${_fmtCalDate(endDateFull)}`;
   const durationLabel = sprint.durationWeeks === 1 ? '1 week' : `${sprint.durationWeeks} weeks`;
