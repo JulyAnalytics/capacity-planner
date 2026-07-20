@@ -82,7 +82,8 @@
 
 ## Behavioral notes (source docblocks: @intent / @rationale / @see)
 
-- `db.js:123` — **@intent:** _uid()-before-await ordering — SessionExpiredError must reject the caller's promise, never be swallowed internally.
+- `db.js:107` — **@intent:** A failed fetch is NOT an empty store. Leave the slice null so
+- `db.js:152` — **@intent:** _uid()-before-await ordering — SessionExpiredError must reject the caller's promise, never be swallowed internally.
 - `storyWrites.js:1` — **@rationale:** single-writer contract — every story mutation funnels here so optimistic mutation, rollback, and the 'story' notification payload are uniform. **@see:** ADR-0006
 - `storyWrites.js:39` — **@intent:** the {reorder:true} payload is a NO-OP patch — Sortable already placed the DOM, so _handleStoryNotification early-returns and the view patches once per drag, not once per story.
 - `sprintManager.js:11` — **@intent:** Sprint creation is a non-atomic check-then-create (resolveOrCreateSprintForDate

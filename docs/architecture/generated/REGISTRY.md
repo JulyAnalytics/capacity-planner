@@ -64,7 +64,7 @@
 | `focus-{…}` | `app.js:797`, `migrationRunner.js:186` |
 | `loc-{…}` | `locationManager.js:24` |
 | `log-{…}` | `dailyLogOverlay.js:155`, `dailyLogOverlay.js:183`, `dailyLogOverlay.js:313`, `dailyLogOverlay.js:423` |
-| `plan-{…}` | `db.js:397`, `db.js:406`, `db.js:421`, `db.js:453`, `db.js:465`, `db.js:480` |
+| `plan-{…}` | `db.js:429`, `db.js:438`, `db.js:453`, `db.js:485`, `db.js:497`, `db.js:512` |
 | `seg-{…}` | `sprintManager.js:92` |
 | `sf-{…}` | `migrationRunner.js:16`, `migrationRunner.js:30` |
 | `snapshot-{…}` | `errorHandler.js:136` |

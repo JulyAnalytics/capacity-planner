@@ -95,28 +95,57 @@ const DB = {
     ];
 
     const results = await Promise.all(
-      stores.map(({ table }) =>
-        this._sb()
-          .from(table)
-          .select('data')
-          .eq('user_id', this._uid())
-          .order('created_at', { ascending: true })
-      )
+      stores.map(({ table }) => this._fetchStore(table))
     );
 
+    const failed = [];
     stores.forEach(({ store }, i) => {
       const { data, error } = results[i];
-      if (error) {
-        console.error(`[DB.preloadAll] Failed to load "${store}":`, error.message || error);
-      }
       if (!error && data) {
         this._cache[store] = data.map(row => row.data);
       } else {
-        this._cache[store] = [];
+        // @intent A failed fetch is NOT an empty store. Leave the slice null so
+        // getAll() re-fetches it live instead of caching a false-empty that would
+        // read as "your data is gone" (see the Tailscale-backend flicker, 2026-07).
+        this._cache[store] = null;
+        failed.push(store);
+        console.error(`[DB.preloadAll] "${store}" failed after retries:`, error?.message || error);
       }
     });
 
-    this._cacheReady = true;
+    // Only "ready" if every slice loaded — a partial load must not masquerade as complete.
+    this._cacheReady = failed.length === 0;
+    if (failed.length) {
+      window.app?.showNotification?.(
+        `Couldn't load ${failed.length} data set(s) — connection issue with the backend. ` +
+        `Data is safe; reload to retry.`, 'warning', { duration: 8000 });
+    }
+  },
+
+  // Fetch one store's rows with a timeout + bounded retries so a slow/flaky
+  // connection (e.g. the self-hosted Tailscale backend) doesn't turn a transient
+  // blip into an apparently-empty store. Returns { data, error } like supabase-js.
+  async _fetchStore(table, { attempts = 3, timeoutMs = 8000 } = {}) {
+    let lastErr = null;
+    for (let i = 0; i < attempts; i++) {
+      try {
+        const query = this._sb()
+          .from(table)
+          .select('data')
+          .eq('user_id', this._uid())
+          .order('created_at', { ascending: true });
+        const res = await Promise.race([
+          query,
+          new Promise((_, rej) => setTimeout(() => rej(new Error(`timeout after ${timeoutMs}ms`)), timeoutMs)),
+        ]);
+        if (!res.error) return { data: res.data, error: null };
+        lastErr = res.error;
+      } catch (e) {
+        lastErr = e;
+      }
+      if (i < attempts - 1) await new Promise(r => setTimeout(r, 500 * (i + 1))); // 0.5s, 1s backoff
+    }
+    return { data: null, error: lastErr };
   },
 
   _sb()  { return window.supabase; },
@@ -197,19 +226,22 @@ const DB = {
     const table = _TABLE_MAP[storeName];
     if (!table) return [];
 
-    // Serve from cache if ready — return shallow copy to prevent caller co-ownership
-    if (this._cacheReady && this._cache[storeName] !== null) {
+    // Serve from cache when this slice is populated — return a shallow copy to
+    // prevent caller co-ownership. Per-slice (not gated on the global _cacheReady)
+    // so a slice that failed preload stays null and re-fetches here instead of
+    // serving a stale/false value.
+    if (this._cache[storeName] !== null) {
       return [...this._cache[storeName]];
     }
 
-    // Fallback: live fetch
-    const { data, error } = await this._sb()
-      .from(table)
-      .select('data')
-      .eq('user_id', this._uid())
-      .order('created_at', { ascending: true });
-
-    if (error) { console.error('getAll error', storeName, error); return []; }
+    // Fallback: live fetch with timeout + retry.
+    const { data, error } = await this._fetchStore(table);
+    if (error) {
+      // Do NOT cache []: a failed fetch is not an empty store. Leave the slice
+      // null so a later call retries rather than locking in a false-empty.
+      console.error('getAll error', storeName, error?.message || error);
+      return [];
+    }
     const records = (data || []).map(row => row.data);
     this._cache[storeName] = records;
     return [...records];
