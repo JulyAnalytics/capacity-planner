@@ -27,6 +27,39 @@ const _nameSimilarity = (a, b) => {
 };
 const NEAR_MISS_THRESHOLD = 0.8; // "Travel" vs "Travel Planning" flags; unrelated names don't
 
+// Shared story-record builder — used by mergeImport's per-candidate loop and
+// by the standalone attachNewStoryToEpic (spec-triage queue drain, matched an
+// existing epic but no existing story). Pure except for the sprint lookup:
+// a candidate `startDate` resolves through sprintManager's chronological,
+// gap-free placement (see js/sprintManager.js resolveOrCreateSprintForDate)
+// instead of always landing sprintId: null.
+async function _buildStoryFields(epic, focusName, s, existingStories) {
+  const now = () => new Date().toISOString();
+  const newId = (type) => `${type}-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+  const sprintId = s.startDate
+    ? (await window.sprintManager.resolveOrCreateSprintForDate(s.startDate)).id
+    : null;
+  const peers     = existingStories.filter(x => (x.sprintId || null) === sprintId);
+  const cellPeers = existingStories.filter(x => (x.epicId || null) === epic.id && (x.sprintId || null) === sprintId);
+  return {
+    id: newId('story'), name: s.name.trim(), createdAt: now(), updatedAt: now(),
+    epicId: epic.id, sprintId,
+    sortOrder:     peers.reduce((m, x) => Math.max(m, x.sortOrder ?? -1), -1) + 1,
+    cellSortOrder: cellPeers.reduce((m, x) => Math.max(m, x.cellSortOrder ?? -1), -1) + 1,
+    focus: focusName,
+    description: s.description || '', priority: null,
+    month: String(new Date().getMonth() + 1).padStart(2, '0'),
+    weight: 1, status: STORY_STATUS.BACKLOG,
+    fibonacciSize: null, estimatedBlocks: null, timeSpent: 0,
+    actionItems: Array.isArray(s.actionItems)
+      ? s.actionItems.map(t => ({ id: `ai-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`, text: String(t), done: false, createdAt: now() }))
+      : [],
+    blocked: false, unblockedBy: null, estimateVariance: null, estimateAccuracy: null,
+    activatedAt: null, completedAt: null, abandonedAt: null, abandonReason: '', completed: false,
+    reviewState: REVIEW_STATE.PROPOSED, sourceRef: s.sourceRef || null,
+  };
+}
+
 const dataPortability = {
   // MOVED VERBATIM from CapacityManager.exportData (this.data→app.data, this.showNotification→app.showNotification).
   async exportData() {
@@ -177,7 +210,11 @@ const dataPortability = {
 
   // ── ADDITIVE candidate importer (Stage 4) ─────────────────────────────────
   // Contract: candidates-import.json { version:'candidates-1', focus, candidates:[
-  //   { subFocus, epic:{title, vision}, stories:[{name, description?, actionItems?}] } ] }
+  //   { subFocus, epic:{title, vision}, stories:[{name, description?, actionItems?,
+  //     startDate?, sourceRef?}] } ] }
+  // startDate (optional, ISO date) resolves sprintId via sprintManager's
+  // chronological placement instead of leaving it null; sourceRef (optional)
+  // carries triage/adapter provenance — see js/triageQueue.js.
   // @intent bulk additive import — putAll (never clear); the sanctioned bulk path
   // beside importData; single-story edits still funnel through storyWrites.
   async mergeImport(data) {
@@ -256,25 +293,7 @@ const dataPortability = {
       for (const s of cand.stories ?? []) {
         if (!s?.name?.trim()) { result.skippedStories++; continue; }
         if (liveStories.some(x => x.epicId === epic.id && _norm(x.name) === _norm(s.name))) { result.skippedStories++; continue; }
-        const peers     = liveStories.filter(x => (x.sprintId || null) === null);
-        const cellPeers = liveStories.filter(x => (x.epicId || null) === epic.id && (x.sprintId || null) === null);
-        const story = {
-          id: newId('story'), name: s.name.trim(), createdAt: now(), updatedAt: now(),
-          epicId: epic.id, sprintId: null,
-          sortOrder:     peers.reduce((m, x) => Math.max(m, x.sortOrder ?? -1), -1) + 1,
-          cellSortOrder: cellPeers.reduce((m, x) => Math.max(m, x.cellSortOrder ?? -1), -1) + 1,
-          focus: focus.name,
-          description: s.description || '', priority: null,
-          month: String(new Date().getMonth() + 1).padStart(2, '0'),
-          weight: 1, status: STORY_STATUS.BACKLOG,
-          fibonacciSize: null, estimatedBlocks: null, timeSpent: 0,
-          actionItems: Array.isArray(s.actionItems)
-            ? s.actionItems.map(t => ({ id: `ai-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`, text: String(t), done: false, createdAt: now() }))
-            : [],
-          blocked: false, unblockedBy: null, estimateVariance: null, estimateAccuracy: null,
-          activatedAt: null, completedAt: null, abandonedAt: null, abandonReason: '', completed: false,
-          reviewState: REVIEW_STATE.PROPOSED,
-        };
+        const story = await _buildStoryFields(epic, focus.name, s, liveStories);
         const gate = validateExternalInput('store:stories', story);
         const domain = gate.valid ? validateStory(story, { focusNames }) : { valid: false, errors: gate.errors };
         if (!domain.valid) { result.rejected.push({ type: 'story', name: story.name, errors: domain.errors }); continue; }
@@ -328,6 +347,48 @@ const dataPortability = {
     if (result.rejected.length) console.warn('mergeImport rejected records:', result.rejected);
     if (result.nearMisses.length) console.warn('mergeImport near-misses:', result.nearMisses);
     return result;
+  },
+
+  // ── ADDITIVE single-story importer, existing epic (spec-triage queue) ────
+  // For a queued spec that scored a confident match against an existing EPIC
+  // (js/triageQueue.js) but not against any existing STORY — skip subFocus/
+  // epic resolution entirely (the epic is already known) and create just the
+  // one story under it. Sibling of mergeImport, same additive/putAll/rollback
+  // shape, scaled to a batch of one. @see ADR-0007
+  async attachNewStoryToEpic(epicId, candidate) {
+    const app = window.app;
+    const epic = app.data.epics.find(e => e.id === epicId);
+    if (!epic) return { ok: false, reason: `epic ${epicId} not found` };
+    if (!candidate?.name?.trim()) return { ok: false, reason: 'missing candidate.name' };
+
+    const liveStories = app.data.stories;
+    if (liveStories.some(x => x.epicId === epicId && _norm(x.name) === _norm(candidate.name))) {
+      return { ok: true, skipped: true }; // idempotent re-run — already attached
+    }
+
+    const focus = app.data.focuses.find(f => f.id === epic.focusId);
+    const focusNames = app.data.focuses.map(f => f.name);
+    const story = await _buildStoryFields(epic, focus?.name || '', candidate, liveStories);
+
+    const gate = validateExternalInput('store:stories', story);
+    const domain = gate.valid ? validateStory(story, { focusNames }) : { valid: false, errors: gate.errors };
+    if (!domain.valid) return { ok: false, reason: 'validation failed', errors: domain.errors };
+
+    let snapshot;
+    try { snapshot = await snapshotAllStores(); }
+    catch (err) { return { ok: false, reason: `snapshot failed: ${err.message}` }; }
+    try {
+      await DB.putAll(DB.STORES.STORIES, [story]);
+    } catch (writeErr) {
+      const restore = await restoreFromSnapshot(snapshot);
+      return { ok: false, reason: `write failed: ${writeErr.message}`, restored: restore.restored };
+    }
+
+    app.data.stories = await DB.getAll(DB.STORES.STORIES);
+    NotificationRegistry.emit('story');
+    window.backlogView?.render();
+    app.updateLastSaved();
+    return { ok: true, story };
   },
 
   // ── ADDITIVE history importer (F4) ────────────────────────────────────────
@@ -459,5 +520,12 @@ const dataPortability = {
   },
 };
 
-// @owns dataPortability — whole-store export (version 5) + destructive full-replace import; every data-in/out path lives here.
+// @intent expose the existing normalized-Levenshtein helper + its near-miss
+// threshold for js/triageQueue.js's story/epic matching and js/inboxView.js's
+// live near-miss recompute — same algorithm/threshold the epic/subFocus check
+// already uses; reused rather than reimplemented or redefined.
+dataPortability._nameSimilarity = _nameSimilarity;
+dataPortability.NEAR_MISS_THRESHOLD = NEAR_MISS_THRESHOLD;
+
+// @owns dataPortability — whole-store export (version 5) + destructive full-replace import; every data-in/out path lives here. attachNewStoryToEpic adds a single-story additive path for an already-matched epic (spec-triage queue); _nameSimilarity exposed for js/triageQueue.js reuse.
 window.dataPortability = dataPortability;

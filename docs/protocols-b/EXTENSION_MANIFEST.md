@@ -20,7 +20,7 @@ This is the friction heatmap. Before scoping a feature, scan this table. If the 
 | New view | MEDIUM | `build.js`, `js/app.js` (switchTab + NotificationRegistry listeners), new view module | ~200 | **Semi-automated** — 3 edit sites + new file |
 | New modal | MEDIUM | `build.js`, `js/app.js` (ModalManager), new modal module | ~100 | **Semi-automated** — 3 edit sites + new file |
 | New migration | LOW | `js/migrationRunner.js` (function + register in run()) | ~50 | **Single-file** — migrationRunner.js only |
-| New DB store | LOW | `js/db.js` (_TABLE_MAP + preloadAll), `js/auth.js` (_resetCache) | ~30 | **Mechanical** — exactly 3 edit sites, always the same |
+| New DB store | LOW | `js/db.js` (_TABLE_MAP + STORES + _cache + preloadAll), `js/auth.js` (_resetCache) | ~30 | **Mechanical** — exactly 5 edit sites, always the same |
 | New BroadcastChannel | LOW | `js/constants.js`, broadcaster module, listener module(s) | ~40 | **Semi-automated** — 1 constant + N subscribers |
 | Add field to existing entity | LOW | `js/dbValidator.js`, `js/creationModal.js`, `js/backlogDetailPanel.js`, `js/barricade.js` | ~40 | **Semi-automated** — 4 files, predictable |
 | Add validation rule | LOW | `js/dbValidator.js` (field check), `js/businessRules.js` (transition rule if status-related) | ~20 | **Single-file** (or 2 if business rules) |
@@ -62,3 +62,4 @@ The extraction itself gets its own task spec and is completed first.
 | Date | Change | Friction change |
 |------|--------|----------------|
 | 2026-05-14 | Initial manifest | — |
+| 2026-07-19 | New DB store row corrected against the `import_queue` addition (14th store, ADR-0007): 5 mechanical edit sites, not 3 — the STORES enum and `_cache` seed in `js/db.js` were missing from the list | none (still LOW) |

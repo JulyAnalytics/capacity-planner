@@ -6,7 +6,7 @@
 > This lists every store (coverage-complete) and renders the fields annotated
 > in `schema.yaml`. Add a field note in `schema.yaml` to make it appear here.
 
-- **Stores documented:** 13 (all of `DB.STORES`)
+- **Stores documented:** 14 (all of `DB.STORES`)
 
 ## CALENDAR → `calendar`
 
@@ -65,7 +65,7 @@ Supabase table: `stories`
 | `id` | created via creationModal generic `${type}-${Date.now()}-${rand}`. |
 | `reviewState` | enum 'proposed'\|'approved'\|'discarded'; ABSENT = approved (legacy + modal-created rows). Set 'proposed' by candidate import (Stage 4 mergeImport); Inbox (Stage 5) sets 'approved' on save, 'discarded' on discard. Existing rows seeded 'approved' by migrateStoriesToIncludeReviewState. |
 | `sortOrder` | sprint-scoped rank; seeded by migrateStoriesToIncludeSortOrder. |
-| `sourceRef` | string\|null — provenance of imported/historical stories (spec filename or git commit hash). Set by importHistoryManifest; null for app-created rows (seeded by migrateStoriesToIncludeSourceRef). |
+| `sourceRef` | string\|null — provenance of imported/historical stories: spec filename or git commit hash (importHistoryManifest), or a triage/adapter native_ref e.g. `claude-fs://…` (js/triageQueue.js attach/create paths). Null for app-created rows (seeded by migrateStoriesToIncludeSourceRef). |
 
 ## DAILY_LOGS → `dailyLogs`
 
@@ -130,4 +130,15 @@ Supabase table: `day_type_overrides`
 > Per-day capacity overrides, feed sprint capacity headers.
 
 _(no field annotations yet — add `store.field: note` in `schema.yaml`.)_
+
+## IMPORT_QUEUE → `importQueue`
+
+Supabase table: `import_queue`
+
+> Spec-triage handoff (migrations/20260719_import_queue.sql) — new Ashurbanipal Triage entries + the A-capacity-planner archive reconciliation land here for js/triageQueue.js to drain into attach/epic-match/create outcomes. Rows inserted by the Mini-side pipeline (service-role key, bypasses RLS) as well as read/updated by the browser session.
+
+| field | note |
+|---|---|
+| `contentHash` | sha256 of the source file's content; the dedup/idempotency key. |
+| `status` | enum 'pending'\|'processed'. Never deleted on processing — status flip only, so the unique (user_id, contentHash) index keeps guarding against re-queuing an already-seen file. |
 

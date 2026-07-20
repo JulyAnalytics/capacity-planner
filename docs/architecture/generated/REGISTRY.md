@@ -4,10 +4,10 @@
 
 > Pure structure derived from source. Counts are read from live code.
 
-- **DB.STORES count:** 13
-- **Supabase tables:** 12 (+ 1 localStorage-only `metadata`)
+- **DB.STORES count:** 14
+- **Supabase tables:** 13 (+ 1 localStorage-only `metadata`)
 - **ENTITY_TO_STORE count:** 11
-- **JS_FILES (build order) count:** 33
+- **JS_FILES (build order) count:** 34
 - **MIGRATIONS count:** 13
 
 ## Stores ↔ entities ↔ tables
@@ -27,6 +27,7 @@
 | TRAVEL_SEGMENTS | `travelSegments` | `travel_segments` | `travelSegment` |
 | LOCATION_PERIODS | `locationPeriods` | `location_periods` | `locationPeriod` |
 | DAY_TYPE_OVERRIDES | `dayTypeOverrides` | `day_type_overrides` | `dayTypeOverride` |
+| IMPORT_QUEUE | `importQueue` | `import_queue` | — |
 
 ## Enums + values
 
@@ -52,18 +53,18 @@
 | stem | sites |
 |---|---|
 | `${prefix}-{…}` | `utils.js:235` |
-| `${type}-{…}` | `creationModal.js:657`, `dataPortability.js:210` |
-| `ai-{…}` | `app.js:1147`, `app.js:442`, `backlogDetailPanel.js:603`, `dataPortability.js:272` |
-| `att-{…}` | `storyAttachmentPanel.js:90` |
+| `${type}-{…}` | `creationModal.js:657`, `dataPortability.js:247`, `dataPortability.js:38` |
+| `ai-{…}` | `app.js:1148`, `app.js:442`, `backlogDetailPanel.js:603`, `dataPortability.js:55` |
+| `att-{…}` | `storyAttachmentPanel.js:90`, `triageQueue.js:69` |
 | `bdp-ai-input-{…}` | `backlogDetailPanel.js:598` |
 | `bdp-seg-dt-{…}` | `backlogDetailPanel.js:1377` |
-| `capacity-data-{…}` | `dataPortability.js:54` |
+| `capacity-data-{…}` | `dataPortability.js:87` |
 | `crypto.randomUUID(){…}` | `locationManager.js:24`, `sprintManager.js:23`, `sprintManager.js:69` |
 | `cv-dt-val-{…}` | `calendarView.js:1119` |
-| `focus-{…}` | `app.js:796`, `migrationRunner.js:186` |
+| `focus-{…}` | `app.js:797`, `migrationRunner.js:186` |
 | `loc-{…}` | `locationManager.js:24` |
 | `log-{…}` | `dailyLogOverlay.js:155`, `dailyLogOverlay.js:183`, `dailyLogOverlay.js:313`, `dailyLogOverlay.js:423` |
-| `plan-{…}` | `db.js:393`, `db.js:402`, `db.js:417`, `db.js:449`, `db.js:461`, `db.js:476` |
+| `plan-{…}` | `db.js:397`, `db.js:406`, `db.js:421`, `db.js:453`, `db.js:465`, `db.js:480` |
 | `seg-{…}` | `sprintManager.js:69` |
 | `sf-{…}` | `migrationRunner.js:16`, `migrationRunner.js:30` |
 | `snapshot-{…}` | `errorHandler.js:136` |
@@ -102,8 +103,9 @@
 29. `js/dailyLogOverlay.js`
 30. `js/importUtils.js`
 31. `js/dataPortability.js`
-32. `js/migrationRunner.js`
-33. `js/app.js`
+32. `js/triageQueue.js`
+33. `js/migrationRunner.js`
+34. `js/app.js`
 
 ## Migration list (ordered, with guard keys)
 

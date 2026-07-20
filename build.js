@@ -39,6 +39,7 @@ const JS_FILES = [
   'js/dailyLogOverlay.js',
   'js/importUtils.js',
   'js/dataPortability.js',
+  'js/triageQueue.js',
   'js/migrationRunner.js',
   'js/app.js',
 ];

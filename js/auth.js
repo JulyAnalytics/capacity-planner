@@ -121,6 +121,7 @@ function _resetCache() {
     travelSegments:   null,
     locationPeriods:  null,
     dayTypeOverrides: null,
+    importQueue:      null,
   };
   window.DB._cacheReady = false;
 }

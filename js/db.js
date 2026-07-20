@@ -17,6 +17,7 @@ const _TABLE_MAP = {
   travelSegments:  'travel_segments',
   locationPeriods:  'location_periods',
   dayTypeOverrides: 'day_type_overrides',
+  importQueue:      'import_queue',
   metadata:        null  // stored in localStorage, not synced
 };
 
@@ -47,6 +48,7 @@ const DB = {
     TRAVEL_SEGMENTS:   'travelSegments',
     LOCATION_PERIODS:   'locationPeriods',
     DAY_TYPE_OVERRIDES: 'dayTypeOverrides',
+    IMPORT_QUEUE:       'importQueue',
   },
 
   _cache: {
@@ -62,6 +64,7 @@ const DB = {
     travelSegments:   null,
     locationPeriods:  null,
     dayTypeOverrides: null,
+    importQueue:      null,
   },
   _cacheReady: false,
 
@@ -88,6 +91,7 @@ const DB = {
       { store: 'travelSegments',   table: 'travel_segments'   },
       { store: 'locationPeriods',  table: 'location_periods'  },
       { store: 'dayTypeOverrides', table: 'day_type_overrides' },
+      { store: 'importQueue',      table: 'import_queue'       },
     ];
 
     const results = await Promise.all(

@@ -102,6 +102,71 @@ export async function getSegmentsForSprint(sprintId) {
             .sort((a, b) => a.startDate.localeCompare(b.startDate));
 }
 
+// ── Chronological sprint resolution (spec-triage date inference) ──────────────
+
+const _DAY_MS = 24 * 60 * 60 * 1000;
+// validateSprint only accepts 1 or 2 — not a free tunable, this is the ceiling.
+const _DEFAULT_DURATION_WEEKS = 2;
+
+const _startMs = (s) => new Date(s.startDate + 'T00:00:00Z').getTime();
+const _endMs   = (s) => _startMs(s) + s.durationWeeks * 7 * _DAY_MS;
+const _isoDate = (ms) => new Date(ms).toISOString().slice(0, 10);
+
+/**
+ * Given an inferred date, return the sprint whose window covers it — creating
+ * sprint(s) contiguously forward/backward from the nearest edge of the known
+ * range if none does, so the lattice never gets a gap that needs backfilling.
+ * @intent process candidates in ascending date order (caller's responsibility)
+ * so each call only ever has to extend the schedule at one end, never fill
+ * a hole in the middle — that's what keeps it gap-free by construction.
+ */
+export async function resolveOrCreateSprintForDate(dateStr) {
+  const target = new Date(dateStr + 'T00:00:00Z').getTime();
+  const all = (await DB.getAll(DB.STORES.SPRINTS))
+    .slice().sort((a, b) => a.startDate.localeCompare(b.startDate));
+
+  const covering = all.find(s => target >= _startMs(s) && target < _endMs(s));
+  if (covering) return covering;
+
+  if (!all.length) {
+    return createSprint({ startDate: dateStr, durationWeeks: _DEFAULT_DURATION_WEEKS });
+  }
+
+  const first = all[0], last = all[all.length - 1];
+
+  if (target >= _endMs(last)) {
+    let cursor = last;
+    while (target >= _endMs(cursor)) {
+      cursor = await createSprint({
+        startDate: _isoDate(_endMs(cursor)), durationWeeks: _DEFAULT_DURATION_WEEKS,
+      });
+    }
+    return cursor;
+  }
+
+  if (target < _startMs(first)) {
+    let cursor = first;
+    while (target < _startMs(cursor)) {
+      cursor = await createSprint({
+        startDate: _isoDate(_startMs(cursor) - _DEFAULT_DURATION_WEEKS * 7 * _DAY_MS),
+        durationWeeks: _DEFAULT_DURATION_WEEKS,
+      });
+    }
+    return cursor;
+  }
+
+  // target falls inside a gap that already exists between two known sprints
+  // (pre-existing in the schedule, not one this function created) — attach
+  // to the nearest edge rather than fabricating a sprint inside someone
+  // else's already-established plan.
+  let nearest = first, nearestDist = Infinity;
+  for (const s of all) {
+    const dist = Math.min(Math.abs(target - _startMs(s)), Math.abs(target - _endMs(s)));
+    if (dist < nearestDist) { nearest = s; nearestDist = dist; }
+  }
+  return nearest;
+}
+
 // ── Counter management ────────────────────────────────────────────────────────
 
 async function _incrementSprintCounter() {
@@ -139,14 +204,16 @@ class _SprintValidationError extends Error {
 }
 
 // ── Global export ─────────────────────────────────────────────────────────────
-// @owns sprintManager — sprint + travel-segment CRUD; emits sprint/travelSegment.
+// @owns sprintManager — sprint + travel-segment CRUD; emits sprint/travelSegment; resolveOrCreateSprintForDate resolves chronological sprint placement for triage-inferred dates.
 
 window.sprintManager = {
   createSprint, updateSprint, completeSprint,
   createSegment, updateSegment, deleteSegment, getSegmentsForSprint,
+  resolveOrCreateSprintForDate,
 };
 
 export default {
   createSprint, updateSprint, completeSprint,
   createSegment, updateSegment, deleteSegment, getSegmentsForSprint,
+  resolveOrCreateSprintForDate,
 };

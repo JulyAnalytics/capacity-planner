@@ -706,6 +706,7 @@ class CapacityManager {
       this._initCapacityPlannerChannel();
       // Calendar is the default tab — render it on init
       this.switchTab('calendar');
+      window.triageQueue?.start(); // drain import_queue now + every 5min while open
     } catch (error) {
       console.error('Init failed:', error);
       this.showNotification('Failed to initialize: ' + error.message, 'error');

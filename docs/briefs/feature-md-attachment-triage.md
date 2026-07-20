@@ -2,7 +2,15 @@
 
 **Author:** Jun
 **Date:** 2026-06-23
-**Status:** Draft
+**Status:** Superseded (2026-07-19) — Stages 0–1 shipped as specced (Task
+Candidate-Import+Attachments+History, 2026-07-07). Stage 2's matching
+algorithm and thresholds shipped 2026-07-19, but as a **server-fed queue**
+(`import_queue` + `js/triageQueue.js`), not the browser drop-zone this brief
+assumed — the Ashurbanipal triage pipeline (which postdates this brief) made
+the "filesystem folder watching" non-goal obsolete by watching the folder
+from the Mini instead. See ADR-0007 for the revised design and its
+attach/epic-match/create dispatch. The drop-zone UI and disambiguation modal
+were not built; the Inbox's live near-miss advisories took their place.
 
 ---
 

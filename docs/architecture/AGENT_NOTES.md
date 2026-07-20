@@ -49,6 +49,26 @@ Config: `playwright.config.ts` — port 8080, `python3 -m http.server`. Auth fro
   `JSON.stringify(Object.fromEntries(Object.entries(localStorage).filter(([k]) => k.startsWith("sb-"))))`
   → paste into `.env` as `SUPABASE_AUTH_STATE=<paste>`.
 
+## Spec-triage import queue (ADR-0007)
+- **Flow:** Mini-side writers (`knowledge-library` repo: `pipeline/triage/capacity_queue.py`,
+  called by the triage router's `capacity` branch and `scripts/reconcile_capacity_archive.py`)
+  INSERT raw rows → `js/triageQueue.js` drains on app load + every 5 min while
+  open → attach (>0.85 story match, via `storyWrites`) / new story under matched
+  epic (≥0.5, `dataPortability.attachNewStoryToEpic`) / create epic+story under
+  the `Admin` focus (`mergeImport`). All outcomes land `reviewState: proposed`
+  except direct attachments to existing stories.
+- **Provisioning (one-time, in order):** (1) run `migrations/20260719_import_queue.sql`
+  in self-host Supabase Studio; (2) service-role key as `CAPACITY_QUEUE_KEY` in
+  the Mini's `~/.config/knowledge-library/env`; (3) planner user's auth UUID as
+  `sources.capacity.queue_user_id` in the Mini's `config.yaml`. Until all three
+  exist the Mini logs a warning and skips enqueueing — triage routing itself is
+  never blocked.
+- **Dates:** `extractedDates` provenance order is frontmatter `date:` → content
+  `**Date:**` line → filename `DD-MM-YY` → file mtime (computed Mini-side in
+  `parse_candidates.py extract_date`).
+- The Inbox recomputes near-miss advisories live per render (`_nearMissAdvisory`
+  in `inboxView.js`) — nothing is carried from import time.
+
 ## Vendored library
 `vendor/sortablejs/Sortable.min.js` exposes `window.Sortable` (bundled 3rd in JS_FILES).
 

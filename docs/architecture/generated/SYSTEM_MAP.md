@@ -37,8 +37,9 @@
 29. `js/dailyLogOverlay.js`
 30. `js/importUtils.js`
 31. `js/dataPortability.js`
-32. `js/migrationRunner.js`
-33. `js/app.js`
+32. `js/triageQueue.js`
+33. `js/migrationRunner.js`
+34. `js/app.js`
 
 ## Module table
 
@@ -63,7 +64,7 @@
 | 17 | `performance.js` | — | — |
 | 18 | `mobileOptimizations.js` | — | — |
 | 19 | `creationModal.js` | `closeCreationModal`, `isModalOpen`, `openCreationModal`, `renderForm` | openCreationModal — opens the entity creation modal; routes form config.; closeCreationModal — tears down the modal + restores scroll/focus.; isModalOpen — predicate used by mobile/key handlers.; renderForm — renders the creation form fields from a config object. |
-| 20 | `sprintManager.js` | `sprintManager` | sprintManager — sprint + travel-segment CRUD; emits sprint/travelSegment. |
+| 20 | `sprintManager.js` | `sprintManager` | sprintManager — sprint + travel-segment CRUD; emits sprint/travelSegment; resolveOrCreateSprintForDate resolves chronological sprint placement for triage-inferred dates. |
 | 21 | `sprintCapacity.js` | — | — |
 | 22 | `sprintAllocation.js` | — | — |
 | 23 | `backlogView.js` | `_backlogEpicFilter`, `backlogView` | _backlogEpicFilter — accessor exposing the current epic filter to the detail panel.; backlogView — backlog + sprint + story-map views; listens on story/epic/sprint/travelSegment/locationPeriod/dayTypeOverride. |
@@ -74,18 +75,23 @@
 | 28 | `calendarView.js` | `calendarView` | calendarView — calendar render + navigation; emits locationPeriod/dayTypeOverride. |
 | 29 | `dailyLogOverlay.js` | `dailyLogOverlay` | dailyLogOverlay — per-day log overlay; reads/writes dailyLogs (id `log-<date>`). |
 | 30 | `importUtils.js` | — | — |
-| 31 | `dataPortability.js` | `dataPortability` | dataPortability — whole-store export (version 5) + destructive full-replace import; every data-in/out path lives here. |
-| 32 | `migrationRunner.js` | — | — |
-| 33 | `app.js` | `app` | app — CapacityManager singleton; the view-layer coordinator + god-class. |
+| 31 | `dataPortability.js` | `dataPortability` | dataPortability — whole-store export (version 5) + destructive full-replace import; every data-in/out path lives here. attachNewStoryToEpic adds a single-story additive path for an already-matched epic (spec-triage queue); _nameSimilarity exposed for js/triageQueue.js reuse. |
+| 32 | `triageQueue.js` | `triageQueue` | triageQueue — drains import_queue (new Ashurbanipal Triage entries + the |
+| 33 | `migrationRunner.js` | — | — |
+| 34 | `app.js` | `app` | app — CapacityManager singleton; the view-layer coordinator + god-class. |
 
 ## Behavioral notes (source docblocks: @intent / @rationale / @see)
 
-- `db.js:119` — **@intent:** _uid()-before-await ordering — SessionExpiredError must reject the caller's promise, never be swallowed internally.
+- `db.js:123` — **@intent:** _uid()-before-await ordering — SessionExpiredError must reject the caller's promise, never be swallowed internally.
 - `storyWrites.js:1` — **@rationale:** single-writer contract — every story mutation funnels here so optimistic mutation, rollback, and the 'story' notification payload are uniform. **@see:** ADR-0006
 - `storyWrites.js:39` — **@intent:** the {reorder:true} payload is a NO-OP patch — Sortable already placed the DOM, so _handleStoryNotification early-returns and the view patches once per drag, not once per story.
+- `sprintManager.js:115` — **@intent:** process candidates in ascending date order (caller's responsibility)
 - `storyAttachmentPanel.js:149` — **@intent:** innerHTML of marked output — single-user app rendering the user's own
-- `dataPortability.js:178` — **@intent:** bulk additive import — putAll (never clear); the sanctioned bulk path
-- `dataPortability.js:333` — **@intent:** bulk additive import — putAll, no clear; sanctioned bulk path.
+- `inboxView.js:20` — **@intent:** this is the
+- `dataPortability.js:211` — **@intent:** bulk additive import — putAll (never clear); the sanctioned bulk path
+- `dataPortability.js:394` — **@intent:** bulk additive import — putAll, no clear; sanctioned bulk path.
+- `dataPortability.js:523` — **@intent:** expose the existing normalized-Levenshtein helper + its near-miss
+- `triageQueue.js:141` — **@intent:** process in ascending inferred-date order — resolveOrCreateSprintForDate
 
 ## Migration ordering
 

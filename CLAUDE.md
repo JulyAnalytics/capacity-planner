@@ -50,4 +50,4 @@ sharing a store, describable in one sentence without "and").
 `Last updated: YYYY-MM-DD after Task NNN — [one sentence]`
 - Completion reports must state: `CLAUDE.md updated: YES` (or `NO — reason: …`).
 
-`Last updated: 2026-07-07 after Task Candidate-Import+Attachments+History — dataPortability extracted (exportData/importData/mergeImport/importHistoryManifest); Inbox view + Inbox-only sidebar (jump-links removed); reviewState/attachments/sourceRef story fields + 3 migrations; storyAttachmentPanel + Storage bucket; parseCandidates.mjs. Stores still 13.`
+`Last updated: 2026-07-19 after Task Spec-Triage-Queue — import_queue store (14th) + triageQueue.js drain/match/dispatch (ADR-0007); resolveOrCreateSprintForDate; mergeImport startDate/sourceRef + attachNewStoryToEpic; Inbox live near-miss advisories. Mini-side writers live in the knowledge-library repo.`

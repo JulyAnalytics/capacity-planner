@@ -29,7 +29,7 @@ stories.cellSortOrder: per-cell (epic×sprint) rank in the story map; sibling of
 stories.actionItems: array; seeded by migrateStoriesToIncludeActionItems.
 stories.reviewState: enum 'proposed'|'approved'|'discarded'; ABSENT = approved (legacy + modal-created rows). Set 'proposed' by candidate import (Stage 4 mergeImport); Inbox (Stage 5) sets 'approved' on save, 'discarded' on discard. Existing rows seeded 'approved' by migrateStoriesToIncludeReviewState.
 stories.attachments: array (default []); items {id 'att-…', filename, storageKey '{uid}/{storyId}/{attId}/{filename}', size, type ATTACHMENT_TYPES, version ≥1, createdAt}. Content lives in private Storage bucket capacity-planner-docs (RLS user-scoped); records here are pointers only. Seeded by migrateStoriesToIncludeAttachments.
-stories.sourceRef: string|null — provenance of imported/historical stories (spec filename or git commit hash). Set by importHistoryManifest; null for app-created rows (seeded by migrateStoriesToIncludeSourceRef).
+stories.sourceRef: string|null — provenance of imported/historical stories: spec filename or git commit hash (importHistoryManifest), or a triage/adapter native_ref e.g. `claude-fs://…` (js/triageQueue.js attach/create paths). Null for app-created rows (seeded by migrateStoriesToIncludeSourceRef).
 
 dailyLogs._store: Per-day log entries keyed `log-<dateStr>`.
 
@@ -46,3 +46,7 @@ travelSegments._store: Travel segments per sprint, id `seg-<uuid>`.
 locationPeriods._store: Location-bound capacity periods, id `loc-<uuid>`.
 
 dayTypeOverrides._store: Per-day capacity overrides, feed sprint capacity headers.
+
+importQueue._store: Spec-triage handoff (migrations/20260719_import_queue.sql) — new Ashurbanipal Triage entries + the A-capacity-planner archive reconciliation land here for js/triageQueue.js to drain into attach/epic-match/create outcomes. Rows inserted by the Mini-side pipeline (service-role key, bypasses RLS) as well as read/updated by the browser session.
+importQueue.status: enum 'pending'|'processed'. Never deleted on processing — status flip only, so the unique (user_id, contentHash) index keeps guarding against re-queuing an already-seen file.
+importQueue.contentHash: sha256 of the source file's content; the dedup/idempotency key.

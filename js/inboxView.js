@@ -17,6 +17,48 @@ const _breadcrumb = (story) => {
   return [sf?.name, epic?.name].filter(Boolean).join(' › ') || '—';
 };
 
+// ── Near-miss advisory, recomputed live (not carried from creation time) ────
+// Same name-similarity check mergeImport already runs for epic/subFocus
+// near-misses (and would run for a triage-queue story match) — but recomputed
+// fresh against current data on every render, so it works regardless of which
+// path created the proposed item and survives a reload. @intent this is the
+// concrete fix for "propose new epics/sub-focuses... approved within the
+// inbox flow" — mergeImport already computed these, it just only console.warn'd.
+const _nameSim = (a, b) => window.dataPortability?._nameSimilarity(a, b) ?? 0;
+const _NEAR_MISS = window.dataPortability?.NEAR_MISS_THRESHOLD ?? 0.8;
+
+const _nearMissAdvisory = (story) => {
+  const epics = window.app?.data?.epics || [];
+  const subFocuses = window.app?.data?.subFocuses || [];
+  const stories = window.app?.data?.stories || [];
+  const epic = epics.find(e => e.id === story.epicId);
+  if (!epic) return null;
+
+  const siblingEpic = epics
+    .filter(e => e.id !== epic.id && e.focusId === epic.focusId)
+    .map(e => ({ name: e.name, score: _nameSim(e.name, epic.name) }))
+    .filter(x => x.score >= _NEAR_MISS)
+    .sort((a, b) => b.score - a.score)[0];
+  if (siblingEpic) return `possible duplicate epic: "${siblingEpic.name}" (${siblingEpic.score.toFixed(2)})`;
+
+  const sf = subFocuses.find(x => x.id === epic.subFocusId);
+  const siblingSubFocus = sf && subFocuses
+    .filter(x => x.id !== sf.id && x.focusId === sf.focusId)
+    .map(x => ({ name: x.name, score: _nameSim(x.name, sf.name) }))
+    .filter(x => x.score >= _NEAR_MISS)
+    .sort((a, b) => b.score - a.score)[0];
+  if (siblingSubFocus) return `possible duplicate sub-focus: "${siblingSubFocus.name}" (${siblingSubFocus.score.toFixed(2)})`;
+
+  const siblingStory = stories
+    .filter(s => s.id !== story.id && s.reviewState !== REVIEW_STATE.DISCARDED)
+    .map(s => ({ name: s.name, score: _nameSim(s.name, story.name) }))
+    .filter(x => x.score >= _NEAR_MISS)
+    .sort((a, b) => b.score - a.score)[0];
+  if (siblingStory) return `possible duplicate story: "${siblingStory.name}" (${siblingStory.score.toFixed(2)})`;
+
+  return null;
+};
+
 // Named renderInbox (not render) — a bare top-level `render` collides with
 // calendarView.js's own top-level `function render(opts = {})` once every
 // module is concatenated into one shared IIFE scope (no per-file wrapping).
@@ -27,7 +69,9 @@ const renderInbox = () => {
   const items = _proposed();
   const newEpicIds = new Set((_lastImportRun?.createdEpicIds) || []);
 
-  const cards = items.map(s => `
+  const cards = items.map(s => {
+    const advisory = _nearMissAdvisory(s);
+    return `
     <div class="inbox-card" data-story-id="${esc(s.id)}"
          onclick="if (event.target.closest('button')) return; app.modal.openForApproval('story', '${esc(s.id)}')">
       <div class="inbox-card-line1">
@@ -39,7 +83,11 @@ const renderInbox = () => {
         <span class="inbox-breadcrumb">${esc(_breadcrumb(s))}</span>
         ${newEpicIds.has(s.epicId) ? '<span class="inbox-tag inbox-tag--new">new epic</span>' : ''}
       </div>
-    </div>`).join('');
+      ${advisory ? `<div class="inbox-card-line3">
+        <span class="inbox-tag inbox-tag--warn">${esc(advisory)}</span>
+      </div>` : ''}
+    </div>`;
+  }).join('');
 
   rootEl.innerHTML = `
     <div class="card">
