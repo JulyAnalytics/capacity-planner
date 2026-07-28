@@ -26,6 +26,12 @@ let _touchStartY      = 0;
 
 let _currentSprintId = null;
 
+// PERF (B7): hoisted once instead of allocating a fresh MediaQueryList on every
+// panel open (open/openEpic/openFocus/openSubFocus all call _attachPanelSwipeToClose).
+const _pointerFineMql = typeof window !== 'undefined' && window.matchMedia
+  ? window.matchMedia('(pointer: fine)')
+  : null;
+
 // Two-step inline confirm (the location-period delete pattern, promoted to the
 // panel's standard — design-review pass 1 B7): first click arms for 4s.
 let _pendingConfirm = null; // { key, timer }
@@ -734,7 +740,7 @@ function _attachPanelSwipeToClose() {
   // @intent coarse pointers only. Docked, the panel is persistent furniture
   // rather than a modal, and a trackpad flick should not dismiss it
   // (design-review: "persistent, not modal").
-  if (window.matchMedia('(pointer: fine)').matches) return;
+  if (_pointerFineMql?.matches) return;
   const el = container();
   el.removeEventListener('touchstart', _onTouchStart);
   el.removeEventListener('touchend',   _onTouchEnd);

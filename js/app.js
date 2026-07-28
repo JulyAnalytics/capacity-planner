@@ -600,14 +600,21 @@ class CapacityManager {
     const i = this.data.dailyLogs.findIndex(l => l.date === log.date);
     if (i >= 0) this.data.dailyLogs[i] = log;
     else this.data.dailyLogs.push(log);
-    if (window.calendarView) window.calendarView.render();
+    // PERF (B1): this is called on EVERY daily-log write (done-tick, floor toggle,
+    // capacity adjust, note save). The old code called window.calendarView.render()
+    // directly and synchronously — a full month-grid rebuild on every interaction,
+    // bypassing the NotificationRegistry and the visibility guard. Now route through
+    // renderIfVisible so the calendar only rebuilds when it's actually visible (and
+    // is marked dirty otherwise, rendered once on next switchTab).
+    window.calendarView?.renderIfVisible?.();
   }
 
   removeDailyLogInMemory(date) {
     if (Array.isArray(this.data.dailyLogs)) {
       this.data.dailyLogs = this.data.dailyLogs.filter(l => l.date !== date);
     }
-    if (window.calendarView) window.calendarView.render();
+    // PERF (B1): same as upsertDailyLogInMemory — respect the visibility guard.
+    window.calendarView?.renderIfVisible?.();
   }
 
   upsertSprintInMemory(sprint) {
@@ -740,18 +747,38 @@ class CapacityManager {
 
   // Data Loading
   async loadAllData() {
-    this.data.calendar        = await DB.getAll(DB.STORES.CALENDAR);
-    this.data.priorities      = await DB.getAll(DB.STORES.PRIORITIES);
-    this.data.subFocuses      = await DB.getAll(DB.STORES.SUB_FOCUSES);
-    this.data.epics           = await DB.getAll(DB.STORES.EPICS);
-    this.data.stories         = await DB.getAll(DB.STORES.STORIES);
-    this.data.dailyLogs       = await DB.getAll(DB.STORES.DAILY_LOGS);
-    this.data.monthlyPlans    = await DB.getAll(DB.STORES.MONTHLY_PLANS);
-    this.data.focuses         = await DB.getAll(DB.STORES.FOCUSES);
-    this.data.sprints         = await DB.getAll(DB.STORES.SPRINTS);
-    this.data.travelSegments  = await DB.getAll(DB.STORES.TRAVEL_SEGMENTS);
-    this.data.locationPeriods  = await DB.getAll(DB.STORES.LOCATION_PERIODS);
-    this.data.dayTypeOverrides = await DB.getAll(DB.STORES.DAY_TYPE_OVERRIDES);
+    // PERF (D3): these 12 reads are independent and all hit the in-memory cache
+    // in db.js (no IndexedDB I/O after preloadAll). Running them as one
+    // Promise.all removes ~11 sequential await hops before first paint.
+    const [
+      calendar, priorities, subFocuses, epics, stories, dailyLogs,
+      monthlyPlans, focuses, sprints, travelSegments, locationPeriods, dayTypeOverrides,
+    ] = await Promise.all([
+      DB.getAll(DB.STORES.CALENDAR),
+      DB.getAll(DB.STORES.PRIORITIES),
+      DB.getAll(DB.STORES.SUB_FOCUSES),
+      DB.getAll(DB.STORES.EPICS),
+      DB.getAll(DB.STORES.STORIES),
+      DB.getAll(DB.STORES.DAILY_LOGS),
+      DB.getAll(DB.STORES.MONTHLY_PLANS),
+      DB.getAll(DB.STORES.FOCUSES),
+      DB.getAll(DB.STORES.SPRINTS),
+      DB.getAll(DB.STORES.TRAVEL_SEGMENTS),
+      DB.getAll(DB.STORES.LOCATION_PERIODS),
+      DB.getAll(DB.STORES.DAY_TYPE_OVERRIDES),
+    ]);
+    this.data.calendar        = calendar;
+    this.data.priorities      = priorities;
+    this.data.subFocuses      = subFocuses;
+    this.data.epics           = epics;
+    this.data.stories         = stories;
+    this.data.dailyLogs       = dailyLogs;
+    this.data.monthlyPlans    = monthlyPlans;
+    this.data.focuses         = focuses;
+    this.data.sprints         = sprints;
+    this.data.travelSegments  = travelSegments;
+    this.data.locationPeriods  = locationPeriods;
+    this.data.dayTypeOverrides = dayTypeOverrides;
   }
 
   // ── capacity_planner BroadcastChannel (location periods + overrides) ──────
@@ -927,7 +954,11 @@ class CapacityManager {
 
   // Navigation
   setupNavigation() {
-    document.querySelectorAll('.nav-tab').forEach(tab => {
+    // PERF (B3): cache the nav-tab and tab-content node lists once at setup time
+    // instead of re-running querySelectorAll on every switchTab call.
+    this._navTabs = Array.from(document.querySelectorAll('.nav-tab'));
+    this._tabContents = Array.from(document.querySelectorAll('.tab-content'));
+    this._navTabs.forEach(tab => {
       tab.addEventListener('click', () => this.switchTab(tab.dataset.tab));
     });
   }
@@ -936,12 +967,12 @@ class CapacityManager {
   // Story Map · Inbox · Analytics. Backlog keeps its last list mode (sprint /
   // focus) — group-by is a sort control inside the view, not a tab.
   switchTab(tabName) {
-    const tabs = document.querySelectorAll('.nav-tab');
+    const tabs = this._navTabs || (this._navTabs = Array.from(document.querySelectorAll('.nav-tab')));
     tabs.forEach(t => t.classList.remove('active'));
-    const btn = document.querySelector(`.nav-tab[data-tab="${tabName}"]`);
+    const btn = tabs.find(t => t.dataset.tab === tabName);
     if (btn) btn.classList.add('active');
 
-    const contents = document.querySelectorAll('.tab-content');
+    const contents = this._tabContents || (this._tabContents = Array.from(document.querySelectorAll('.tab-content')));
     contents.forEach(c => c.classList.remove('active'));
 
     this.currentTab = tabName;
@@ -956,7 +987,10 @@ class CapacityManager {
 
     if (tabName === 'calendar') {
       activate('calendar');
-      this.renderCalendarSkeleton();
+      // PERF (B1): calendarView.render() is fully synchronous, so the skeleton
+      // here was a pure double-paint (written then overwritten in the same tick).
+      // Render directly. The async backlog/storymap tabs below still use a skeleton
+      // to fill the gap during their await.
       if (window.calendarView) {
         const container = document.getElementById('calendar-root');
         window.calendarView.render({ container });

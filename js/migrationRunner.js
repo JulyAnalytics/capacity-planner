@@ -609,8 +609,26 @@ const MigrationRunner = {
       console.log('MigrationRunner: skipped (audit read-only mode)');
       return;
     }
+
+    // PERF (D2): each migration already self-guards via its own METADATA key, so
+    // after first run the loop is 17 no-op DB.get calls on every boot. Short-
+    // circuit the whole loop when the recorded migration count matches the
+    // current MIGRATIONS.length. When a new migration is appended, the count
+    // increments and the loop runs again — old migrations still no-op via their
+    // own guards, only the new one does work. Safe because every migration is
+    // individually idempotent.
+    const VERSION_KEY = 'migration:runner-version';
+    const stamp = await DB.get(DB.STORES.METADATA, VERSION_KEY);
+    if (stamp && stamp.value === MIGRATIONS.length) {
+      return;
+    }
+
     for (const migration of MIGRATIONS) {
       await migration(DB);
     }
+
+    await DB.put(DB.STORES.METADATA, {
+      key: VERSION_KEY, value: MIGRATIONS.length, timestamp: new Date().toISOString(),
+    });
   }
 };

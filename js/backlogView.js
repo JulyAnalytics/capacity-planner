@@ -886,6 +886,19 @@ function _renderByFocusMode(allFocuses, allSubFocuses, allEpics, _allStories, fi
   const activeFocuses = allFocuses.filter(f => f.status === FOCUS_STATUS.ACTIVE);
   const parts = [];
 
+  // PERF (B4): build O(1) lookup indexes once instead of re-scanning allEpics
+  // for every story (was O(foci × stories × epics)). epicById resolves a story's
+  // epic without a linear find(); storiesByEpicId groups stories once so each
+  // epic's stories are a direct lookup instead of re-filtering sfStories per epic.
+  const epicById = new Map(allEpics.map(e => [e.id, e]));
+  const storiesByEpicId = new Map();
+  for (const s of filteredStories) {
+    if (!s.epicId) continue;
+    let bucket = storiesByEpicId.get(s.epicId);
+    if (!bucket) { bucket = []; storiesByEpicId.set(s.epicId, bucket); }
+    bucket.push(s);
+  }
+
   for (const focus of activeFocuses) {
     const isExpanded = _getSectionExpanded('focus', focus.id);
     // If activeFocus is set and different from this focus, default collapse
@@ -895,10 +908,10 @@ function _renderByFocusMode(allFocuses, allSubFocuses, allEpics, _allStories, fi
     const subFocusesForFocus = allSubFocuses.filter(sf => sf.focusId === focus.id);
     const epicsForFocus = allEpics.filter(e => e.focusId === focus.id);
 
-    // Count visible stories for this focus
+    // Count visible stories for this focus. Uses epicById instead of allEpics.find.
     let focusVisibleStories = filteredStories.filter(s => {
       if (s.epicId) {
-        const epic = allEpics.find(e => e.id === s.epicId);
+        const epic = epicById.get(s.epicId);
         return epic && epic.focusId === focus.id;
       }
       return s.focus === focus.name;
@@ -1130,9 +1143,10 @@ function _renderCell(epicId, sprintId, cellStories) {
   </div>`;
 }
 
-function _renderBodyRow(sprintId, visibleEpics, allStories) {
+function _renderBodyRow(sprintId, visibleEpics, allStories, storiesByCell) {
   const isBacklog = sprintId === null;
   const rowId     = sprintId || 'backlog';
+  const sprintKey = isBacklog ? '' : sprintId;
   const storyCnt  = allStories.filter(s =>
     isBacklog ? !s.sprintId : s.sprintId === sprintId
   ).length;
@@ -1142,10 +1156,9 @@ function _renderBodyRow(sprintId, visibleEpics, allStories) {
     : 'sm2-body-row';
 
   const cells = visibleEpics.map(epic => {
-    const cellStories = allStories.filter(s =>
-      s.epicId === epic.id &&
-      (isBacklog ? !s.sprintId : s.sprintId === sprintId)
-    ).sort(_cellOrderCmp);
+    // PERF (B4): O(1) cell lookup from the pre-grouped index (keyed epicId|sprintKey)
+    // instead of a linear scan of allStories per cell.
+    const cellStories = (storiesByCell.get(`${epic.id}|${sprintKey}`) || []).slice().sort(_cellOrderCmp);
     return _renderCell(epic.id, sprintId, cellStories);
   }).join('');
 
@@ -1183,6 +1196,19 @@ function _buildMatrixHTML(orderedSprints, visibleEpics, focusGroups, allStories,
   let subFocusHeaderHtml = '';
   let epicHeaderHtml = '';
 
+  // PERF (B4): pre-group every story once into a Map keyed by epicId|sprintKey,
+  // so each matrix cell (sprint × epic) is an O(1) lookup instead of a linear
+  // scan of allStories. Was O(sprints × epics × stories) per render.
+  // sprintKey: '' for the backlog bucket (no sprintId), else the sprintId.
+  const storiesByCell = new Map();
+  for (const s of allStories) {
+    const sprintKey = s.sprintId || '';
+    const k = `${s.epicId}|${sprintKey}`;
+    let bucket = storiesByCell.get(k);
+    if (!bucket) { bucket = []; storiesByCell.set(k, bucket); }
+    bucket.push(s);
+  }
+
   // Build ordered list of epics matching column layout
   const orderedEpics = [];
   for (const fg of focusGroups) {
@@ -1207,9 +1233,9 @@ function _buildMatrixHTML(orderedSprints, visibleEpics, focusGroups, allStories,
   // Build rows: one per sprint + backlog
   let rowsHtml = '';
   for (const sprint of orderedSprints) {
-    rowsHtml += _renderBodyRow(sprint.id, orderedEpics, allStories);
+    rowsHtml += _renderBodyRow(sprint.id, orderedEpics, allStories, storiesByCell);
   }
-  rowsHtml += _renderBodyRow(null, orderedEpics, allStories);
+  rowsHtml += _renderBodyRow(null, orderedEpics, allStories, storiesByCell);
 
   const colCount = orderedEpics.length;
 
@@ -1493,6 +1519,7 @@ function _destroyStoryMapSortables(rootEl) {
 export async function _renderBacklogView() {
   const root = document.getElementById('backlog-root');
   if (!root) return;
+  _backlogDirty = false; // explicit render clears any pending dirty (perf B2)
 
   _destroySprintSortables(root);
   _destroyStoryMapSortables(root); // tear down cell Sortables before #bl-list is rebuilt (no leak)
@@ -1754,14 +1781,32 @@ window.backlogView = {
   },
 };
 
+// Dirty flag (perf B2): a 'sprint' notification while the Backlog/Story Map tab
+// is hidden skips the expensive full rebuild and marks the view stale; the next
+// switchTab renders once with fresh data. The 'story' listener stays synchronous
+// because _handleStoryNotification does a targeted DOM patch that must reflect
+// the payload immediately. #backlog is the .tab-content shared by both backlog
+// and storymap modes, so this guards both.
+let _backlogDirty = false;
+const _backlogVisible = () =>
+  !!document.getElementById('backlog')?.classList.contains('active');
+function _requestBacklogRender() {
+  if (_backlogVisible()) { _backlogDirty = false; _renderBacklogView(); return; }
+  _backlogDirty = true;
+}
+
 NotificationRegistry.on('story', (payload) => {
+  // Headers are cheap; keep them fresh. The patch below is the targeted update.
   window.backlogView.renderSprintCapacityHeaders();
+  // If hidden, a full render will happen on the next switchTab via _backlogDirty;
+  // skip the per-row patch work that would touch a detached DOM.
+  if (!_backlogVisible()) { _backlogDirty = true; return; }
   _handleStoryNotification(payload);
 });
 NotificationRegistry.on('epic', () => {
-  if (window.backlogView._currentGroupBy() === 'storymap') window.backlogView.render();
+  if (window.backlogView._currentGroupBy() === 'storymap') _requestBacklogRender();
 });
-NotificationRegistry.on('sprint',          () => window.backlogView.render());
+NotificationRegistry.on('sprint',          () => _requestBacklogRender());
 NotificationRegistry.on('locationPeriod',  () => window.backlogView.renderSprintCapacityHeaders());
 NotificationRegistry.on('dayTypeOverride', () => window.backlogView.renderSprintCapacityHeaders());
 

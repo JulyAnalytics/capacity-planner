@@ -303,8 +303,12 @@ function updateIndexHtml(jsFile, cssFile) {
   html = html.replace(/[ \t]*<script[^>]*\bsrc="(?:js\/|dist\/)[^"]*"[^>]*>\s*<\/script>\s*\n?/g, '');
   // 2. Insert new CSS link before </head>
   html = html.replace(/<\/head>/, `    <link rel="stylesheet" href="${cssBare}">\n  </head>`);
-  // 3. Insert new JS bundle before </body>
-  html = html.replace(/<\/body>/, `    <script src="${jsBare}"></script>\n  </body>`);
+  // 3. Insert new JS bundle before </body>.
+  //    PERF (D1): defer so the script downloads in parallel with HTML parsing
+  //    and doesn't block first paint. Order is preserved relative to the deferred
+  //    Supabase CDN tag (both deferred, CDN appears first in source), so
+  //    window.supabase is set before the app bundle's DOMContentLoaded boot runs.
+  html = html.replace(/<\/body>/, `    <script defer src="${jsBare}"></script>\n  </body>`);
 
   // dist/index.html: bare paths (Netlify serves dist/ as root)
   fs.writeFileSync('dist/index.html', html, 'utf8');

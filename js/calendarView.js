@@ -597,7 +597,7 @@ if (typeof window !== 'undefined' && window.matchMedia) {
   window.matchMedia('(max-width: 767.98px)').addEventListener('change', (e) => {
     if (_userPickedMode) return;
     _viewMode = e.matches ? 'week' : 'month';
-    if (document.getElementById('calendar')?.classList.contains('active')) render();
+    if (_calendarVisible()) render();
   });
 }
 
@@ -1274,6 +1274,7 @@ function _bindCalendarEvents() {
 
 window.calendarView = {
   render,
+  renderIfVisible,
   _navigate,
   _goToday,
   _setViewMode,
@@ -1298,6 +1299,24 @@ window.calendarView = {
   _removeFromRanking,
 };
 
-NotificationRegistry.on('sprint',          () => window.calendarView.render());
-NotificationRegistry.on('locationPeriod',  () => window.calendarView.render());
-NotificationRegistry.on('dayTypeOverride', () => window.calendarView.render());
+// Dirty flag (perf B2): when a notification fires while the Calendar tab is
+// hidden, skip the expensive full-grid rebuild and just mark it stale. The next
+// switchTab('calendar') renders once with fresh data. Mirrors the visibility
+// guard todayView/inboxView already had. Calendar visibility is read off
+// #calendar (the .tab-content), not #calendar-root.
+let _calendarDirty = false;
+
+function _calendarVisible() {
+  return !!document.getElementById('calendar')?.classList.contains('active');
+}
+
+// Called by notification listeners. Renders if the Calendar tab is visible;
+// otherwise marks it dirty so the next switchTab('calendar') renders once.
+export function renderIfVisible() {
+  if (_calendarVisible()) { _calendarDirty = false; render(); return; }
+  _calendarDirty = true;
+}
+
+NotificationRegistry.on('sprint',          () => renderIfVisible());
+NotificationRegistry.on('locationPeriod',  () => renderIfVisible());
+NotificationRegistry.on('dayTypeOverride', () => renderIfVisible());

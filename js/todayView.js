@@ -200,14 +200,23 @@ function _renderAgenda() {
 }
 
 // Narrow fallback so nothing is reachable ONLY in the companion.
+// PERF (B1): cached alongside the agenda — _renderNextUp ran a fresh buildDayMap
+// for tomorrow on every renderToday(), and renderToday fires several times per
+// done-tick. Invalidated by the same triggers as the agenda.
+let _nextUpCache = null;
+function invalidateNextUp() { _nextUpCache = null; }
 function _renderNextUp() {
-  const tomorrow = isoAddDays(_todayStr(), 1);
+  const today = _todayStr();
+  if (_nextUpCache && _nextUpCache.key === today) return _nextUpCache.html;
+  const tomorrow = isoAddDays(today, 1);
   const info = _tvDayInfo(tomorrow);
   const blocks = info.dayType ? (DLO_DAY_TYPE_CAPACITY[info.dayType] ?? 0) : 0;
   const label = info.dayType
     ? info.dayType.charAt(0).toUpperCase() + info.dayType.slice(1)
     : 'No location set';
-  return `<div class="cmp-nextup">Tomorrow · ${esc(label)}${info.dayType ? ` · ${blocks.toFixed(1)} blk` : ''}</div>`;
+  const html = `<div class="cmp-nextup">Tomorrow · ${esc(label)}${info.dayType ? ` · ${blocks.toFixed(1)} blk` : ''}</div>`;
+  _nextUpCache = { key: today, html };
+  return html;
 }
 
 function _fmtShort(ds) {
@@ -348,9 +357,9 @@ function _rerenderIfVisible() {
 // depends on dates/periods/overrides only, so a done-tick must not re-run
 // buildDayMap over 14 days.
 NotificationRegistry.on('story',           _rerenderIfVisible);
-NotificationRegistry.on('sprint',          () => { invalidateAgenda(); _rerenderIfVisible(); });
-NotificationRegistry.on('locationPeriod',  () => { invalidateAgenda(); _rerenderIfVisible(); });
-NotificationRegistry.on('dayTypeOverride', () => { invalidateAgenda(); _rerenderIfVisible(); });
+NotificationRegistry.on('sprint',          () => { invalidateAgenda(); invalidateNextUp(); _rerenderIfVisible(); });
+NotificationRegistry.on('locationPeriod',  () => { invalidateAgenda(); invalidateNextUp(); _rerenderIfVisible(); });
+NotificationRegistry.on('dayTypeOverride', () => { invalidateAgenda(); invalidateNextUp(); _rerenderIfVisible(); });
 
 // @owns todayView — the default Today surface: sprint stories with done-ticks that write per-day {storyId, blocks} actuals into dailyLogs, floor checklist, auto-confirmed capacity, one-line notes.
 window.todayView = {
