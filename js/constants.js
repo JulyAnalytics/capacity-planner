@@ -44,7 +44,17 @@ export const SPRINT_STATUS = {
   COMPLETED:  'completed',
 };
 
+// Legacy sizing scale — retained only so imports of pre-ADR-0009 records still
+// validate. New records carry no fibonacciSize; effort lives in `weight`.
 export const FIBONACCI_SIZES = [1, 2, 3, 5, 8, 13, 21];
+
+// ── Story sizes (ADR-0009: the single effort field) ───────────────────────────
+// `weight` is the one number capacity math reads. Four values, entered as
+// S/M/L/XL. Chosen from measured behaviour: estimates clustered at
+// 0.25/0.5/1/2–3 while both 7-point scales were filled with their middles
+// (design-review pass 2, §II.1 B / N11).
+export const STORY_SIZES = [0.5, 1, 2, 3];
+export const STORY_SIZE_LABELS = { 0.5: 'S', 1: 'M', 2: 'L', 3: 'XL' };
 
 // ── Story priority levels (sprint-view bands) ──────────────────────────────────
 // Canonical source for story.priority values. NOTE: distinct from DAY_CAPACITY pool

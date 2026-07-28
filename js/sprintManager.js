@@ -4,8 +4,7 @@
  */
 
 import DB from './db.js';
-import { validateTravelSegment, validateSprint } from './businessRules.js';
-import { detectGaps, deriveSprintMeta } from './sprintCapacity.js';
+import { validateSprint } from './businessRules.js';
 import { CHANNEL_HIERARCHY_SYNC, SPRINT_STATUS } from './constants.js';
 
 // ── Creation serialization ──────────────────────────────────────────────────────
@@ -76,54 +75,11 @@ export async function completeSprint(id) {
   return updateSprint(id, { status: SPRINT_STATUS.COMPLETED, completedAt: new Date().toISOString() });
 }
 
-// ── TravelSegment CRUD ────────────────────────────────────────────────────────
-
-export async function createSegment(segData) {
-  const sprint = await DB.get(DB.STORES.SPRINTS, segData.sprintId);
-  if (!sprint) throw new Error('Sprint not found');
-
-  const errors = validateTravelSegment(segData, sprint);
-  if (errors.length) throw new _SprintValidationError(errors[0].message, errors[0].field);
-
-  const seg = {
-    departureDayOverride: null,
-    createdAt:            new Date().toISOString(),
-    ...segData,
-    id: `seg-${crypto.randomUUID()}`,
-  };
-
-  await DB.put(DB.STORES.TRAVEL_SEGMENTS, seg);
-  _broadcastSegmentChange('created', seg);
-
-  const allSegs = await getSegmentsForSprint(seg.sprintId);
-  return { segment: seg, gaps: detectGaps(sprint, allSegs) };
-}
-
-export async function updateSegment(id, fields) {
-  const existing = await DB.get(DB.STORES.TRAVEL_SEGMENTS, id);
-  if (!existing) throw new Error(`Segment ${id} not found`);
-  const sprint  = await DB.get(DB.STORES.SPRINTS, existing.sprintId);
-  const updated = { ...existing, ...fields };
-  const errors  = validateTravelSegment(updated, sprint);
-  if (errors.length) throw new _SprintValidationError(errors[0].message, errors[0].field);
-  await DB.put(DB.STORES.TRAVEL_SEGMENTS, updated);
-  _broadcastSegmentChange('updated', updated);
-  const allSegs = await getSegmentsForSprint(updated.sprintId);
-  return { segment: updated, gaps: detectGaps(sprint, allSegs) };
-}
-
-export async function deleteSegment(id) {
-  const seg = await DB.get(DB.STORES.TRAVEL_SEGMENTS, id);
-  if (!seg) return;
-  await DB.delete(DB.STORES.TRAVEL_SEGMENTS, id);
-  _broadcastSegmentChange('deleted', seg);
-}
-
-export async function getSegmentsForSprint(sprintId) {
-  const all = await DB.getAll(DB.STORES.TRAVEL_SEGMENTS);
-  return all.filter(s => s.sprintId === sprintId)
-            .sort((a, b) => a.startDate.localeCompare(b.startDate));
-}
+// ── TravelSegment CRUD: REMOVED (ADR-0008) ───────────────────────────────────
+// Segments duplicated the location-period model with a second editor and a
+// silently-precedent capacity path (design-review pass 1, A2 — 1 segment vs 9
+// periods in prod). Location periods are now the only capacity-supply model;
+// the store remains readable for export/back-compat but nothing writes it.
 
 // ── Chronological sprint resolution (spec-triage date inference) ──────────────
 
@@ -217,12 +173,6 @@ function _broadcastSprintChange(action, sprint) {
   ch.close();
 }
 
-function _broadcastSegmentChange(action, segment) {
-  const ch = new BroadcastChannel(CHANNEL_HIERARCHY_SYNC);
-  ch.postMessage({ type: 'travelSegment', action, segment });
-  ch.close();
-}
-
 // ── Error class ───────────────────────────────────────────────────────────────
 
 class _SprintValidationError extends Error {
@@ -234,16 +184,14 @@ class _SprintValidationError extends Error {
 }
 
 // ── Global export ─────────────────────────────────────────────────────────────
-// @owns sprintManager — sprint + travel-segment CRUD; emits sprint/travelSegment; resolveOrCreateSprintForDate resolves chronological sprint placement for triage-inferred dates.
+// @owns sprintManager — sprint CRUD; emits sprint; resolveOrCreateSprintForDate resolves chronological sprint placement for triage-inferred dates. @see ADR-0008
 
 window.sprintManager = {
   createSprint, updateSprint, completeSprint,
-  createSegment, updateSegment, deleteSegment, getSegmentsForSprint,
   resolveOrCreateSprintForDate,
 };
 
 export default {
   createSprint, updateSprint, completeSprint,
-  createSegment, updateSegment, deleteSegment, getSegmentsForSprint,
   resolveOrCreateSprintForDate,
 };

@@ -3,15 +3,14 @@
 A weekly capacity-planning tool: Supabase-backed, multi-tab synced, no framework.
 
 ## What it does
-- **Calendar** — plan weeks with day types (travel/buffer/stable/project/social); each contributes fixed blocks to primary/secondary1/secondary2/floor tiers.
-- **Sprints** — stories in active sprints with drag-and-drop reordering (SortableJS). Status: planning → active → completed.
-- **Backlog** — group stories by epic, sprint, or status; inline status cycling; drag between groups.
-- **Daily Log** — actual vs planned day type per date; auto-close incomplete days; retroactive logging with conflict detection.
-- **Hierarchy** — Priority Level → Focus → Sub-Focus → Epic → Story; cascading selectors; calendar-based monthly planning by priority lane.
-- **Import/Export** — full JSON export across all stores; import validates structurally before writing.
-- **Inbox** — review queue for candidate-imported stories (sidebar 📥): Save approves, Cancel keeps, Discard soft-deletes; hosts "Import candidates…" / "Import history…".
-- **Attachments** — attach `.md` docs to stories (private Supabase Storage bucket); rendered viewer, versioned Replace, signed-URL download.
-- **History import** — one-shot additive import of this project's own construction history (12 epics, 6 sprints) from `docs/history/history-manifest.json`.
+- **Today** — the default view: date/location/day-type header, the covering sprint's stories with done-ticks (which write per-day `{storyId, blocks}` actuals), floor checklist, auto-confirmed capacity, one-line notes.
+- **Calendar** — location periods assign day types (travel/buffer/stable/project/social); each contributes fixed blocks to priority/secondary1/secondary2/floor tiers. The single capacity-supply model (ADR-0008).
+- **Backlog** — one list, grouped by sprint or focus; focus dropdown + text filter + all five status chips; S/M/L/XL sizes (ADR-0009); drag between priority bands and sprints; two-step delete for stories and epics.
+- **Story Map** — epic × sprint matrix, defaulting to the active sprint's top-ranked focus.
+- **Sprints** — auto-advance with the calendar (planning→active→completed); one creation form (Monday-snapped, with focus ranking); throughput warnings calibrated from completed sprints.
+- **Inbox** — nav-tab review queue for proposed stories: ✓ Approve or Discard on the card, full edit via the modal.
+- **Import/Export** — full JSON export; destructive import previews counts and confirms before writing.
+- **Attachments** — `.md` docs on stories (private Supabase Storage); 📎 badges in every list.
 
 ## Quick start
 ```bash
@@ -26,7 +25,8 @@ python3 -m http.server 8080   # open http://localhost:8080, sign in with Supabas
 | `Cmd+K` | Open creation modal |
 | `Cmd+Enter` | Rapid-fire save (keeps modal open) |
 | `Escape` | Close modal / cancel |
-| `Cmd+Z` | Undo last action (within 5s) |
+
+(Undo is the button on the creation toast — there is no `Cmd+Z` binding.)
 
 ## For developers
 Architecture is documented as a **hybrid doc system**: generated facts joined with
@@ -35,8 +35,8 @@ authored meaning. Start with the generated map, then knowledge/ADRs.
 - [`generated/SYSTEM_MAP.md`](docs/architecture/generated/SYSTEM_MAP.md) — module table, build order, migration ordering, notification map *(start here)*
 - [`generated/REGISTRY.md`](docs/architecture/generated/REGISTRY.md) — stores (13), enums, ID patterns, counts
 - [`generated/SCHEMA_REFERENCE.md`](docs/architecture/generated/SCHEMA_REFERENCE.md) — per-store fields + annotations
-- [`knowledge/`](docs/architecture/knowledge) — GEOMETRY (invariants), PHILOSOPHY, `annotations/*.yaml`, STATE
-- [`adr/`](docs/architecture/adr) — Architecture Decision Records (0001–0006)
+- [`knowledge/`](docs/architecture/knowledge) — GEOMETRY (invariants), DESIGN_SYSTEM (presentation rules + the css-check gate), PHILOSOPHY, `annotations/*.yaml`, STATE
+- [`adr/`](docs/architecture/adr) — Architecture Decision Records (0001–0009)
 - [`AGENT_NOTES.md`](docs/architecture/AGENT_NOTES.md) — operational detail + pre-merge checklist
 
 `generated/` is an artifact — edit `knowledge/` or source `@owns`/`@intent` docblocks, then:

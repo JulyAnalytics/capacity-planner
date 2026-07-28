@@ -41,7 +41,7 @@ export function deriveFocusAllocation(stories, allFocuses = []) {
  * Returns a check result for each tier.
  *
  * @param {Story[]}         stories        — stories assigned to sprint
- * @param {SprintCapacity}  sprintCapacity — from deriveSprintCapacity()
+ * @param {SprintCapacity}  sprintCapacity — from deriveSprintCapacityFromPeriods()
  * @returns {TierCheck}
  *   { tiers: TierCheck[], unassignedWeight, totalAllocated }
  */

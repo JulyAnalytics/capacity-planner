@@ -4,7 +4,8 @@
  * Renders inside #calendar-root in the Calendar tab.
  */
 
-import { esc } from './utils.js';
+import { esc, sprintLabel } from './utils.js';
+import { debounce } from './performance.js';
 import { STORY_STATUS, FOCUS_STATUS } from './constants.js';
 import {
   isoAddDays, isoDateRange, daysBetween,
@@ -37,12 +38,15 @@ function _defaultMode() {
 
 // esc imported from utils.js — single source (R08, 2026-04-25).
 
-// Human-readable sprint label for calendar bars. Sprints carry no `name` field;
-// createSprint always sets sprintNumber and an optional goal (sprintManager.js).
-// The raw UUID `id` is kept only for click-through, never shown to the user.
-function _sprintLabel(sprint) {
-  const base = sprint.sprintNumber ? `Sprint ${sprint.sprintNumber}` : 'Sprint';
-  return sprint.goal ? `${base} · ${sprint.goal}` : base;
+// Sprint naming lives in utils.sprintLabel — one source for all five surfaces
+// that used to mix S4 / raw UUID / local labels (design-review pass 1, B3).
+const _sprintLabel = sprintLabel;
+
+// A sprint with no startDate/durationWeeks makes isoAddDays throw on the
+// invalid date — one such record used to blank the whole Calendar tab
+// (2026-07-27). Every sprint consumer in this view filters through here.
+function _usableSprints(sprints) {
+  return (sprints || []).filter(s => s?.startDate && s?.durationWeeks);
 }
 
 function _data() {
@@ -171,7 +175,7 @@ function _renderMonthGrid(periods, overrides, sprints, stories, loggedDates) {
   const allDates  = isoDateRange(gridStart, gridEnd);
 
   // Map sprints to date ranges
-  const sprintMeta = sprints.map(s => ({
+  const sprintMeta = _usableSprints(sprints).map(s => ({
     sprint: s,
     startDate: s.startDate,
     endDate:   isoAddDays(s.startDate, s.durationWeeks * 7 - 1),
@@ -426,7 +430,7 @@ function _renderWeekGrid(periods, overrides, sprints, stories, loggedDates) {
 
   const storyCountByDate = _buildStoryCountByDate(sprints, stories);
   const overrideByDate   = Object.fromEntries(overrides.map(o => [o.date, o]));
-  const sprintMeta = sprints.map(s => ({
+  const sprintMeta = _usableSprints(sprints).map(s => ({
     sprint: s,
     startDate: s.startDate,
     endDate:   isoAddDays(s.startDate, s.durationWeeks * 7 - 1),
@@ -521,7 +525,7 @@ function _renderWeekViewCell(ds, dayMap, periodMap, overrideByDate, storyCountBy
 
 function _buildStoryCountByDate(sprints, stories) {
   const byDate = {};
-  for (const sprint of sprints) {
+  for (const sprint of _usableSprints(sprints)) {
     const end   = isoAddDays(sprint.startDate, sprint.durationWeeks * 7 - 1);
     const count = stories.filter(s => s.sprintId === sprint.id && s.status !== STORY_STATUS.COMPLETED && s.status !== STORY_STATUS.ABANDONED).length;
     if (count === 0) continue;
@@ -627,6 +631,25 @@ function _openNewPeriodPanel(startDate) {
     notes: '',
   };
   _deleteConfirmPending = false;
+  _renderDetailPanel();
+  _openPanel();
+}
+
+// Prefilled range opener — the sprint panel's "+ Add location" and gap strips
+// land here so locations are edited in exactly one place (ADR-0008).
+function _openNewPeriodRange(startDate, endDate) {
+  _editingPeriodId = null;
+  const days = daysBetween(startDate, endDate) + 1;
+  _periodForm = {
+    startDate,
+    endDate,
+    city:         '',
+    country:      '',
+    locationType: 'domestic',
+    dayTypes:     { travel: 0, buffer: 0, stable: days, project: 0, social: 0 },
+    notes:        '',
+  };
+  _panelMode = 'period';
   _renderDetailPanel();
   _openPanel();
 }
@@ -1012,7 +1035,7 @@ function _renderOverridesSection(f) {
 
 function _renderAffectedSprintsSection(f) {
   if (!f.startDate || !f.endDate) return '';
-  const sprints  = _data().sprints || [];
+  const sprints  = _usableSprints(_data().sprints);
   const affected = sprints.filter(s => {
     const end = isoAddDays(s.startDate, s.durationWeeks * 7 - 1);
     return s.startDate <= f.endDate && end >= f.startDate;
@@ -1033,7 +1056,7 @@ function _renderAffectedSprintsSection(f) {
       ? `<div class="cv-affected-before">Before: ${capOld.total.toFixed(1)} total · ${capOld.priority.toFixed(1)} priority</div>`
       : '';
     return `<div class="cv-affected-sprint">
-      <div class="cv-affected-id">${esc(s.id)}</div>
+      <div class="cv-affected-id">${esc(sprintLabel(s))}</div>
       <div class="cv-affected-dates">${_fmtCalDate(s.startDate)}–${_fmtCalDate(end)}</div>
       ${beforeRow}
       <div class="cv-affected-after">${capOld ? 'After: ' : ''}${capNew.total.toFixed(1)} total · ${capNew.priority.toFixed(1)} priority</div>
@@ -1066,7 +1089,7 @@ function _renderDeleteSection() {
 function _getAffectedSprintCount() {
   const f       = _periodForm;
   if (!f) return 0;
-  const sprints = _data().sprints || [];
+  const sprints = _usableSprints(_data().sprints);
   return sprints.filter(s => {
     const end = isoAddDays(s.startDate, s.durationWeeks * 7 - 1);
     return s.startDate <= f.endDate && end >= f.startDate;
@@ -1080,22 +1103,31 @@ function _bindPeriodPanelEvents() {
 }
 
 // Text-only fields (city, country, notes) must NOT re-render the panel —
-// doing so destroys the focused input on every keystroke.
+// doing so destroys the focused input on every keystroke. Their grid preview is
+// debounced too: a full calendar render per keystroke was the worst offender in
+// the re-render audit (design-review pass 1, B6).
 const TEXT_ONLY_FIELDS = new Set(['city', 'country', 'notes']);
+
+const _debouncedPreviewRender = debounce(() => {
+  if (!_periodForm) return;
+  const previewPeriod = _periodForm.startDate && _periodForm.endDate
+    ? { ..._periodForm, id: _editingPeriodId || '_preview_' } : undefined;
+  render({ previewPeriod });
+}, 250);
 
 function _updateField(field, value) {
   if (!_periodForm) return;
   _periodForm[field] = value;
 
-  // Always refresh the calendar grid preview
+  if (TEXT_ONLY_FIELDS.has(field)) {
+    _debouncedPreviewRender();
+    return;
+  }
+
   const previewPeriod = _periodForm.startDate && _periodForm.endDate
     ? { ..._periodForm, id: _editingPeriodId || '_preview_' } : undefined;
   render({ previewPeriod });
-
-  // For structural fields (locationType) re-render the panel; for text fields don't.
-  if (!TEXT_ONLY_FIELDS.has(field)) {
-    _renderDetailPanel();
-  }
+  _renderDetailPanel();
 }
 
 function _updateDateField(field, value) {
@@ -1234,6 +1266,7 @@ window.calendarView = {
   _openCreateSprint,
   _openSprintDetail,
   _openNewPeriodFromDate,
+  _openNewPeriodRange,
   _closePanel,
   _updateField,
   _updateDateField,

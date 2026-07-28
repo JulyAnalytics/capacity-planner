@@ -6,46 +6,9 @@
 import { DAY_CAPACITY } from './constants.js';
 import { addDaysUTC } from './locationCapacity.js';
 
-/**
- * Derive total sprint capacity from an array of TravelSegments.
- * Returns { total, priority, secondary1, secondary2, floor }.
- */
-export function deriveSprintCapacity(segments) {
-  const acc = { total: 0, priority: 0, secondary1: 0, secondary2: 0, floor: 0 };
-  for (const seg of segments) {
-    const dt = applyDepartureDayRule(seg);
-    for (const [type, count] of Object.entries(dt)) {
-      const caps = DAY_CAPACITY[type];
-      if (!caps) continue;
-      acc.total      += count * caps.total;
-      acc.priority   += count * caps.priority;
-      acc.secondary1 += count * caps.secondary1;
-      acc.secondary2 += count * caps.secondary2;
-      acc.floor      += count * caps.floor;
-    }
-  }
-  return acc;
-}
-
-/**
- * Return a dayTypes object with the departure-day rule applied.
- * Does NOT mutate the segment. Respects departureDayOverride.
- * Rule: last day of intl segment → travel; last day of domestic → buffer.
- * Only applies if the segment has at least one non-travel day to convert.
- */
-export function applyDepartureDayRule(seg) {
-  const dt = { ...seg.dayTypes };
-  if (seg.departureDayOverride !== null && seg.departureDayOverride !== undefined) {
-    return dt; // user override: do not apply auto-rule
-  }
-  const targetType = seg.locationType === 'international' ? 'travel' : 'buffer';
-  const candidates = ['project', 'stable', 'buffer', 'social'].filter(t => dt[t] > 0);
-  if (candidates.length === 0) return dt;
-  const from = candidates[0];
-  dt[from] = dt[from] - 1;
-  dt[targetType] = (dt[targetType] || 0) + 1;
-  return dt;
-}
+// deriveSprintCapacity / applyDepartureDayRule removed with the travel-segment
+// model (ADR-0008). Capacity supply derives from location periods only —
+// deriveSprintCapacityFromPeriods in locationCapacity.js.
 
 /**
  * Derive human-readable sprint metadata from startDate + durationWeeks.
@@ -65,43 +28,8 @@ export function deriveSprintMeta(startDate, durationWeeks) {
   };
 }
 
-/**
- * Detect uncovered day ranges within a sprint's date span.
- * Returns array of { startDate, endDate } gap objects.
- * An empty array means full coverage.
- */
-export function detectGaps(sprint, segments) {
-  const { endDate } = deriveSprintMeta(sprint.startDate, sprint.durationWeeks);
-  const covered = new Set();
-  for (const seg of segments) {
-    let d = new Date(seg.startDate);
-    const segEnd = new Date(seg.endDate);
-    while (d <= segEnd) {
-      covered.add(d.toISOString().slice(0, 10));
-      d = addDaysUTC(d, 1);
-    }
-  }
-  const gaps = [];
-  let gapStart = null;
-  let d = new Date(sprint.startDate);
-  const sprintEnd = new Date(endDate);
-  while (d <= sprintEnd) {
-    const ds = d.toISOString().slice(0, 10);
-    if (!covered.has(ds)) {
-      if (!gapStart) gapStart = ds;
-    } else {
-      if (gapStart) {
-        const prev = new Date(d);
-        prev.setDate(prev.getDate() - 1);
-        gaps.push({ startDate: gapStart, endDate: prev.toISOString().slice(0, 10) });
-        gapStart = null;
-      }
-    }
-    d = addDaysUTC(d, 1);
-  }
-  if (gapStart) gaps.push({ startDate: gapStart, endDate });
-  return gaps;
-}
+// detectGaps removed (ADR-0008) — detectUncoveredDays in locationCapacity.js is
+// the periods-based equivalent.
 
 // ── ISO week helpers ─────────────────────────────────────────────────────────
 

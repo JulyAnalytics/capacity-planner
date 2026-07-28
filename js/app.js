@@ -2,24 +2,14 @@
 
 import DB from './db.js';
 import { validateExternalInput } from './barricade.js';
-import { DAY_CAPACITY, STORY_STATUS, EPIC_STATUS, FOCUS_STATUS, REVIEW_STATE, CHANNEL_CAPACITY_PLANNER } from './constants.js';
+import { STORY_STATUS, EPIC_STATUS, FOCUS_STATUS, REVIEW_STATE, SPRINT_STATUS, STORY_SIZES, STORY_SIZE_LABELS, CHANNEL_CAPACITY_PLANNER } from './constants.js';
 import { deriveCapacityForDateRange } from './locationCapacity.js';
+import { deriveSprintMeta } from './sprintCapacity.js';
 
 // ── localStorage/sessionStorage fallback defaults ────────────────────────────
 // Named constants required by the barricade gate — never use raw string literals
 // as fallbacks; corruption should be visible in the constant, not buried inline.
 const DEFAULT_CALENDAR_VIEW    = 'default';
-const DEFAULT_SIDEBAR_COLLAPSED = false;
-
-const FIBONACCI_DESCRIPTIONS = {
-  1: 'Trivial (<30 min)',
-  2: 'Simple (30-60 min)',
-  3: 'Easy (1-2 hours)',
-  5: 'Medium (2-4 hours)',
-  8: 'Large (4-8 hours)',
-  13: 'Very Large (1-2 days)',
-  21: 'Epic (break it down!)'
-};
 
 // ── Shared sub-focus form component (OQ-4) ────────────────────────────────────
 class SubFocusForm {
@@ -136,7 +126,7 @@ class ModalManager {
     if (!item) return;
 
     // Stage 1: story edits funnel through the canonical write spine (structured
-    // 'story' emit + rollback). app.saveStory is bypassed here; its other callers keep it.
+    // 'story' emit + rollback). app.saveStory is fully retired (storyLifecycle).
     if (type === 'story') {
       const updated = this._collectFormValues('story', item);
       if (!updated) return;                       // validation failed (blank name)
@@ -245,8 +235,7 @@ class ModalManager {
       body: `
         <div class="modal-field-ro"><span class="mfr-label">Epic</span><span>${epic ? escapeHtml(epic.name) : '—'}</span></div>
         <div class="modal-field-ro"><span class="mfr-label">Status</span><span>${story.status}</span></div>
-        <div class="modal-field-ro"><span class="mfr-label">Weight</span><span>${story.weight} block${story.weight !== 1 ? 's' : ''}</span></div>
-        ${story.fibonacciSize ? `<div class="modal-field-ro"><span class="mfr-label">Fib Size</span><span>${story.fibonacciSize}</span></div>` : ''}
+        <div class="modal-field-ro"><span class="mfr-label">Size</span><span>${STORY_SIZE_LABELS[story.weight] || story.weight} · ${story.weight} block${story.weight !== 1 ? 's' : ''}</span></div>
         ${story.description ? `<div class="modal-field-ro"><span class="mfr-label">Description</span><p>${escapeHtml(story.description)}</p></div>` : ''}
         ${actionItems.length > 0 ? `
           <div class="modal-field-ro">
@@ -396,19 +385,14 @@ class ModalManager {
           <label>Description (optional)</label>
           <textarea id="editField_description" class="form-input" rows="3">${escapeHtml(story.description || '')}</textarea>
         </div>
-        <div class="form-grid">
-          <div class="form-group">
-            <label>Weight (blocks)</label>
-            <input type="number" id="editField_weight" class="form-input" min="0.25" step="0.25" value="${story.weight}">
-          </div>
-          <div class="form-group">
-            <label>Fib Size</label>
-            <select id="editField_fibSize" class="form-input">
-              ${['','1','2','3','5','8','13'].map(v =>
-                `<option value="${v}" ${(story.fibonacciSize == v) ? 'selected' : ''}>${v || 'Not sized'}</option>`
-              ).join('')}
-            </select>
-          </div>
+        <div class="form-group">
+          <label>Size</label>
+          <select id="editField_size" class="form-input">
+            ${!STORY_SIZES.includes(story.weight) ? `<option value="${story.weight}" selected>${story.weight} blk (legacy)</option>` : ''}
+            ${STORY_SIZES.map(w =>
+              `<option value="${w}" ${story.weight === w ? 'selected' : ''}>${STORY_SIZE_LABELS[w]} · ${w} blk</option>`
+            ).join('')}
+          </select>
         </div>
         <div class="form-group">
           <label>Action Items</label>
@@ -492,8 +476,7 @@ class ModalManager {
           ...existing,
           name,
           description: document.getElementById('editField_description')?.value.trim() || '',
-          weight:      parseFloat(document.getElementById('editField_weight')?.value) || 1,
-          fibonacciSize: parseInt(document.getElementById('editField_fibSize')?.value) || null,
+          weight:      parseFloat(document.getElementById('editField_size')?.value) || 1,
           actionItems: [...this._actionItemDraft],
         };
       },
@@ -534,12 +517,22 @@ class CapacityManager {
       sprints:          [],
     };
     this.timelineWeeks = 8;
-    this.sidebarCollapsed = false;
-    this.currentTab = 'calendar';
+    this.currentTab = 'today';
     this.calendarView = 'default'; // 'default', 'all', 'archived'
     this.modal = null;
     // Story creation form action item draft (§5.2)
     this._createActionItemDraft = [];
+  }
+
+  // Boot / boot-failure state for the default tab.
+  renderBootState(title, detail = '') {
+    const target = document.getElementById('today');
+    if (!target) return;
+    target.innerHTML =
+      '<div class="tv-wrap"><div class="empty-state">' +
+      `<p class="empty-state-title">${this.escapeHtml(title)}</p>` +
+      (detail ? `<p class="empty-state-text">${this.escapeHtml(detail)}</p>` : '') +
+      '</div></div>';
   }
 
   renderCalendarSkeleton() {
@@ -568,33 +561,6 @@ class CapacityManager {
       <div class="skeleton skeleton-stat"></div>
       <div class="skeleton skeleton-chart"></div>
     `;
-  }
-
-  renderCalendarEmpty() {
-    const target = document.getElementById('calendar-root');
-    if (!target) return;
-    target.innerHTML = '<div class="empty-state">' +
-      '<p class="empty-state-title">No calendar data yet</p>' +
-      '<p class="empty-state-text">Create a focus and assign capacities to get started.</p>' +
-      '</div>';
-  }
-
-  renderBacklogEmpty() {
-    const target = document.getElementById('backlog-root');
-    if (!target) return;
-    target.innerHTML = '<div class="empty-state">' +
-      '<p class="empty-state-title">Your backlog is empty</p>' +
-      '<p class="empty-state-text">Epics and stories you create will appear here.</p>' +
-      '</div>';
-  }
-
-  renderAnalyticsEmpty() {
-    const target = document.getElementById('analyticsReport');
-    if (!target) return;
-    target.innerHTML = '<div class="empty-state">' +
-      '<p class="empty-state-title">No analytics yet</p>' +
-      '<p class="empty-state-text">Start tracking your capacity to see insights.</p>' +
-      '</div>';
   }
 
   // ── Data accessor methods (§3.1) ──────────────────────────────────────────
@@ -668,7 +634,43 @@ class CapacityManager {
     try {
       // @owns app — CapacityManager singleton; the view-layer coordinator + god-class.
       window.app = this;  // must precede any render call that reads window.app.data
-      await DB.init();
+      // Boot state: migrations + preloadAll run before the first paint and each
+      // is a round-trip to a Tailscale-hosted backend. Without this the user
+      // stares at a blank tab and cannot tell "loading" from "broken"
+      // (design-review pass 3, §4).
+      //
+      // @intent the watchdog exists because DB.init() awaits initAuth(), whose
+      // promise NEVER resolves when there is no session (auth.js: the no-session
+      // branch only shows the overlay). A parked init is indistinguishable from
+      // a slow one, so after 8s say which it is — signed-in means the backend is
+      // unreachable; signed-out means the sign-in box is the blocker.
+      this.renderBootState('Loading your data…');
+      const bootStarted = Date.now();
+      const bootWatchdog = setInterval(() => {
+        const secs = Math.round((Date.now() - bootStarted) / 1000);
+        if (secs < 8) return;
+        const overlayEl = document.getElementById('auth-overlay');
+        const overlayUp = overlayEl && getComputedStyle(overlayEl).display !== 'none';
+        if (window.currentUserId) {
+          // Signed in, but a fetch is not coming back.
+          this.renderBootState('Backend not responding',
+            `No answer after ${secs}s. The self-hosted Supabase runs on jun-mini and is only reachable over Tailscale — check that the machine is up and the mesh is connected. Your data is safe on the server; reload once it is back.`);
+        } else if (overlayUp) {
+          this.renderBootState('Waiting for sign-in',
+            'Sign in above to load your data.');
+        } else {
+          // Neither signed in NOR showing the sign-in box: getSession() itself
+          // is hanging on a token refresh it cannot complete — the backend is
+          // unreachable. This is the state that reads as "the app is blank".
+          this.renderBootState('Cannot reach the backend',
+            `Sign-in has not completed after ${secs}s and no sign-in box appeared, which means the session check cannot reach jun-mini over Tailscale. Check that the machine is online, then reload.`);
+        }
+      }, 2000);
+      try {
+        await DB.init();
+      } finally {
+        clearInterval(bootWatchdog);
+      }
       const migrated = await DB.migrateFromLocalStorage();
       if (migrated) {
         this.showNotification('Data migrated from localStorage to IndexedDB', 'success');
@@ -688,8 +690,6 @@ class CapacityManager {
 
       this.modal = new ModalManager(this);
       this.setupEventListeners();
-      NotificationRegistry.on('epic',     () => this.populateEpicDropdown());
-      NotificationRegistry.on('subFocus', () => this.loadSubFocusesForEpic());
       this.setupNavigation();
       this.setDefaultDate();
       this.makeCardsCollapsible();
@@ -701,16 +701,36 @@ class CapacityManager {
       }
       this.calendarView = calendarViewResult.valid ? rawCalendarView : DEFAULT_CALENDAR_VIEW;
 
-      this.renderAll();
-      this.initSidebar();
       this._initCapacityPlannerChannel();
-      // Calendar is the default tab — render it on init
-      this.switchTab('calendar');
-      window.triageQueue?.start(); // drain import_queue now + every 5min while open
+
+      // @intent render BEFORE the optional maintenance work. Until 2026-07-27 a
+      // single try/catch wrapped everything up to the first switchTab, so any
+      // late failure left the user staring at an empty tab — which is exactly
+      // what a malformed sprint did to _autoAdvanceSprints. Paint first; the
+      // maintenance steps below can fail loudly without blanking the app.
+      this.switchTab('today');
+      window.inboxView?.refreshBadge();
     } catch (error) {
       console.error('Init failed:', error);
       this.showNotification('Failed to initialize: ' + error.message, 'error');
+      // A toast alone auto-dismisses and leaves an empty screen behind. Put the
+      // failure where the content should have been.
+      this.renderBootState(
+        'Could not load your data.',
+        `${error.message || error}. Your data is safe on the server — reload to retry.`
+      );
+      return;
     }
+
+    // ── Post-render maintenance — each isolated; none can blank the view ──────
+    try {
+      // Sprints advance with the calendar, not by hand (design-review pass 2 N6):
+      // planning→active on the start date, active→completed past the end date.
+      await this._autoAdvanceSprints();
+    } catch (err) {
+      console.warn('Sprint auto-advance skipped:', err);
+    }
+    window.triageQueue?.start(); // drain import_queue now + every 5min while open
   }
 
   // Data Loading
@@ -855,13 +875,6 @@ class CapacityManager {
 
   // ── F-0 Dynamic dropdown population ──────────────────────────────────────
 
-  async savePriority(priorityData) {
-    await DB.put(DB.STORES.PRIORITIES, priorityData);
-    this.data.priorities = this.data.priorities.filter(p => p.id !== priorityData.id);
-    this.data.priorities.push(priorityData);
-    this.updateLastSaved();
-  }
-
   async saveEpic(epicData) {
     await DB.put(DB.STORES.EPICS, epicData);
     this.data.epics = await DB.getAll(DB.STORES.EPICS);
@@ -870,24 +883,19 @@ class CapacityManager {
     NotificationRegistry.emit('epic');
   }
 
-  async saveStory(storyData) {
-    await DB.put(DB.STORES.STORIES, storyData);
-    this.data.stories = await DB.getAll(DB.STORES.STORIES);
-    this.updateLastSaved();
-    NotificationRegistry.emit('story');
-  }
-
+  // Cascading epic delete. The two-step confirm lives in the caller's UI
+  // (backlogDetailPanel) — no native confirm() here.
   async deleteEpic(id) {
-    if (!confirm('Delete this epic and all its stories?')) return;
     await DB.delete(DB.STORES.EPICS, id);
     this.data.epics = this.data.epics.filter(e => e.id !== id);
-    // Delete associated stories
     const storiesToDelete = this.data.stories.filter(s => s.epicId === id);
     for (const story of storiesToDelete) {
       await DB.delete(DB.STORES.STORIES, story.id);
     }
     this.data.stories = this.data.stories.filter(s => s.epicId !== id);
-
+    await window.invalidateCache('epics');
+    this.updateLastSaved();
+    NotificationRegistry.emit('epic');
     this.showNotification('Epic deleted', 'success');
   }
 
@@ -912,22 +920,6 @@ class CapacityManager {
     this.showNotification('Sub-focus deleted', 'success');
   }
 
-  async deleteStory(id) {
-    if (!confirm('Delete this story?')) return;
-    await DB.delete(DB.STORES.STORIES, id);
-    this.data.stories = this.data.stories.filter(s => s.id !== id);
-
-    this.showNotification('Story deleted', 'success');
-  }
-
-  async deletePriority(id) {
-    if (!confirm('Delete this priority setting?')) return;
-    await DB.delete(DB.STORES.PRIORITIES, id);
-    this.data.priorities = this.data.priorities.filter(p => p.id !== id);
-    this.renderPriorityHistory();
-    this.showNotification('Priority deleted', 'success');
-  }
-
   // Navigation
   setupNavigation() {
     document.querySelectorAll('.nav-tab').forEach(tab => {
@@ -935,6 +927,9 @@ class CapacityManager {
     });
   }
 
+  // Option A navigation (pass 2 §II.6 A): Today · Calendar · Backlog ·
+  // Story Map · Inbox · Analytics. Backlog keeps its last list mode (sprint /
+  // focus) — group-by is a sort control inside the view, not a tab.
   switchTab(tabName) {
     const tabs = document.querySelectorAll('.nav-tab');
     tabs.forEach(t => t.classList.remove('active'));
@@ -946,9 +941,16 @@ class CapacityManager {
 
     this.currentTab = tabName;
 
+    const activate = (id) => document.getElementById(id)?.classList.add('active');
+
+    if (tabName === 'today') {
+      activate('today');
+      window.todayView?.render();
+      return;
+    }
+
     if (tabName === 'calendar') {
-      const el = document.getElementById('calendar');
-      if (el) el.classList.add('active');
+      activate('calendar');
       this.renderCalendarSkeleton();
       if (window.calendarView) {
         const container = document.getElementById('calendar-root');
@@ -957,36 +959,75 @@ class CapacityManager {
       return;
     }
 
-    if (tabName === 'focus') {
-      const el = document.getElementById('backlog');
-      if (el) el.classList.add('active');
+    if (tabName === 'backlog') {
+      activate('backlog');
       this.renderBacklogSkeleton();
-      if (window.backlogView) window.backlogView._setGroupBy('focus');
-      return;
-    }
-
-    if (tabName === 'sprints') {
-      const el = document.getElementById('backlog');
-      if (el) el.classList.add('active');
-      this.renderBacklogSkeleton();
-      if (window.backlogView) window.backlogView._setGroupBy('sprint');
+      if (window.backlogView) {
+        const mode = window.backlogView._currentGroupBy();
+        window.backlogView._setGroupBy(mode === 'focus' ? 'focus' : 'sprint');
+      }
       return;
     }
 
     if (tabName === 'storymap') {
-      const el = document.getElementById('backlog');
-      if (el) el.classList.add('active');
+      activate('backlog');
       this.renderBacklogSkeleton();
       if (window.backlogView) window.backlogView._setGroupBy('storymap');
       return;
     }
 
-    if (tabName === 'analytics') {
-      const el = document.getElementById('analytics');
-      if (el) el.classList.add('active');
-      this.renderAnalyticsSkeleton();
-      if (window.app?.renderAnalytics) window.app.renderAnalytics();
+    if (tabName === 'inbox') {
+      activate('inbox');
+      window.inboxView?.render();
       return;
+    }
+
+    if (tabName === 'analytics') {
+      activate('analytics');
+      // The old path called a renderAnalytics() that never existed — the tab
+      // showed a skeleton forever (pass 1, A5). Run the report directly.
+      this.generateAnalytics();
+      return;
+    }
+  }
+
+  // N6: a planning sprint whose window has arrived becomes active; an active
+  // sprint whose window has passed becomes completed. Both transitions are in
+  // SPRINT_TRANSITIONS' whitelist. No sprint is ever auto-CREATED — the Today
+  // view offers "Start a sprint this week" instead.
+  async _autoAdvanceSprints() {
+    const today = new Date().toISOString().slice(0, 10);
+    for (const sprint of this.data.sprints || []) {
+      // A sprint missing startDate/durationWeeks makes deriveSprintMeta throw
+      // RangeError on the invalid Date. Skip it rather than take the app down.
+      if (!sprint?.startDate || !sprint?.durationWeeks) {
+        console.warn('auto-advance: skipping malformed sprint', sprint?.id);
+        continue;
+      }
+      let endDate;
+      try {
+        ({ endDate } = deriveSprintMeta(sprint.startDate, sprint.durationWeeks));
+      } catch (err) {
+        console.warn('auto-advance: bad sprint dates', sprint.id, err);
+        continue;
+      }
+      let next = null;
+      if (sprint.status === SPRINT_STATUS.PLANNING && sprint.startDate <= today && today <= endDate) {
+        next = SPRINT_STATUS.ACTIVE;
+      } else if (sprint.status !== SPRINT_STATUS.COMPLETED && endDate < today) {
+        next = SPRINT_STATUS.COMPLETED;
+      }
+      if (!next) continue;
+      try {
+        const fields = next === SPRINT_STATUS.COMPLETED
+          ? { status: next, completedAt: new Date().toISOString() }
+          : { status: next };
+        await window.sprintManager.updateSprint(sprint.id, fields);
+        this.updateSprintInMemory(sprint.id, fields);
+        this.showNotification(`${next === SPRINT_STATUS.ACTIVE ? 'Started' : 'Closed'} Sprint ${sprint.sprintNumber || ''}`.trim(), 'info');
+      } catch (err) {
+        console.warn('auto-advance sprint failed:', sprint.id, err);
+      }
     }
   }
 
@@ -1004,123 +1045,25 @@ class CapacityManager {
       if (e.target.files[0]) window.dataPortability.importData(e.target.files[0]);
     });
 
-    // F-1: Click-to-modal delegation on card containers (§4.4)
-    document.getElementById('epicsList')?.addEventListener('click', (e) => {
-      if (e.target.closest('button')) return;
-      const card = e.target.closest('[data-epic-id]');
-      if (card) this.modal.open('epic', card.dataset.epicId);
-    });
-    document.getElementById('storyMap')?.addEventListener('click', (e) => {
-      if (e.target.closest('button')) return;
-      const card = e.target.closest('[data-story-id]');
-      if (card) this.modal.open('story', card.dataset.storyId);
-    });
-    document.getElementById('subFocusManagement')?.addEventListener('click', (e) => {
-      if (e.target.closest('button')) return;
-      const card = e.target.closest('[data-subfocus-id]');
-      if (card) this.modal.open('subFocus', card.dataset.subfocusId);
-    });
+    // (The epicsList/storyMap/subFocusManagement delegated listeners targeted
+    // DOM removed with the portfolio view — pass 1 A1's "dead openers".)
 
     // F-1: Keyboard Escape closes modal (§4.5)
     document.addEventListener('keydown', (e) => {
       if (e.key === 'Escape') this.modal?.close();
     });
 
-    // F-2: Story creation form action item wiring (§5.4)
-    document.getElementById('addCreateActionItem')?.addEventListener('click', () => this.addCreateActionItem());
-    document.getElementById('createActionItemInput')?.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter') { e.preventDefault(); this.addCreateActionItem(); }
-    });
   }
 
   setDefaultDate() {
-    const today = new Date();
-    const month = String(today.getMonth() + 1).padStart(2, '0');
-    const year = today.getFullYear();
-
-    const planMonth = document.getElementById('planMonth');
-    if (planMonth) planMonth.value = month;
-    const planYear = document.getElementById('planYear');
-    if (planYear) planYear.value = year;
+    const month = String(new Date().getMonth() + 1).padStart(2, '0');
     const analyticsMonth = document.getElementById('analyticsMonth');
     if (analyticsMonth) analyticsMonth.value = month;
   }
 
-  // Epic Timeline
-
-  // Priority Hierarchy
-  renderPriorityHistory() {
-    const container = document.getElementById('priorityHistory');
-
-    if (!container) return;
-    if (this.data.priorities.length === 0) {
-      container.innerHTML = '<p class="empty-state">No priority history yet.</p>';
-      return;
-    }
-
-    const sorted = [...this.data.priorities].sort((a, b) =>
-      new Date(b.timestamp) - new Date(a.timestamp)
-    );
-
-    let html = '';
-    sorted.forEach(priority => {
-      const monthName = new Date(2026, parseInt(priority.month) - 1).toLocaleString('default', { month: 'long' });
-      const period = priority.id.includes('W') ? `${monthName} - Week ${priority.id.split('W')[1]}` : monthName;
-
-      html += `<div class="epic-card">
-        <div class="epic-header">
-          <span class="epic-title">${period}</span>
-          <button class="btn-danger" onclick="app.deletePriority('${priority.id}')">Delete</button>
-        </div>
-        <div class="epic-meta">
-          <div class="meta-item">
-            <span class="meta-label">Primary:</span>
-            <span class="tag tag-primary">${priority.focuses.primary || 'None'}</span>
-          </div>
-          <div class="meta-item">
-            <span class="meta-label">Sec 1:</span>
-            <span class="tag tag-secondary">${priority.focuses.secondary1 || 'None'}</span>
-          </div>
-          <div class="meta-item">
-            <span class="meta-label">Sec 2:</span>
-            <span class="tag tag-secondary">${priority.focuses.secondary2 || 'None'}</span>
-          </div>
-          <div class="meta-item">
-            <span class="meta-label">Floor:</span>
-            <span class="tag tag-floor">${priority.focuses.floor || 'None'}</span>
-          </div>
-        </div>
-      </div>`;
-    });
-
-    container.innerHTML = html;
-  }
-
-  // Sub-Focus Management
-  loadSubFocusesForEpic() {
-    const focusId = document.getElementById('epicFocus')?.value;
-    const select = document.getElementById('epicSubFocus');
-    if (!select) return;
-
-    if (!focusId) {
-      select.innerHTML = '<option value="">Select Focus first</option>';
-      return;
-    }
-
-    const subs = this.data.subFocuses.filter(sf => sf.focusId === focusId);
-
-    if (subs.length === 0) {
-      select.innerHTML = '<option value="">No sub-focuses for this focus</option>';
-      return;
-    }
-
-    let html = '<option value="">Select Sub-Focus</option>';
-    subs.forEach(sf => {
-      const label = sf.icon ? `${sf.icon} ${sf.name}` : sf.name;
-      html += `<option value="${sf.id}">${this.escapeHtml(label)}</option>`;
-    });
-    select.innerHTML = html;
-  }
+  // (renderPriorityHistory / loadSubFocusesForEpic deleted — the priorities
+  // store is DEPRECATED (schema.yaml) and both targeted DOM that no longer
+  // exists; pass 1 A5.)
 
   // Epic Management
   // User Stories
@@ -1166,189 +1109,10 @@ class CapacityManager {
 
   // R5: Edit Story + Action Items
 
-  toggleCompletedStories(id) {
-    const container = document.getElementById(id);
-    if (!container) return;
-    container.style.display = container.style.display === 'none' ? 'flex' : 'none';
-  }
-
-  // Story Lifecycle Methods
-
-  getStoryTimeSpent(storyId) {
-    let total = 0;
-    this.data.dailyLogs.forEach(log => {
-      const stories = log.stories || [];
-      stories.forEach(s => {
-        if ((s.id || s.storyId) === storyId) {
-          total += s.timeSpent || s.effort || 0;
-        }
-      });
-    });
-    return total;
-  }
-
-  async activateStory(storyId) {
-    const story = this.data.stories.find(s => s.id === storyId);
-    if (!story) return;
-
-    story.status = STORY_STATUS.ACTIVE;
-    story.activatedAt = new Date().toISOString();
-    await this.saveStory(story);
-
-    // Also activate the parent epic if it's still in planning
-    if (story.epicId) {
-      const epic = this.data.epics.find(e => e.id === story.epicId);
-      if (epic && epic.status === EPIC_STATUS.PLANNING) {
-        epic.status = EPIC_STATUS.ACTIVE;
-        await this.saveEpic(epic);
-      }
-    }
-  }
-
-  async completeStory(storyId) {
-    const story = this.data.stories.find(s => s.id === storyId);
-    if (!story) return;
-
-    const timeSpent = this.getStoryTimeSpent(storyId);
-    story.status = STORY_STATUS.COMPLETED;
-    story.completed = true;
-    story.completedAt = new Date().toISOString();
-    story.timeSpent = timeSpent;
-
-    // Calculate variance if estimate exists
-    if (story.estimatedBlocks && story.estimatedBlocks > 0) {
-      story.estimateVariance = timeSpent - story.estimatedBlocks;
-      story.estimateAccuracy = story.estimatedBlocks / Math.max(timeSpent, 0.01);
-    }
-
-    await this.saveStory(story);
-
-    // Unblock any stories that depend on this one
-    const dependents = this.data.stories.filter(s => s.unblockedBy === storyId && s.blocked);
-    for (const dep of dependents) {
-      dep.blocked = false;
-      dep.unblockedBy = null;
-      dep.status = STORY_STATUS.ACTIVE;
-      await this.saveStory(dep);
-    }
-
-    // Check if the epic is now complete
-    if (story.epicId) await this.checkEpicCompletion(story.epicId);
-  }
-
-  async abandonStory(storyId, reason) {
-    const story = this.data.stories.find(s => s.id === storyId);
-    if (!story) return;
-
-    story.status = STORY_STATUS.ABANDONED;
-    story.abandonedAt = new Date().toISOString();
-    story.abandonReason = reason || '';
-    story.timeSpent = this.getStoryTimeSpent(storyId);
-
-    await this.saveStory(story);
-
-    // Unblock dependents (abandoned also unblocks)
-    const dependents = this.data.stories.filter(s => s.unblockedBy === storyId && s.blocked);
-    for (const dep of dependents) {
-      dep.blocked = false;
-      dep.unblockedBy = null;
-      dep.status = STORY_STATUS.ACTIVE;
-      await this.saveStory(dep);
-    }
-
-    if (story.epicId) await this.checkEpicCompletion(story.epicId);
-  }
-
-  async blockStory(storyId, unblockedByStoryId) {
-    const story = this.data.stories.find(s => s.id === storyId);
-    if (!story) return;
-
-    story.blocked = true;
-    story.status = STORY_STATUS.BLOCKED;
-    story.unblockedBy = unblockedByStoryId || null;
-    await this.saveStory(story);
-  }
-
-  async unblockStory(storyId) {
-    const story = this.data.stories.find(s => s.id === storyId);
-    if (!story) return;
-
-    story.blocked = false;
-    story.unblockedBy = null;
-    story.status = STORY_STATUS.ACTIVE;
-    await this.saveStory(story);
-  }
-
-  async checkEpicCompletion(epicId) {
-    const epic = this.data.epics.find(e => e.id === epicId);
-    if (!epic) return;
-
-    // Don't auto-complete if epic is archived
-    if (epic.status === EPIC_STATUS.ARCHIVED) return;
-
-    const epicStories = this.data.stories.filter(s => s.epicId === epicId);
-    if (epicStories.length === 0) return;
-
-    const allDone = epicStories.every(s =>
-      s.status === STORY_STATUS.COMPLETED || s.status === STORY_STATUS.ABANDONED
-    );
-
-    if (allDone && epic.status !== EPIC_STATUS.COMPLETED) {
-      epic.status = EPIC_STATUS.COMPLETED;
-      epic.completedAt = new Date().toISOString();
-      await this.saveEpic(epic);
-      this.showNotification(`Epic "${epic.name}" auto-completed!`, 'success');
-
-    }
-  }
-
-  // Story Lifecycle UI Methods
-
-  async activateStoryUI(storyId) {
-    await this.activateStory(storyId);
-
-    this.showNotification('Story activated', 'success');
-  }
-
-  async completeStoryUI(storyId) {
-    await this.completeStory(storyId);
-
-    this.showNotification('Story completed', 'success');
-  }
-
-  async abandonStoryUI(storyId) {
-    const reason = prompt('Reason for abandoning (optional):');
-    if (reason === null) return; // cancelled
-    await this.abandonStory(storyId, reason);
-
-    this.showNotification('Story abandoned', 'success');
-  }
-
-  async blockStoryUI(storyId) {
-    const month = document.getElementById('storyPeriodMonth').value;
-    const otherStories = this.data.stories.filter(s =>
-      s.month === month && s.id !== storyId && s.status !== STORY_STATUS.COMPLETED && s.status !== STORY_STATUS.ABANDONED
-    );
-
-    let unblockedBy = null;
-    if (otherStories.length > 0) {
-      const choices = otherStories.map((s, i) => `${i + 1}. ${s.name}`).join('\n');
-      const choice = prompt(`Blocked by which story? (number, or leave empty)\n${choices}`);
-      if (choice === null) return; // cancelled
-      const idx = parseInt(choice) - 1;
-      if (idx >= 0 && idx < otherStories.length) {
-        unblockedBy = otherStories[idx].id;
-      }
-    }
-
-    await this.blockStory(storyId, unblockedBy);
-    this.showNotification('Story blocked', 'warning');
-  }
-
-  async unblockStoryUI(storyId) {
-    await this.unblockStory(storyId);
-    this.showNotification('Story unblocked', 'success');
-  }
+  // Story lifecycle methods extracted to js/storyLifecycle.js (strangler-fig
+  // cut #3; pass 2 §II.7 B) — writes route through storyWrites so completion
+  // side-effects fire for every caller. app.saveStory retired with them
+  // (STATE.md 2026-07-07 deferral resolved).
 
   // Analytics
   generateAnalytics() {
@@ -1443,60 +1207,8 @@ class CapacityManager {
       </div>` : '<p class="empty-state">No daily logs for this period</p>'}`;
   }
 
-  // Sidebar Navigation
-
-  initSidebar() {
-    const rawSidebarState = localStorage.getItem('sidebarCollapsed');
-    const sidebarStateResult = validateExternalInput('local:sidebarCollapsed', rawSidebarState);
-    if (!sidebarStateResult.valid) {
-      console.warn('Corrupt localStorage key "sidebarCollapsed":', sidebarStateResult.errors);
-    }
-    const sidebarCollapsed = sidebarStateResult.valid
-      ? rawSidebarState === 'true'
-      : DEFAULT_SIDEBAR_COLLAPSED;
-    if (sidebarCollapsed) {
-      document.getElementById('floatingSidebar').classList.add('collapsed');
-      this.sidebarCollapsed = true;
-    }
-    this.updateSidebarLinks();
-  }
-
-  toggleSidebar() {
-    this.sidebarCollapsed = !this.sidebarCollapsed;
-    const sidebar = document.getElementById('floatingSidebar');
-    if (this.sidebarCollapsed) {
-      sidebar.classList.add('collapsed');
-    } else {
-      sidebar.classList.remove('collapsed');
-    }
-    localStorage.setItem('sidebarCollapsed', String(this.sidebarCollapsed));
-  }
-
-  updateSidebarLinks() {
-    const container = document.getElementById('sidebarSections');
-    if (!container) return;
-    // Inbox-only sidebar (2026-07-07): per-tab jump-links removed — most targeted
-    // tabs no longer existed. The sidebar is now the Inbox entry point.
-    container.innerHTML = `
-      <div class="sidebar-section">
-        <a class="sidebar-link" href="#inbox" data-target="inbox"
-           onclick="app.showInbox(); return false;">
-          <span class="sidebar-icon">\u{1F4E5}</span>
-          <span class="sidebar-text">Inbox</span>
-          <span class="sidebar-badge" id="sidebar-inbox-badge" style="display:none"></span>
-        </a>
-      </div>`;
-    window.inboxView?.refreshBadge();
-  }
-
-  showInbox() {
-    document.querySelectorAll('.nav-tab').forEach(t => t.classList.remove('active'));
-    document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
-    this.currentTab = 'inbox';
-    const el = document.getElementById('inbox');
-    if (el) el.classList.add('active');
-    window.inboxView?.render();
-  }
+  // (Sidebar deleted — Inbox is a nav tab with its badge in the tab itself;
+  // pass 1 A4. initSidebar/toggleSidebar/updateSidebarLinks/showInbox removed.)
 
   // Collapsible Cards
   makeCardsCollapsible() {
@@ -1528,113 +1240,10 @@ class CapacityManager {
     });
   }
 
-  // Epic Dropdown Filtering
-  populateEpicDropdown() {
-    const select = document.getElementById('storyEpic');
-    if (!select) return;
-    const showCompleted = document.getElementById('showCompletedEpicsInDropdown')?.checked || false;
-    const currentValue = select.value;
-
-    const epics = this.data.epics.filter(epic => {
-      if (epic.status === EPIC_STATUS.ARCHIVED) return false;
-      if (!showCompleted && epic.status === EPIC_STATUS.COMPLETED) return false;
-      return true;
-    });
-
-    epics.sort((a, b) => {
-      const fa = this.getFocusName(a.focusId);
-      const fb = this.getFocusName(b.focusId);
-      if (fa !== fb) return fa.localeCompare(fb);
-      return a.name.localeCompare(b.name);
-    });
-
-    let html = '<option value="">Select Epic</option>';
-    let currentFocus = null;
-    epics.forEach(epic => {
-      const epicFocusName = this.getFocusName(epic.focusId);
-      if (epicFocusName !== currentFocus) {
-        if (currentFocus !== null) html += '</optgroup>';
-        html += `<optgroup label="${this.escapeHtml(epicFocusName)}">`;
-        currentFocus = epicFocusName;
-      }
-      const statusBadge = epic.status === EPIC_STATUS.COMPLETED ? ' (completed)' :
-                           epic.status === EPIC_STATUS.PLANNING ? ' (planning)' : '';
-      html += `<option value="${epic.id}">${this.escapeHtml(epic.name)}${statusBadge}</option>`;
-    });
-    if (currentFocus !== null) html += '</optgroup>';
-
-    select.innerHTML = html;
-
-    if (currentValue && epics.find(e => e.id === currentValue)) {
-      select.value = currentValue;
-    }
-  }
-
-  // Epic Status Check Before Story Save
-  async checkEpicStatusBeforeSave(epicId) {
-    const epic = this.data.epics.find(e => e.id === epicId);
-    if (!epic) {
-      this.showNotification('Epic not found', 'error');
-      return false;
-    }
-    if (epic.status === EPIC_STATUS.ARCHIVED) {
-      this.showNotification('Cannot add stories to archived epic', 'error');
-      return false;
-    }
-    if (epic.status === EPIC_STATUS.COMPLETED) {
-      const reactivate = confirm(
-        `Epic "${epic.name}" is marked as completed.\n\n` +
-        `Do you want to reactivate it?\n\n` +
-        `YES = Epic becomes active, story will appear in story map\n` +
-        `NO = Story saved but hidden (epic stays completed)`
-      );
-      if (reactivate) {
-        await this.reactivateEpic(epicId);
-        this.showNotification(`Epic "${epic.name}" reactivated`, 'success');
-      } else {
-        this.showNotification('Story will be saved but hidden from story map', 'info');
-      }
-      return true;
-    }
-    return true;
-  }
-
-  async reactivateEpic(epicId) {
-    const epic = this.data.epics.find(e => e.id === epicId);
-    if (!epic) return;
-    epic.status = EPIC_STATUS.ACTIVE;
-    epic.completedAt = null;
-    await this.saveEpic(epic);
-
-  }
-
-  // Epic Archive
-  async reactivateEpicUI(epicId) {
-    const epic = this.data.epics.find(e => e.id === epicId);
-    if (!epic) return;
-    if (!confirm(`Reactivate epic "${epic.name}"?`)) return;
-    await this.reactivateEpic(epicId);
-    this.showNotification('Epic reactivated', 'success');
-  }
-
-  async permanentlyArchiveEpic(epicId) {
-    const epic = this.data.epics.find(e => e.id === epicId);
-    if (!epic) return;
-    if (!confirm(
-      `Permanently archive "${epic.name}"?\n\n` +
-      `This will hide it from all views. You can still restore it from the archive.`
-    )) return;
-    epic.status = EPIC_STATUS.ARCHIVED;
-    epic.archivedAt = new Date().toISOString();
-    await this.saveEpic(epic);
-
-    this.showNotification('Epic archived', 'success');
-  }
-
-  // Rendering
-  renderAll() {
-    // Rendered views are now driven by switchTab() and individual view modules
-  }
+  // (populateEpicDropdown, checkEpicStatusBeforeSave, reactivateEpic(UI),
+  // permanentlyArchiveEpic, toggleCompletedStories, renderAll deleted — all
+  // verified call-site-free in pass 1 A5 / pass 3 §5. Epic status changes go
+  // through the detail panel's status select.)
 
   // Utilities
   updateLastSaved() {

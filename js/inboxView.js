@@ -76,6 +76,8 @@ const renderInbox = () => {
          onclick="if (event.target.closest('button')) return; app.modal.openForApproval('story', '${esc(s.id)}')">
       <div class="inbox-card-line1">
         <span class="inbox-card-name">${esc(s.name)}</span>
+        <button class="inbox-approve-btn" title="Approve as-is (edit via the card)"
+                onclick="window.inboxView.approve('${esc(s.id)}')">✓ Approve</button>
         <button class="inbox-discard-btn" title="Discard (soft-delete)"
                 onclick="window.inboxView.discard('${esc(s.id)}')">Discard</button>
       </div>
@@ -120,6 +122,12 @@ const renderInbox = () => {
   });
 };
 
+// One-click approval (design-review pass 2, A9): the usual triage decision is
+// binary — opening the full edit modal stays available via the card body.
+const approve = async (storyId) => {
+  await window.storyWrites.commitStoryUpdate(storyId, { reviewState: REVIEW_STATE.APPROVED });
+};
+
 const discard = async (storyId) => {
   // Soft-delete: the story stays in the DB, invisible to the Inbox and (being
   // backlog/no-sprint) to capacity. storyWrites owns rollback + structured emit.
@@ -131,7 +139,7 @@ const pickCandidatesFile = () => {
 };
 
 const refreshBadge = () => {
-  const badge = document.getElementById('sidebar-inbox-badge');
+  const badge = document.getElementById('tab-inbox-badge');
   if (!badge) return;
   const n = _proposed().length;
   badge.textContent = n > 0 ? String(n) : '';
@@ -206,4 +214,4 @@ const confirmHistoryImport = async () => {
 };
 
 // @owns inboxView — review Inbox for proposed (candidate-imported) stories; sidebar badge; candidates file-pick → mergeImport; history import preview → importHistoryManifest.
-window.inboxView = { render: renderInbox, discard, pickCandidatesFile, pickHistoryFile, closeHistoryPreview, confirmHistoryImport, refreshBadge };
+window.inboxView = { render: renderInbox, approve, discard, pickCandidatesFile, pickHistoryFile, closeHistoryPreview, confirmHistoryImport, refreshBadge };

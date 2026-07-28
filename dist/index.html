@@ -3,7 +3,8 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Capacity Planner</title>                                                                                                                                                                                                                                                                                                                                                                                <link rel="stylesheet" href="styles.97d1abc8.min.css">
+    <title>Capacity Planner</title>
+    <link rel="stylesheet" href="styles.635acfd9.min.css">
   </head>
 <body>
     <!-- Auth Overlay — shown when no session exists -->
@@ -18,43 +19,34 @@
       </div>
     </div>
 
-    <!-- Floating Sidebar Navigation -->
-    <nav id="floatingSidebar" class="floating-sidebar">
-        <div class="sidebar-content">
-            <div class="sidebar-header">
-                <h4>Menu</h4>
-                <button class="sidebar-toggle" onclick="app.toggleSidebar()">&#9664;</button>
-            </div>
-            <div class="sidebar-sections" id="sidebarSections"></div>
-        </div>
-    </nav>
-
-    <!-- Expand button when sidebar is collapsed -->
-    <button class="sidebar-expand-button" onclick="app.toggleSidebar()">&#9654;</button>
-
-    <div class="container main-content">
+    <main class="container main-content">
         <header>
             <h1>Capacity Planner</h1>
             <div class="sync-status">
                 <span id="lastSaved">Last saved: Never</span>
                 <button id="exportBtn" class="btn-secondary btn-sm">Export</button>
                 <button id="importBtn" class="btn-secondary btn-sm">Import</button>
-                <button id="migrate-idb-btn" class="btn-tertiary btn-sm" onclick="migrateFromIDB()" title="Copy existing IndexedDB data to Supabase">Migrate Local Data</button>
                 <button id="signout-btn" class="btn-tertiary btn-sm" onclick="authSignOut()" style="display:none;">Sign Out</button>
                 <input type="file" id="fileInput" accept=".json" style="display:none">
             </div>
         </header>
 
-        <nav class="nav-tabs">
-            <button class="nav-tab active" data-tab="calendar">Calendar</button>
-            <button class="nav-tab" data-tab="focus">Focus</button>
-            <button class="nav-tab" data-tab="sprints">Sprints</button>
+        <!-- Option A navigation (design-review pass 2 §II.6 A): one system, six
+             tabs. The floating sidebar, its collapse machinery, and the
+             duplicate group-by routes are gone (pass 1 A4). -->
+        <nav class="nav-tabs" aria-label="Views">
+            <button class="nav-tab active" data-tab="today">Today</button>
+            <button class="nav-tab" data-tab="calendar">Calendar</button>
+            <button class="nav-tab" data-tab="backlog">Backlog</button>
             <button class="nav-tab" data-tab="storymap">Story Map</button>
+            <button class="nav-tab" data-tab="inbox">Inbox <span id="tab-inbox-badge" class="tab-badge" style="display:none"></span></button>
             <button class="nav-tab" data-tab="analytics">Analytics</button>
         </nav>
 
-        <!-- Calendar tab — now the default view -->
-        <div id="calendar" class="tab-content panel-expanded calendar-tab-readonly active">
+        <!-- Today — the default view (pass 2 §II.4) -->
+        <div id="today" class="tab-content panel-expanded active"></div>
+
+        <div id="calendar" class="tab-content panel-expanded calendar-tab-readonly">
             <div id="calendar-root"></div>
         </div>
 
@@ -97,15 +89,15 @@
             </div>
         </div>
 
-        <!-- Tab 7: Backlog -->
+        <!-- Backlog + Story Map (both render into #backlog-root) -->
         <div id="backlog" class="tab-content panel-expanded">
           <div id="backlog-root"></div>
         </div>
 
-        <!-- Inbox — sidebar-only view (no nav-tab); rendered by inboxView.js -->
+        <!-- Inbox — review queue for proposed stories; rendered by inboxView.js -->
         <div id="inbox" class="tab-content panel-expanded"></div>
 
-    </div>
+    </main>
 
     <!-- Backlog detail panel -->
     <div id="backlog-detail-panel" class="bdp-container" aria-hidden="true"></div>
@@ -136,6 +128,6 @@
     </div>
 
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-                                                                                                                                                                                                                                                                                                                                                                        <script src="app.0260df49.min.js"></script>
+    <script src="app.7496a095.min.js"></script>
   </body>
 </html>

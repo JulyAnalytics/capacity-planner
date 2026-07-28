@@ -20,7 +20,8 @@ import {
   addToCache,
   invalidateCache
 } from './hierarchyCache.js';
-import { STORY_STATUS, EPIC_STATUS, FOCUS_STATUS, SPRINT_STATUS } from './constants.js';
+import { STORY_STATUS, EPIC_STATUS, FOCUS_STATUS, SPRINT_STATUS, STORY_SIZES, STORY_SIZE_LABELS } from './constants.js';
+import { sprintLabel } from './utils.js';
 import { getMergedDefaults, saveCreationDefaults } from './contextDetection.js';
 import { validateEntity } from './dbValidator.js';
 import {
@@ -57,6 +58,7 @@ const creationModalState = {
     subFocusId: null,
     epicId:     null,
     sprintId:   null,
+    sizeWeight: 1,   // ADR-0009 — S/M/L/XL selection, stored as story.weight
   }
 };
 
@@ -92,6 +94,7 @@ function openCreationModal(overrides = {}) {
     subFocusId,
     epicId,
     sprintId: overrides.sprintId ?? null,
+    sizeWeight: 1,
   };
 
   createModalDOM();
@@ -99,8 +102,12 @@ function openCreationModal(overrides = {}) {
   trackModalUsage();
   maybeShowShortcutHints();
 
+  // @intent recovery only applies to a cold open. A contextual open (a "+"
+  // button passing overrides) is a deliberate fresh start — restoring a stale
+  // draft over it repopulated the wrong epic (design-review pass 2, N8).
+  const contextual = Object.keys(overrides).length > 0;
   setTimeout(() => {
-    const restored = restoreFormState();
+    const restored = contextual ? false : restoreFormState();
     if (!restored) {
       document.getElementById('creation-modal-name')?.focus();
     }
@@ -110,7 +117,7 @@ function openCreationModal(overrides = {}) {
 function closeCreationModal() {
   document.getElementById('creation-modal-overlay')?.remove();
   creationModalState.isOpen = false;
-  creationModalState.formData = { name: '', focusId: null, subFocusId: null, epicId: null };
+  creationModalState.formData = { name: '', focusId: null, subFocusId: null, epicId: null, sizeWeight: 1 };
   // Reset action item draft on close (§5.2)
   if (window.app) {
     window.app._createActionItemDraft = [];
@@ -201,12 +208,12 @@ function switchType(newType) {
   clearInlineErrors();
   creationModalState.selectedType = newType;
 
-  // Preserve hierarchy selections when switching types
+  // Preserve hierarchy selections AND the typed name when switching types —
+  // clearing the name forced a retype after every "create the epic first"
+  // detour (design-review pass 1, A3).
   creationModalState.formData = {
-    name:       '',
-    focusId:    creationModalState.formData.focusId,
-    subFocusId: creationModalState.formData.subFocusId,
-    epicId:     creationModalState.formData.epicId
+    ...creationModalState.formData,
+    name: creationModalState.formData.name,
   };
 
   document.querySelectorAll('.type-tab').forEach(tab => {
@@ -348,25 +355,16 @@ function renderStoryForm() {
       </select>
     </div>
 
-    <div class="cm-form-row">
-      <div class="cm-form-group">
-        <label for="cm-story-fib" class="cm-form-label">Fibonacci Size</label>
-        <select id="cm-story-fib" class="cm-form-select">
-          <option value="">None</option>
-          <option value="1">1 - Trivial</option>
-          <option value="2">2 - Simple</option>
-          <option value="3">3 - Easy</option>
-          <option value="5">5 - Medium</option>
-          <option value="8">8 - Large</option>
-          <option value="13">13 - Very Large</option>
-          <option value="21">21 - Epic</option>
-        </select>
+    <div class="cm-form-group">
+      <label class="cm-form-label">Size</label>
+      <div class="cm-size-toggle" role="group" aria-label="Story size">
+        ${STORY_SIZES.map(w => `
+          <button type="button" class="cm-size-btn${creationModalState.formData.sizeWeight === w ? ' cm-size-btn--on' : ''}"
+            data-weight="${w}" aria-pressed="${creationModalState.formData.sizeWeight === w}">
+            ${STORY_SIZE_LABELS[w]}<span class="cm-size-blocks">${w} blk</span>
+          </button>`).join('')}
       </div>
-      <div class="cm-form-group">
-        <label for="cm-story-estimate" class="cm-form-label">Estimate (blocks)</label>
-        <input type="number" id="cm-story-estimate" class="cm-form-input"
-          placeholder="2.5" step="0.5" min="0" />
-      </div>
+      <small class="cm-form-hint">The one number capacity math reads (ADR-0009)</small>
     </div>
 
     <div class="cm-form-group">
@@ -503,7 +501,7 @@ function renderSubFocusForm() {
       </div>
       <div class="cm-form-group">
         <label for="cm-subfocus-color" class="cm-form-label">Color</label>
-        <input type="color" id="cm-subfocus-color" class="cm-form-input-color" value="#007bff" />
+        <input type="color" id="cm-subfocus-color" class="cm-form-input-color" value="#6b7784" />
       </div>
     </div>
   `;
@@ -527,7 +525,7 @@ function renderFocusForm() {
 
     <div class="cm-form-group">
       <label for="cm-focus-color" class="cm-form-label">Color</label>
-      <input type="color" id="cm-focus-color" class="cm-form-input-color" value="#007bff" />
+      <input type="color" id="cm-focus-color" class="cm-form-input-color" value="#6b7784" />
     </div>
   `;
 }
@@ -541,7 +539,7 @@ function _renderSprintOptions(selectedSprintId) {
     .filter(s => s.status !== SPRINT_STATUS.COMPLETED)
     .sort((a, b) => a.startDate.localeCompare(b.startDate));
   return sprints.map(s =>
-    `<option value="${s.id}" ${selectedSprintId === s.id ? 'selected' : ''}>${s.id} · ${s.startDate}</option>`
+    `<option value="${s.id}" ${selectedSprintId === s.id ? 'selected' : ''}>${sprintLabel(s)} · ${s.startDate}</option>`
   ).join('');
 }
 
@@ -587,6 +585,16 @@ function attachCascadeHandlers() {
   const type = creationModalState.selectedType;
 
   if (type === 'story') {
+    document.querySelectorAll('.cm-size-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        creationModalState.formData.sizeWeight = parseFloat(btn.dataset.weight);
+        document.querySelectorAll('.cm-size-btn').forEach(b => {
+          const on = b === btn;
+          b.classList.toggle('cm-size-btn--on', on);
+          b.setAttribute('aria-pressed', String(on));
+        });
+      });
+    });
     document.getElementById('story-focus')
       ?.addEventListener('change', e => handleFocusChange(e.target.value));
     document.getElementById('story-subfocus')
@@ -660,8 +668,6 @@ function getFormData() {
 
   switch (type) {
     case 'story': {
-      const fib      = document.getElementById('cm-story-fib')?.value;
-      const est      = document.getElementById('cm-story-estimate')?.value;
       const status   = document.getElementById('cm-story-status')?.value || STORY_STATUS.ACTIVE;
       const priority = document.getElementById('cm-story-priority')?.value || null;
       const epicId   = document.getElementById('story-epic')?.value || null;
@@ -692,10 +698,10 @@ function getFormData() {
         description: document.getElementById('cm-story-description')?.value || '',
         priority,
         month: String(new Date().getMonth() + 1).padStart(2, '0'),
-        weight: 1,
+        weight: creationModalState.formData.sizeWeight || 1,
         status,
-        fibonacciSize:    fib ? parseInt(fib) : null,
-        estimatedBlocks:  est ? parseFloat(est) : null,
+        fibonacciSize:    null,
+        estimatedBlocks:  null,
         timeSpent: 0,
         actionItems: [...(window.app?._createActionItemDraft || [])],
         blocked: false,
@@ -729,7 +735,7 @@ function getFormData() {
         ...base,
         description: document.getElementById('cm-subfocus-description')?.value || '',
         icon:        document.getElementById('cm-subfocus-icon')?.value || '',
-        color:       document.getElementById('cm-subfocus-color')?.value || '#007bff',
+        color:       document.getElementById('cm-subfocus-color')?.value || '#6b7784',
         focusId,
         month:       String(new Date().getMonth() + 1).padStart(2, '0')
       };
@@ -738,7 +744,7 @@ function getFormData() {
     case 'focus':
       return {
         ...base,
-        color:  document.getElementById('cm-focus-color')?.value || '#007bff',
+        color:  document.getElementById('cm-focus-color')?.value || '#6b7784',
         status: FOCUS_STATUS.ACTIVE
       };
 

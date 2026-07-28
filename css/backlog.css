@@ -7,6 +7,13 @@
   min-height: 100%;
   color: var(--text-dark);
 }
+/* The story list centers and caps so wide monitors don't strand content on
+   the left (the toolbar above stays full-width; #calendar is a different tab
+   and unaffected). Matches the file's existing hardcoded-cap style. */
+#bl-list {
+  max-width: 1100px;
+  margin: 0 auto;
+}
 
 /* ── Toolbar ─────────────────────────────────────────────────────────────────── */
 
@@ -57,9 +64,9 @@
   color: var(--text-dark);
 }
 .bl-focus-pill-dark.bl-pill-active {
-  background: var(--primary);
+  background: var(--primary-strong);
   color: #fff;
-  border-color: var(--primary);
+  border-color: var(--primary-strong);
 }
 
 /* Status chips */
@@ -133,9 +140,12 @@
 
 /* + New Sprint button */
 .bl-btn-new-sprint {
-  padding: var(--space-sm) var(--space-md);
+  /* Match the toolbar's other controls (chips/toggles/select/input all use
+     --space-xs vertical + 1px border) so the button no longer pokes above
+     and below its neighbours in .bl-toolbar-row. */
+  padding: var(--space-xs) var(--space-md);
   border-radius: 6px;
-  background: var(--primary);
+  background: var(--primary-strong);
   color: #fff;
   border: none;
   font-size: var(--text-xs);
@@ -454,7 +464,7 @@ button.bl-focus-name {
 .bl-sprint-status-badge[data-sprint-status="done"]     { background: var(--bg-light);   color: var(--text-muted); border-color: var(--border); }
 
 .bl-section-count .bl-count-num   { font-size: 12px; color: var(--text-muted); }
-.bl-section-count .bl-count-label { font-size: 11px; color: var(--border-strong); }
+.bl-section-count .bl-count-label { font-size: 11px; color: var(--text-muted); }
 
 /* Sprint story count chips — labeled (e.g. "3 active", "3 done") */
 .bl-sprint-chip {
@@ -618,15 +628,9 @@ button.bl-focus-name {
 }
 
 /* ── Story list ───────────────────────────────────────────────────────────── */
-
-.bl-story-list { padding: 4px 0; }
-.bl-collapsed .bl-story-list { display: none; }
-.bl-story-empty {
-  padding: var(--space-md) var(--space-lg);
-  font-size: var(--text-sm);
-  color: var(--text-muted);
-  font-style: italic;
-}
+/* The old .bl-story-list / .bl-story-empty rules were removed: neither class
+   is emitted (the list now uses .bl-section-body / .bl-band-body, and
+   .bl-collapsed is applied to .bl-section-chevron, not a story-list ancestor). */
 
 /* ── Buttons (legacy) ───────────────────────────────────────────────────────── */
 
@@ -691,7 +695,8 @@ button.bl-focus-name {
 
 .bdp-container {
   position: fixed;
-  z-index: 500;
+  z-index: 1100; /* above .global-actions (1000) — the FAB used to float over
+                    the detail panel and the mobile bottom sheet (pass 3, F15) */
   background: var(--bg-white);
   border-top: 1px solid var(--border);
   box-shadow: var(--shadow-lg);
@@ -898,12 +903,15 @@ button.bl-focus-name {
 }
 
 .bdp-actions-section {
+  /* The parent .bdp-scroll-body already gaps its children var(--space-md);
+     stacking padding-top + margin-top on top of that produced a ~28px dead
+     band above these actions. Keep the divider and let the parent gap carry
+     the spacing. Applies to all four panels that use this class. */
   border-top: 1px solid var(--border);
   padding-top: var(--space-md);
   display: flex;
   flex-direction: column;
   gap: var(--space-sm);
-  margin-top: var(--space-xs);
 }
 
 .bdp-action-btn--danger {
@@ -928,31 +936,15 @@ button.bl-focus-name {
 /* ── Day type colour tokens ─────────────────────────────────────────────────── */
 
 :root {
-  --dt-travel:   #fef3c7;
-  --dt-buffer:   var(--bg-light, #f8fafc);
-  --dt-stable:   #eff6ff;
-  --dt-project:  #faf5ff;
-  --dt-social:   #f0fdf4;
-  --dt-uncovered: #fffbeb;
-
-  --loc-international-bg:     #e6fffa;
-  --loc-international-border: #0d9488;
-  --loc-domestic-bg:          #f8f8f6;
-  --loc-domestic-border:      #9ca3af;
-
-  --sprint-bar-bg:     #eef2ff;
-  --sprint-bar-border: #6366f1;
-  --sprint-bar-done:   #e5e7eb;
-  --sprint-bar-active: #eef2ff;
-
-  /* ── Story priority bands (consumed by Stage 2 rendering) ── */
+  /* ── Story priority bands (consumed by Stage 2 rendering) ──
+     Trimmed 2026-07-27: a superseded second family of day-type / location /
+     sprint-bar tokens lived here with zero consumers (design-review pass 3,
+     F13). The live day-type/location/sprint tokens are styles.css's
+     --dt-*-bg/-text, --loc-*, --sprint-* families. */
   --priority-primary-bg:    #dbeafe;  /* blue-100   */
   --priority-primary-fg:    #1d4ed8;  /* blue-700   */
-  --priority-secondary1-bg: #ede9fe;  /* violet-100 */
   --priority-secondary1-fg: #6d28d9;  /* violet-700 */
-  --priority-secondary2-bg: #fef3c7;  /* amber-100  */
   --priority-secondary2-fg: #b45309;  /* amber-700  */
-  --priority-floor-bg:      #f1f5f9;  /* slate-100  */
   --priority-floor-fg:      #475569;  /* slate-600  */
   /* unassigned: no token — transparent row border */
 }
@@ -1015,14 +1007,14 @@ button.bl-focus-name {
 }
 .cv-toggle-btn--on {
   background: var(--primary-subtle, #eef2ff);
-  color: var(--primary, #6366f1);
-  border-color: var(--primary, #6366f1);
+  color: var(--primary-strong);
+  border-color: var(--primary-strong);
   font-weight: 600;
 }
 
 .cv-add-btn {
   padding: var(--space-sm) var(--space-md);
-  background: var(--primary, #6366f1);
+  background: var(--primary-strong);
   color: #fff;
   border: none;
   border-radius: var(--radius-sm, 4px);
@@ -1512,8 +1504,8 @@ button.bl-focus-name {
 }
 .cv-loc-type-btn--on {
   background: var(--primary-subtle, #eef2ff);
-  color: var(--primary, #6366f1);
-  border-color: var(--primary, #6366f1);
+  color: var(--primary-strong);
+  border-color: var(--primary-strong);
   font-weight: 600;
 }
 
@@ -1680,7 +1672,7 @@ button.bl-focus-name {
 .cv-save-btn {
   flex: 1;
   padding: var(--space-sm);
-  background: var(--primary, #6366f1);
+  background: var(--primary-strong);
   color: #fff;
   border: none;
   border-radius: var(--radius-sm, 4px);
@@ -1730,8 +1722,8 @@ button.bl-focus-name {
 }
 .cv-dur-btn--on {
   background: var(--primary-subtle, #eef2ff);
-  color: var(--primary, #6366f1);
-  border-color: var(--primary, #6366f1);
+  color: var(--primary-strong);
+  border-color: var(--primary-strong);
   font-weight: 600;
 }
 
@@ -1858,7 +1850,7 @@ button.bl-focus-name {
 .bl-coverage-fill {
   display: block;
   height: 100%;
-  background: var(--primary);
+  background: var(--primary-strong);
   border-radius: 3px;
   transition: width 0.3s ease;
 }
@@ -2087,14 +2079,14 @@ button.bl-focus-name {
 .bdp-inline-error { color: var(--danger); font-size: 12px; margin-bottom: 8px; }
 
 .bdp-form-actions { display: flex; gap: 8px; align-items: center; padding-top: 12px; }
-.bdp-save-btn { padding: 8px 16px; background: var(--primary); color: white; border: none; border-radius: var(--radius-sm, 4px); cursor: pointer; font-size: 13px; font-weight: 600; }
+.bdp-save-btn { padding: 8px 16px; background: var(--primary-strong); color: white; border: none; border-radius: var(--radius-sm, 4px); cursor: pointer; font-size: 13px; font-weight: 600; }
 .bdp-save-btn--disabled { opacity: 0.5; cursor: not-allowed; }
 .bdp-cancel-btn { padding: 8px 12px; background: transparent; border: 1px solid var(--border); border-radius: var(--radius-sm, 4px); cursor: pointer; font-size: 13px; color: var(--text-muted); }
 .bdp-danger-btn { padding: 8px 12px; background: transparent; border: 1px solid var(--danger); border-radius: var(--radius-sm, 4px); cursor: pointer; font-size: 13px; color: var(--danger); margin-left: auto; }
 
 .bdp-sprint-actions { padding: 12px 0; border-top: 1px solid var(--border); margin-top: 8px; display: flex; gap: 8px; }
 .bdp-action-btn { padding: 6px 14px; background: transparent; border: 1px solid var(--border); border-radius: var(--radius-sm, 4px); cursor: pointer; font-size: 12px; color: var(--text-muted); }
-.bdp-action-btn--primary { background: var(--primary); color: white; border-color: var(--primary); }
+.bdp-action-btn--primary { background: var(--primary-strong); color: white; border-color: var(--primary-strong); }
 
 .bdp-empty { font-size: 12px; color: var(--text-muted); padding: 8px 0; }
 .bdp-section-title { font-size: 11px; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 8px; }
@@ -2685,4 +2677,48 @@ button.bl-focus-name {
   font-size: 12px;
   color: var(--text-muted, #6b7280);
   pointer-events: none;
+}
+
+
+/* ── One-row toolbar additions (pass 3 Wave 3) ──────────────────────────────── */
+.bl-focus-select {
+  padding: 4px 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg-white);
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+  max-width: 160px;
+  cursor: pointer;
+}
+.bl-filter-input {
+  padding: 4px 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-size: var(--text-xs);
+  min-width: 130px;
+  flex: 0 1 180px;
+}
+.bl-filter-input:focus { outline: none; box-shadow: var(--focus-ring); border-color: var(--primary); }
+.bl-chip-group { display: inline-flex; gap: 4px; flex-wrap: wrap; align-items: center; }
+
+/* Attachment badge on story rows / sm2 cards (pass 2 §II.10-11) */
+.bl-att-badge, .sm2-card-att {
+  font-size: 10px;
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+
+/* Armed state for the two-step inline confirms */
+.bdp-danger-btn--armed,
+.bdp-action-btn--danger.bdp-danger-btn--armed {
+  background: var(--danger) !important;
+  color: #fff !important;
+  border-color: var(--danger) !important;
+}
+
+/* 44px touch rows (pass 1 B4 — pointer-coarse enlarged only one control) */
+@media (pointer: coarse) {
+  .bl-story-row { height: 44px; }
+  .bl-status-badge { min-height: 28px; }
 }

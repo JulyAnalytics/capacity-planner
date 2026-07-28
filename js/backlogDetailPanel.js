@@ -4,11 +4,11 @@
  */
 
 import DB from './db.js';
-import { esc } from './utils.js';
-import { daysBetween } from './locationCapacity.js';
+import { esc, sprintLabel, sizeLabel } from './utils.js';
+import { daysBetween, buildDayMap, detectUncoveredDays, deriveSprintCapacityFromPeriods, isoAddDays } from './locationCapacity.js';
 import { invalidateCache } from './hierarchyCache.js';
-import { deriveSprintCapacity, detectGaps, deriveSprintMeta } from './sprintCapacity.js';
-import { STORY_STATUS, EPIC_STATUS, FOCUS_STATUS, SPRINT_STATUS, PRIORITY_LEVELS } from './constants.js';
+import { deriveSprintMeta } from './sprintCapacity.js';
+import { STORY_STATUS, EPIC_STATUS, FOCUS_STATUS, SPRINT_STATUS, PRIORITY_LEVELS, STORY_SIZES, STORY_SIZE_LABELS } from './constants.js';
 
 const container = () => document.getElementById('backlog-detail-panel');
 const root      = () => document.getElementById('backlog-root');
@@ -19,15 +19,30 @@ let _currentFocusId   = null;
 let _currentSubFocusId = null;
 let _touchStartY      = 0;
 
-// ── Sprint / Segment builder state ────────────────────────────────────────────
+// ── Sprint panel state ────────────────────────────────────────────────────────
 
-let _currentSprintId     = null;
-let _segmentFormSprintId = null;
-let _segmentFormSegId    = null;
-let _segmentForm         = null;
+let _currentSprintId = null;
 
-// Fields that must NOT trigger a panel re-render — re-rendering destroys focus
-const _SEG_TEXT_ONLY_FIELDS = new Set(['city', 'country']);
+// Two-step inline confirm (the location-period delete pattern, promoted to the
+// panel's standard — design-review pass 1 B7): first click arms for 4s.
+let _pendingConfirm = null; // { key, timer }
+function _twoStepConfirm(key, btnEl, action) {
+  if (_pendingConfirm?.key === key) {
+    clearTimeout(_pendingConfirm.timer);
+    _pendingConfirm = null;
+    action();
+    return;
+  }
+  if (_pendingConfirm) clearTimeout(_pendingConfirm.timer);
+  const original = btnEl.textContent;
+  btnEl.textContent = 'Confirm — click again';
+  btnEl.classList.add('bdp-danger-btn--armed');
+  _pendingConfirm = { key, timer: setTimeout(() => {
+    btnEl.textContent = original;
+    btnEl.classList.remove('bdp-danger-btn--armed');
+    _pendingConfirm = null;
+  }, 4000) };
+}
 
 // ── Story panel ───────────────────────────────────────────────────────────────
 
@@ -86,7 +101,6 @@ export function close() {
   _currentFocusId    = null;
   _currentSubFocusId = null;
   _currentSprintId   = null;
-  _segmentForm       = null;
 }
 
 export function isOpen() {
@@ -141,11 +155,15 @@ async function _render(storyId) {
       <div class="bdp-fields">
         ${_renderFieldRow('Sprint',   _renderSprintPicker(story, allSprints))}
         ${_renderFieldRow('Epic',     _renderEpicPicker(story, allEpics))}
-        ${_renderFieldRow('Fib Size', _renderFibInput(story))}
-        ${_renderFieldRow('Estimate', _renderEstimateInput(story))}
+        ${_renderFieldRow('Size',     _renderSizePicker(story))}
         ${_renderFieldRow('Priority', _renderPriorityPicker(story))}
         ${_renderFieldRow('Actions', _renderActionItems(story))}
         ${_renderFieldRow('Files', window.storyAttachmentPanel.renderSection(story))}
+      </div>
+
+      <div class="bdp-actions-section">
+        <button class="bdp-action-btn--danger"
+          onclick="window.backlogDetailPanel._deleteStory('${esc(storyId)}', this)">Delete story</button>
       </div>
     </div>
   `;
@@ -170,7 +188,7 @@ function _renderSprintPicker(story, sprints) {
   const options = sprints
     .filter(s => s.status !== SPRINT_STATUS.COMPLETED)
     .sort((a, b) => a.startDate.localeCompare(b.startDate))
-    .map(s => `<option value="${esc(s.id)}" ${story.sprintId === s.id ? 'selected' : ''}>${esc(s.id)} · ${s.startDate}</option>`);
+    .map(s => `<option value="${esc(s.id)}" ${story.sprintId === s.id ? 'selected' : ''}>${esc(sprintLabel(s))} · ${s.startDate}</option>`);
   return `<select class="bdp-field-select"
     onchange="window.backlogDetailPanel.saveField('${esc(story.id)}', 'sprintId', this.value || null)">
     <option value="">Backlog (no sprint)</option>
@@ -198,16 +216,18 @@ function _renderPriorityPicker(story) {
   </select>`;
 }
 
-function _renderFibInput(story) {
-  return `<input type="number" class="bdp-field-input" value="${story.fibonacciSize || ''}"
-    step="1" min="0" placeholder="—"
-    onblur="window.backlogDetailPanel.saveField('${esc(story.id)}', 'fibonacciSize', this.value)" />`;
-}
-
-function _renderEstimateInput(story) {
-  return `<input type="number" class="bdp-field-input" value="${story.estimatedBlocks || ''}"
-    step="0.5" min="0" placeholder="—"
-    onblur="window.backlogDetailPanel.saveField('${esc(story.id)}', 'estimatedBlocks', this.value)" />`;
+// The single effort field (ADR-0009) — finally editable outside the Inbox
+// modal (design-review pass 1, A1: the field driving every capacity number was
+// reachable only from triage approval).
+function _renderSizePicker(story) {
+  const options = STORY_SIZES.map(w =>
+    `<option value="${w}" ${story.weight === w ? 'selected' : ''}>${STORY_SIZE_LABELS[w]} · ${w} blk</option>`);
+  const offScale = !STORY_SIZES.includes(story.weight);
+  return `<select class="bdp-field-select"
+    onchange="window.backlogDetailPanel.saveField('${esc(story.id)}', 'weight', this.value)">
+    ${offScale ? `<option value="${story.weight}" selected>${story.weight} blk (legacy)</option>` : ''}
+    ${options.join('')}
+  </select>`;
 }
 
 function _renderActionItems(story) {
@@ -270,7 +290,7 @@ async function _renderEpicPanel(epicId) {
     return `<div class="ep-story-row" onclick="window.backlogView?.openStoryPanel('${esc(s.id)}')">
       <span class="ep-story-status" data-status="${esc(s.status)}">${esc(displayLabel)}</span>
       <span class="ep-story-title">${esc(s.name)}</span>
-      <span class="ep-story-fib">${s.fibonacciSize || ''}</span>
+      <span class="ep-story-fib">${esc(sizeLabel(s.weight ?? 1))}</span>
     </div>`;
   }).join('');
 
@@ -341,9 +361,24 @@ async function _renderEpicPanel(epicId) {
           onclick="window.openCreationModal?.({type:'story', epicId:'${esc(epicId)}'})">
           + Add story
         </button>
+
+        <div class="bdp-actions-section">
+          <button class="bdp-action-btn--danger"
+            onclick="window.backlogDetailPanel._deleteEpic('${esc(epicId)}', this)">Delete epic + its stories</button>
+        </div>
       </div>
     </div>
   `;
+}
+
+// Two-step epic delete (cascades to its stories — the app.deleteEpic semantics,
+// with the confirm owned by the UI instead of a native dialog).
+async function _deleteEpic(epicId, btnEl) {
+  _twoStepConfirm(`epic:${epicId}`, btnEl, async () => {
+    await window.app.deleteEpic(epicId);
+    window.backlogView?.closePanel?.();
+    window.backlogView?.render?.();
+  });
 }
 
 // ── Focus panel render ────────────────────────────────────────────────────────
@@ -558,8 +593,16 @@ export async function saveField(storyId, field, value) {
   const story = window.app?.data?.stories?.find(s => s.id === storyId);
   if (!story) return;
 
-  const parsed = field === 'fibonacciSize'   ? (parseInt(value) || null)
-               : field === 'estimatedBlocks' ? (parseFloat(value) || null)
+  // Status routes through the lifecycle so completion side-effects — timeSpent,
+  // dependent unblocking, epic auto-completion — actually fire (pass 1, A6).
+  // A spine-rejected transition returns false; re-render restores the select.
+  if (field === 'status') {
+    const ok = await window.storyLifecycle.setStatus(storyId, value);
+    if (!ok) _render(storyId);
+    return;
+  }
+
+  const parsed = field === 'weight' ? (parseFloat(value) || 1)
                : value;
 
   const updates = { [field]: parsed };
@@ -574,7 +617,19 @@ export async function saveField(storyId, field, value) {
 
   // commitStoryUpdate owns the write, the structured 'story' emit (which patches
   // the row/card and refreshes this panel), the in-memory rollback, and the toast.
-  await window.storyWrites.commitStoryUpdate(storyId, updates);
+  // A guard rejection (blank name) returns false — re-render restores the field.
+  const ok = await window.storyWrites.commitStoryUpdate(storyId, updates);
+  if (!ok) _render(storyId);
+}
+
+// Two-step story delete → spine delete → close + full render (a removed row
+// can't be patched). Design-review pass 1, A5: there was NO way to delete a
+// story anywhere in the UI.
+async function _deleteStory(storyId, btnEl) {
+  _twoStepConfirm(`story:${storyId}`, btnEl, async () => {
+    const ok = await window.storyWrites.commitStoryDelete(storyId);
+    if (ok) window.showToast?.('Story deleted', 'success');
+  });
 }
 
 // ── Action item CRUD ──────────────────────────────────────────────────────────
@@ -713,15 +768,9 @@ function _isoAddDays(dateStr, n) {
   return new Date(Date.UTC(y, m - 1, d + n)).toISOString().slice(0, 10);
 }
 
-// ── Sprint panel (delegates to segment builder) ───────────────────────────────
+// ── Sprint panel (ADR-0008: reads location periods — the single supply model) ──
 
 export async function openSprint(sprintId) {
-  await openSegmentBuilder(sprintId);
-}
-
-// ── Segment builder ───────────────────────────────────────────────────────────
-
-export async function openSegmentBuilder(sprintId) {
   const sprint = (window.app?.data?.sprints || []).find(s => s.id === sprintId);
   if (!sprint) return;
   _currentSprintId   = sprintId;
@@ -729,22 +778,45 @@ export async function openSegmentBuilder(sprintId) {
   _currentEpicId     = null;
   _currentFocusId    = null;
   _currentSubFocusId = null;
-  const segments = await window.sprintManager.getSegmentsForSprint(sprintId);
-  _renderSegmentBuilder(sprint, segments);
+  await _renderSprintPanel(sprint);
   container().classList.add('bdp-open');
   container().setAttribute('aria-hidden', 'false');
   root()?.classList.add('bdp-active');
 }
 
-async function _renderSegmentBuilder(sprint, segments) {
+async function _renderSprintPanel(sprint) {
   const { endDate } = deriveSprintMeta(sprint.startDate, sprint.durationWeeks);
-  const gaps = detectGaps(sprint, segments);
-  const cap  = deriveSprintCapacity(segments);
-  const hasGaps = gaps.length > 0;
+  const periods = (window.app?.data?.locationPeriods || [])
+    .filter(p => p.endDate >= sprint.startDate && p.startDate <= endDate)
+    .sort((a, b) => a.startDate.localeCompare(b.startDate));
+  const overrides = window.app?.data?.dayTypeOverrides || [];
+  const cap = deriveSprintCapacityFromPeriods(sprint, periods, overrides);
+  const gaps = _groupContiguous(detectUncoveredDays(sprint.startDate, endDate, periods));
   const allocHtml = await _renderAllocationSection(sprint, cap);
 
   const panel = container();
-  const uncovDays = gaps.reduce((n, g) => n + daysBetween(g.startDate, g.endDate) + 1, 0);
+
+  const locationRows = periods.map(p => {
+    const clampStart = p.startDate > sprint.startDate ? p.startDate : sprint.startDate;
+    const clampEnd   = p.endDate   < endDate ? p.endDate : endDate;
+    const overlapDays = daysBetween(clampStart, clampEnd) + 1;
+    const locType = p.locationType === 'international' ? 'intl' : 'dom';
+    return `
+      <div class="bdp-segment-row">
+        <div class="bdp-seg-left">
+          <span class="bdp-seg-loc-badge bdp-seg-loc-badge--${locType}">${locType}</span>
+          <span class="bdp-seg-city">${esc(p.city || '')}${p.city && p.country ? ', ' : ''}${esc(p.country || '')}</span>
+        </div>
+        <div class="bdp-seg-mid">
+          <span class="bdp-seg-dates">${_fmtPanelDate(clampStart)} – ${_fmtPanelDate(clampEnd)}</span>
+          <span class="bdp-seg-days">${overlapDays}d in sprint</span>
+        </div>
+        <div class="bdp-seg-actions">
+          <button class="bdp-seg-edit-btn"
+            onclick="window.calendarView._openPeriodPanel('${esc(p.id)}')">Edit</button>
+        </div>
+      </div>`;
+  }).join('');
 
   panel.innerHTML = `
     <div class="bdp-container-inner">
@@ -752,11 +824,10 @@ async function _renderSegmentBuilder(sprint, segments) {
       <div class="bdp-header">
         <div class="bdp-header-top">
           <div>
-            <div class="bdp-title bdp-title--sprint">${esc(sprint.id)}</div>
+            <div class="bdp-title bdp-title--sprint">${esc(sprintLabel(sprint))}</div>
             <div class="bdp-sprint-meta">
               ${_fmtPanelDate(sprint.startDate)} – ${_fmtPanelDate(endDate)}
               · ${sprint.durationWeeks === 1 ? '1 week' : '2 weeks'}
-              ${sprint.goal ? `· "${esc(sprint.goal)}"` : ''}
             </div>
           </div>
           <button class="bdp-close" onclick="window.backlogDetailPanel.close()">×</button>
@@ -766,21 +837,19 @@ async function _renderSegmentBuilder(sprint, segments) {
       <div class="p-tl-section">
         <div class="p-tl-label">Timeline</div>
         <div class="p-tl-row${sprint.status === SPRINT_STATUS.COMPLETED ? ' p-tl-row--done' : ''}">
-          ${_renderTimelineBar(sprint, segments, endDate)}
+          ${_renderTimelineBar(sprint, periods, overrides, endDate)}
         </div>
       </div>
 
-      ${hasGaps ? `
-        ${gaps.map(g => `
-          <div class="p-gap-strip">
-            <span class="p-gap-text">⚠ Gap: ${_fmtPanelDate(g.startDate)} – ${_fmtPanelDate(g.endDate)}</span>
-            <button class="p-gap-btn"
-              onclick="window.backlogDetailPanel._openSegmentForm('${esc(sprint.id)}', '${g.startDate}', '${g.endDate}')">
-              Fill gap
-            </button>
-          </div>
-        `).join('')}
-      ` : ''}
+      ${gaps.map(g => `
+        <div class="p-gap-strip">
+          <span class="p-gap-text">⚠ No location: ${_fmtPanelDate(g.start)} – ${_fmtPanelDate(g.end)}</span>
+          <button class="p-gap-btn"
+            onclick="window.calendarView._openNewPeriodRange('${g.start}', '${g.end}')">
+            Add location
+          </button>
+        </div>
+      `).join('')}
 
       ${cap.total > 0 ? `
         <div class="p-cap-section">
@@ -803,13 +872,10 @@ async function _renderSegmentBuilder(sprint, segments) {
       ${allocHtml}
 
       <div class="bdp-body">
-        <div class="bdp-section-title">Locations</div>
-        ${segments.length === 0
-          ? '<div class="bdp-empty">No locations added yet.</div>'
-          : segments.map(seg => _renderSegmentRow(seg, sprint)).join('')
-        }
+        <div class="bdp-section-title">Locations (from the calendar)</div>
+        ${locationRows || '<div class="bdp-empty">No location periods overlap this sprint.</div>'}
         <button class="bdp-add-segment-btn"
-          onclick="window.backlogDetailPanel._openSegmentForm('${esc(sprint.id)}')">
+          onclick="window.calendarView._openNewPeriodRange('${esc(sprint.startDate)}', '${esc(endDate)}')">
           + Add location
         </button>
       </div>
@@ -840,6 +906,17 @@ async function _renderSegmentBuilder(sprint, segments) {
 
     </div>
   `;
+}
+
+// Contiguous uncovered-day ranges for the gap strips.
+function _groupContiguous(days) {
+  const ranges = [];
+  for (const d of days) {
+    const last = ranges[ranges.length - 1];
+    if (last && isoAddDays(last.end, 1) === d) last.end = d;
+    else ranges.push({ start: d, end: d });
+  }
+  return ranges;
 }
 
 async function _renderAllocationSection(sprint, cap) {
@@ -967,7 +1044,7 @@ async function _editRanking(sprintId) {
         <div class="bdp-header">
           <div class="bdp-header-top">
             <span class="bdp-title">Focus ranking</span>
-            <button class="bdp-close" onclick="window.backlogDetailPanel.openSegmentBuilder('${esc(sprintId)}')">×</button>
+            <button class="bdp-close" onclick="window.backlogDetailPanel.openSprint('${esc(sprintId)}')">×</button>
           </div>
           <div class="bdp-sprint-meta">${esc(sprintId)}</div>
         </div>
@@ -1023,13 +1100,13 @@ async function _editRanking(sprintId) {
       const newRanking = editRanking.length > 0 ? editRanking : null;
       await window.sprintManager.updateSprint(sprintId, { focusRanking: newRanking });
       window.app?.updateSprintInMemory(sprintId, { focusRanking: newRanking });
-      await openSegmentBuilder(sprintId);
+      await openSprint(sprintId);
     },
     clear: () => {
       editRanking = [];
       renderEditPanel();
     },
-    cancel: async () => { await openSegmentBuilder(sprintId); },
+    cancel: async () => { await openSprint(sprintId); },
   };
 
   renderEditPanel();
@@ -1061,382 +1138,38 @@ function _bindBdpRankingDrag(listEl, ranking, onChange) {
   });
 }
 
-function _renderTimelineBar(sprint, segments, endDate) {
-  const dateToSeg = {};
-  for (const seg of segments) {
-    let d = seg.startDate;
-    while (d <= seg.endDate) {
-      dateToSeg[d] = seg;
-      d = _isoAddDays(d, 1);
-    }
-  }
-
-  const days = [];
+function _renderTimelineBar(sprint, periods, overrides, endDate) {
+  const dayMap = buildDayMap(sprint.startDate, endDate, periods, overrides);
+  const cells = [];
   let d = sprint.startDate;
   while (d <= endDate) {
-    days.push(d);
+    const info = dayMap[d] || { dayType: null, source: 'uncovered' };
+    const [, , day] = d.split('-').map(Number);
+    if (info.source === 'uncovered') {
+      cells.push(`<div class="bdp-tl-cell bdp-tl-cell--gap" title="${d}: uncovered">
+                <span class="bdp-tl-day">${day}</span>
+              </div>`);
+    } else {
+      cells.push(`<div class="bdp-tl-cell bdp-tl-cell--${info.dayType}" title="${d}: ${info.dayType}${info.source === 'override' ? ' (override)' : ''}">
+                <span class="bdp-tl-day">${day}</span>
+              </div>`);
+    }
     d = _isoAddDays(d, 1);
   }
-
-  const cells = days.map(ds => {
-    const seg = dateToSeg[ds];
-    const [,, day] = ds.split('-').map(Number);
-    if (!seg) {
-      return `<div class="bdp-tl-cell bdp-tl-cell--gap" title="${ds}">
-                <span class="bdp-tl-day">${day}</span>
-              </div>`;
-    }
-    const typeClass = _getMainDayTypeClass(seg);
-    return `<div class="bdp-tl-cell bdp-tl-cell--${typeClass}" title="${ds}: ${esc(seg.city || '')}">
-              <span class="bdp-tl-day">${day}</span>
-            </div>`;
-  }).join('');
-
-  return `<div class="bdp-tl-row">${cells}</div>`;
+  return `<div class="bdp-tl-row">${cells.join('')}</div>`;
 }
 
-function _getMainDayTypeClass(seg) {
-  const dt = seg.dayTypes;
-  const order = ['project', 'stable', 'buffer', 'travel', 'social'];
-  for (const t of order) {
-    if (dt[t] > 0) return t;
-  }
-  return 'buffer';
-}
+// _renderSegmentRow / _renderDayTypePips removed with the segment model (ADR-0008).
 
-function _renderSegmentRow(seg, sprint) {
-  const cap = deriveSprintCapacity([seg]);
-  const durationDays = daysBetween(seg.startDate, seg.endDate) + 1;
-  const locType = seg.locationType === 'international' ? 'intl' : 'dom';
-
-  return `
-    <div class="bdp-segment-row" data-seg-id="${esc(seg.id)}">
-      <div class="bdp-seg-left">
-        <span class="bdp-seg-loc-badge bdp-seg-loc-badge--${locType}">${locType}</span>
-        <span class="bdp-seg-city">${esc(seg.city || '')}${seg.city && seg.country ? ', ' : ''}${esc(seg.country || '')}</span>
-      </div>
-      <div class="bdp-seg-mid">
-        <span class="bdp-seg-dates">${_fmtPanelDate(seg.startDate)} – ${_fmtPanelDate(seg.endDate)}</span>
-        <span class="bdp-seg-days">${durationDays}d</span>
-      </div>
-      <div class="bdp-seg-right">
-        <span class="bdp-seg-cap">${cap.total.toFixed(1)} blocks</span>
-        <div class="bdp-seg-types">
-          ${_renderDayTypePips(seg.dayTypes)}
-        </div>
-      </div>
-      <div class="bdp-seg-actions">
-        <button class="bdp-seg-edit-btn"
-          onclick="window.backlogDetailPanel._openSegmentForm('${esc(sprint.id)}', null, null, '${esc(seg.id)}')">
-          Edit
-        </button>
-        <button class="bdp-seg-del-btn"
-          onclick="window.backlogDetailPanel._deleteSegment('${esc(seg.id)}', '${esc(sprint.id)}')">
-          ×
-        </button>
-      </div>
-    </div>
-  `;
-}
-
-function _renderDayTypePips(dayTypes) {
-  const order = [
-    ['travel', 'T'], ['buffer', 'B'], ['stable', 'S'], ['project', 'P'], ['social', 'Sc']
-  ];
-  return order
-    .filter(([type]) => dayTypes[type] > 0)
-    .map(([type, label]) =>
-      `<span class="bdp-dt-pip bdp-dt-pip--${type}">${dayTypes[type]}${label}</span>`
-    )
-    .join('');
-}
-
-// ── Segment form ──────────────────────────────────────────────────────────────
-
-async function _openSegmentForm(sprintId, prefillStart = null, prefillEnd = null, editSegId = null) {
-  _segmentFormSprintId = sprintId;
-  _segmentFormSegId    = editSegId;
-
-  if (editSegId) {
-    const segments = await window.sprintManager.getSegmentsForSprint(sprintId);
-    const seg = segments.find(s => s.id === editSegId);
-    if (!seg) return;
-    _segmentForm = {
-      startDate:            seg.startDate,
-      endDate:              seg.endDate,
-      city:                 seg.city || '',
-      country:              seg.country || '',
-      locationType:         seg.locationType || 'domestic',
-      dayTypes:             { ...seg.dayTypes },
-      departureDayOverride: seg.departureDayOverride || null,
-    };
-  } else {
-    const sprint = (window.app?.data?.sprints || []).find(s => s.id === sprintId);
-    const defaultStart = prefillStart || sprint?.startDate || new Date().toISOString().slice(0, 10);
-    const defaultEnd   = prefillEnd   || defaultStart;
-    const days = daysBetween(defaultStart, defaultEnd) + 1;
-    _segmentForm = {
-      startDate:            defaultStart,
-      endDate:              defaultEnd,
-      city:                 '',
-      country:              '',
-      locationType:         'domestic',
-      dayTypes:             { travel: 0, buffer: 0, stable: days, project: 0, social: 0 },
-      departureDayOverride: null,
-    };
-  }
-
-  _renderSegmentForm();
-}
-
-function _renderSegmentForm() {
-  const f      = _segmentForm;
-  const sprint = (window.app?.data?.sprints || []).find(s => s.id === _segmentFormSprintId);
-  const sprintEnd = sprint
-    ? deriveSprintMeta(sprint.startDate, sprint.durationWeeks).endDate
-    : sprint?.startDate;
-
-  const durationDays = (f.startDate && f.endDate && f.endDate >= f.startDate)
-    ? daysBetween(f.startDate, f.endDate) + 1
-    : 0;
-  const typeSum = Object.values(f.dayTypes).reduce((a, b) => a + b, 0);
-  const sumOk   = typeSum === durationDays;
-
-  container().innerHTML = `
-    <div class="bdp-container-inner">
-      <div class="bdp-header">
-        <div class="bdp-header-top">
-          <span class="bdp-title">${_segmentFormSegId ? 'Edit location' : 'Add location'}</span>
-          <button class="bdp-close"
-            onclick="window.backlogDetailPanel._cancelSegmentForm()">×</button>
-        </div>
-      </div>
-      <div class="bdp-body">
-
-        <div class="bdp-form-row">
-          <div class="bdp-form-group">
-            <label class="bdp-form-label">City</label>
-            <input type="text" class="bdp-form-input" value="${esc(f.city)}"
-              oninput="window.backlogDetailPanel._updateSegField('city', this.value)"
-              placeholder="e.g. Burgos">
-          </div>
-          <div class="bdp-form-group">
-            <label class="bdp-form-label">Country</label>
-            <input type="text" class="bdp-form-input" value="${esc(f.country)}"
-              oninput="window.backlogDetailPanel._updateSegField('country', this.value)"
-              placeholder="e.g. Philippines">
-          </div>
-        </div>
-
-        <div class="bdp-form-group">
-          <label class="bdp-form-label">Type</label>
-          <div class="bdp-toggle-group">
-            <button class="bdp-toggle-btn ${f.locationType === 'domestic' ? 'bdp-toggle-btn--on' : ''}"
-              onclick="window.backlogDetailPanel._updateSegField('locationType', 'domestic')">
-              Domestic
-            </button>
-            <button class="bdp-toggle-btn ${f.locationType === 'international' ? 'bdp-toggle-btn--on' : ''}"
-              onclick="window.backlogDetailPanel._updateSegField('locationType', 'international')">
-              International
-            </button>
-          </div>
-        </div>
-
-        <div class="bdp-form-row">
-          <div class="bdp-form-group">
-            <label class="bdp-form-label">Start date</label>
-            <input type="date" class="bdp-form-input"
-              value="${f.startDate}"
-              min="${sprint?.startDate || ''}"
-              max="${sprintEnd || ''}"
-              onchange="window.backlogDetailPanel._updateSegDateField('startDate', this.value)">
-          </div>
-          <div class="bdp-form-group">
-            <label class="bdp-form-label">End date</label>
-            <input type="date" class="bdp-form-input"
-              value="${f.endDate}"
-              min="${f.startDate || sprint?.startDate || ''}"
-              max="${sprintEnd || ''}"
-              onchange="window.backlogDetailPanel._updateSegDateField('endDate', this.value)">
-          </div>
-        </div>
-        ${durationDays > 0 ? `<div class="bdp-form-hint">${durationDays} day${durationDays !== 1 ? 's' : ''}</div>` : ''}
-
-        <div class="bdp-form-group">
-          <label class="bdp-form-label">
-            Day types
-            <span class="bdp-sum-indicator ${sumOk ? 'bdp-sum-ok' : 'bdp-sum-err'}">
-              = ${typeSum} / ${durationDays} days ${sumOk ? '✓' : '✗'}
-            </span>
-          </label>
-          <div class="bdp-dt-grid">
-            ${['travel', 'buffer', 'stable', 'project', 'social'].map(type => `
-              <div class="bdp-dt-counter">
-                <span class="bdp-dt-label" title="${_dayTypeDisplayName(type)}">${_dayTypeShortName(type)}</span>
-                <div class="bdp-dt-controls">
-                  <button class="bdp-dt-btn"
-                    onclick="window.backlogDetailPanel._adjustSegDayType('${type}', -1)">−</button>
-                  <span class="bdp-dt-val" id="bdp-seg-dt-${type}">${f.dayTypes[type] || 0}</span>
-                  <button class="bdp-dt-btn"
-                    onclick="window.backlogDetailPanel._adjustSegDayType('${type}', 1)">+</button>
-                </div>
-              </div>
-            `).join('')}
-          </div>
-        </div>
-
-        <div class="bdp-form-group">
-          <label class="bdp-form-label">Departure day rule</label>
-          <div class="bdp-toggle-group">
-            <button class="bdp-toggle-btn ${f.departureDayOverride === null ? 'bdp-toggle-btn--on' : ''}"
-              onclick="window.backlogDetailPanel._updateSegField('departureDayOverride', null)">
-              Auto (${f.locationType === 'international' ? 'travel' : 'buffer'})
-            </button>
-            <button class="bdp-toggle-btn ${f.departureDayOverride === 'travel' ? 'bdp-toggle-btn--on' : ''}"
-              onclick="window.backlogDetailPanel._updateSegField('departureDayOverride', 'travel')">
-              Travel
-            </button>
-            <button class="bdp-toggle-btn ${f.departureDayOverride === 'buffer' ? 'bdp-toggle-btn--on' : ''}"
-              onclick="window.backlogDetailPanel._updateSegField('departureDayOverride', 'buffer')">
-              Buffer
-            </button>
-          </div>
-          <p class="bdp-form-hint">Last day of stay auto-converts to the departure type unless overridden.</p>
-        </div>
-
-        <div id="bdp-seg-error" class="bdp-inline-error" style="display:none"></div>
-
-        <div class="bdp-form-actions">
-          <button class="bdp-save-btn ${!sumOk ? 'bdp-save-btn--disabled' : ''}"
-            ${!sumOk ? 'disabled' : ''}
-            onclick="window.backlogDetailPanel._saveSegment()">
-            ${_segmentFormSegId ? 'Save changes' : 'Add location'}
-          </button>
-          <button class="bdp-cancel-btn"
-            onclick="window.backlogDetailPanel._cancelSegmentForm()">
-            Cancel
-          </button>
-          ${_segmentFormSegId ? `
-            <button class="bdp-danger-btn"
-              onclick="window.backlogDetailPanel._deleteSegment('${esc(_segmentFormSegId)}', '${esc(_segmentFormSprintId)}')">
-              Delete
-            </button>
-          ` : ''}
-        </div>
-      </div>
-    </div>
-  `;
-}
-
-function _dayTypeDisplayName(type) {
-  return { travel: 'Travel', buffer: 'Buffer', stable: 'Stable', project: 'Project', social: 'Social' }[type] || type;
-}
-
-function _dayTypeShortName(type) {
-  return { travel: 'T', buffer: 'B', stable: 'S', project: 'P', social: 'Sc' }[type] || type;
-}
-
-function _updateSegField(field, value) {
-  if (!_segmentForm) return;
-  _segmentForm[field] = value;
-
-  // Text-only fields: update state only, never re-render.
-  // Re-rendering destroys the focused input element on every keystroke.
-  if (_SEG_TEXT_ONLY_FIELDS.has(field)) return;
-
-  // Structural fields (locationType, departureDayOverride): full re-render needed
-  _renderSegmentForm();
-}
-
-function _updateSegDateField(field, value) {
-  if (!_segmentForm) return;
-  _segmentForm[field] = value;
-  if (_segmentForm.startDate && _segmentForm.endDate &&
-      _segmentForm.endDate >= _segmentForm.startDate) {
-    const newDur = daysBetween(_segmentForm.startDate, _segmentForm.endDate) + 1;
-    const curSum = Object.values(_segmentForm.dayTypes).reduce((a, b) => a + b, 0);
-    const diff   = newDur - curSum;
-    if (diff !== 0) {
-      const absorb = diff > 0 ? ['stable', 'buffer'] : ['travel', 'buffer', 'stable', 'project', 'social'];
-      let remaining = Math.abs(diff);
-      for (const t of absorb) {
-        const can = diff > 0 ? remaining : Math.min(remaining, _segmentForm.dayTypes[t] || 0);
-        if (can === 0) continue;
-        _segmentForm.dayTypes[t] = Math.max(0, (_segmentForm.dayTypes[t] || 0) + (diff > 0 ? can : -can));
-        remaining -= can;
-        if (remaining === 0) break;
-      }
-    }
-  }
-  _renderSegmentForm();
-}
-
-function _adjustSegDayType(type, delta) {
-  if (!_segmentForm) return;
-  _segmentForm.dayTypes[type] = Math.max(0, (_segmentForm.dayTypes[type] || 0) + delta);
-  const el = document.getElementById(`bdp-seg-dt-${type}`);
-  if (el) el.textContent = String(_segmentForm.dayTypes[type]);
-  const durationDays = daysBetween(_segmentForm.startDate, _segmentForm.endDate) + 1;
-  const typeSum = Object.values(_segmentForm.dayTypes).reduce((a, b) => a + b, 0);
-  const sumEl = document.querySelector('.bdp-sum-indicator');
-  if (sumEl) {
-    sumEl.textContent = `= ${typeSum} / ${durationDays} days ${typeSum === durationDays ? '✓' : '✗'}`;
-    sumEl.className = `bdp-sum-indicator ${typeSum === durationDays ? 'bdp-sum-ok' : 'bdp-sum-err'}`;
-  }
-  const saveBtn = document.querySelector('.bdp-save-btn');
-  if (saveBtn) {
-    const ok = typeSum === durationDays;
-    saveBtn.disabled = !ok;
-    saveBtn.classList.toggle('bdp-save-btn--disabled', !ok);
-  }
-}
-
-async function _saveSegment() {
-  const f     = _segmentForm;
-  const errEl = document.getElementById('bdp-seg-error');
-  if (!f) return;
-
-  try {
-    const segData = {
-      sprintId:             _segmentFormSprintId,
-      startDate:            f.startDate,
-      endDate:              f.endDate,
-      city:                 f.city,
-      country:              f.country,
-      locationType:         f.locationType,
-      dayTypes:             f.dayTypes,
-      departureDayOverride: f.departureDayOverride,
-    };
-
-    if (_segmentFormSegId) {
-      await window.sprintManager.updateSegment(_segmentFormSegId, segData);
-    } else {
-      await window.sprintManager.createSegment(segData);
-    }
-
-    await openSegmentBuilder(_segmentFormSprintId);
-    NotificationRegistry.emit('travelSegment');
-    window.backlogView?.renderSprintCapacityHeaders?.();
-  } catch (err) {
-    if (errEl) { errEl.textContent = err.message; errEl.style.display = ''; }
-  }
-}
-
-async function _deleteSegment(segId, sprintId) {
-  await window.sprintManager.deleteSegment(segId);
-  await openSegmentBuilder(sprintId);
-  NotificationRegistry.emit('travelSegment');
-  window.backlogView?.renderSprintCapacityHeaders?.();
-}
-
-function _cancelSegmentForm() {
-  openSegmentBuilder(_segmentFormSprintId);
-}
+// ── Segment form: REMOVED (ADR-0008) ─────────────────────────────────────────
+// Locations are edited in exactly one place — the calendar's period panel
+// (calendarView._openPeriodPanel / _openNewPeriodRange). The sprint panel
+// links there instead of hosting a second editor.
 
 async function _activateSprint(sprintId) {
   await window.sprintManager.updateSprint(sprintId, { status: SPRINT_STATUS.ACTIVE });
   window.app?.updateSprintInMemory(sprintId, { status: SPRINT_STATUS.ACTIVE });
-  await openSegmentBuilder(sprintId);
+  await openSprint(sprintId);
 }
 
 async function _completeSprint(sprintId) {
@@ -1470,7 +1203,7 @@ function _renderFieldRow(label, content) {
 }
 
 // ── Global export ─────────────────────────────────────────────────────────────
-// @owns backlogDetailPanel — detail panel for focus/epic/story; emits focus/subFocus/epic/travelSegment/sprint.
+// @owns backlogDetailPanel — detail panel for focus/epic/story/sprint; emits focus/subFocus/epic/sprint.
 // @owns _bdpRankingCurrent — transient in-progress ranking snapshot (edit state).
 // @owns _bdpRankingEdit — transient edit-mode ranking draft (edit state).
 
@@ -1483,7 +1216,6 @@ window.backlogDetailPanel = {
   renderFocusPanel:    openFocus,
   renderSubFocusPanel: openSubFocus,
   openSprint,
-  openSegmentBuilder,
   close,
   isOpen,
   saveField,
@@ -1497,17 +1229,12 @@ window.backlogDetailPanel = {
   _toggleEpicFilter,
   _archiveFocus,
   _deleteSubFocus,
-  _openSegmentForm,
-  _updateSegField,
-  _updateSegDateField,
-  _adjustSegDayType,
-  _saveSegment,
-  _deleteSegment,
-  _cancelSegmentForm,
+  _deleteStory,
+  _deleteEpic,
   _activateSprint,
   _completeSprint,
   _reopenSprint,
   _editRanking,
 };
 
-export default { open, openStory: open, openEpic, openFocus, openSubFocus, openSprint, openSegmentBuilder, close, isOpen, saveField, saveEpicField, saveFocusField, saveSubFocusField, refreshIfShowing, addActionItem, toggleActionItem, removeActionItem };
+export default { open, openStory: open, openEpic, openFocus, openSubFocus, openSprint, close, isOpen, saveField, saveEpicField, saveFocusField, saveSubFocusField, refreshIfShowing, addActionItem, toggleActionItem, removeActionItem };

@@ -12,7 +12,6 @@ const _supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON
 // @owns currentUserId — active user id; read synchronously by DB._uid() before any await.
 // @owns authSubmit — sign-in handler (form submit).
 // @owns authSignOut — sign-out handler.
-// @owns migrateFromIDB — one-shot IndexedDB→Supabase migration trigger.
 window.supabase = _supabaseClient;
 
 // initAuth() is safe to call multiple times (idempotent) — the AbortController
@@ -132,28 +131,6 @@ window.authSignOut = async function authSignOut() {
   _resetCache();
 };
 
-window.migrateFromIDB = async function migrateFromIDB() {
-  const btn = document.getElementById('migrate-idb-btn');
-  btn.disabled = true;
-  btn.textContent = 'Migrating...';
-
-  const result = await window.DB.migrateFromIndexedDB((store, count) => {
-    btn.textContent = `Migrating ${store} (${count})...`;
-  });
-
-  if (!result.ok) {
-    alert('Migration failed: ' + result.reason);
-    btn.disabled = false;
-    btn.textContent = 'Migrate Local Data';
-    return;
-  }
-
-  const summary = Object.entries(result.counts)
-    .filter(([, n]) => n > 0)
-    .map(([s, n]) => `${s}: ${n}`)
-    .join(', ');
-
-  btn.textContent = `Done (${result.total} records)`;
-  alert(`Migration complete!\n${summary || 'No records found.'}\n\nThe page will reload to show your data.`);
-  location.reload(); // guarded: only fires after successful migrateFromIDB() + user-confirmed alert
-};
+// migrateFromIDB removed 2026-07-27 — the one-shot IndexedDB→Supabase migration
+// ran long ago; its header button occupied permanent chrome (pass 1 A5).
+// DB.migrateFromIndexedDB remains console-invocable for data recovery.

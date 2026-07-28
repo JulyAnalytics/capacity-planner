@@ -37,8 +37,10 @@ const SEL = {
   toast:              '.cm-toast',                    // in #cm-toast-container
 
   // Navigation — Sprints tab routes to #backlog in sprint group-by (app.js:947-951).
-  backlogTab:         '[data-tab="sprints"]',
-  focusTab:           '[data-tab="focus"]',
+  // Option A navigation (2026-07-27): sprint/focus are toolbar group-by modes
+  // inside the single Backlog tab, not tabs of their own.
+  backlogTab:         '[data-tab="backlog"]',
+  focusTab:           '[data-tab="backlog"]',
 
   // Backlog DOM
   storyCard:          '[data-story-id]',

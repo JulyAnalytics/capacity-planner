@@ -3,6 +3,8 @@
  * General-purpose helpers used across the application
  */
 
+import { STORY_SIZE_LABELS } from './constants.js';
+
 // ============================================================================
 // DOM UTILITIES
 // ============================================================================
@@ -20,49 +22,27 @@ export function esc(s) {
     .replace(/"/g, '&quot;');
 }
 
+// safeSetText / createElement / showLoading / hideLoading removed 2026-07-27 —
+// zero call sites (design-review pass 3 §6; pass 2 dead-toolbox finding).
+
 /**
- * Safely set text content (prevents XSS)
- * Engineering Review: Q14 - Sanitize imported data
+ * Human label for a sprint — the ONLY way a sprint is named in the UI.
+ * Sprints carry no `name`; ids are `crypto.randomUUID()` and must never be
+ * shown (design-review pass 1, B3). Moved here from calendarView so all five
+ * former raw-id sites share one source.
  */
-export function safeSetText(element, text) {
-  element.textContent = text || '';
+export function sprintLabel(sprint) {
+  if (!sprint) return 'Sprint';
+  const base = sprint.sprintNumber ? `Sprint ${sprint.sprintNumber}` : 'Sprint';
+  return sprint.goal ? `${base} · ${sprint.goal}` : base;
 }
 
 /**
- * Safely create HTML element with text content
+ * S/M/L/XL label for a story's weight — the single effort field (ADR-0009).
+ * Off-scale legacy weights render as their number.
  */
-export function createElement(tag, text = '', className = '') {
-  const el = document.createElement(tag);
-  if (text) el.textContent = text;
-  if (className) el.className = className;
-  return el;
-}
-
-/**
- * Show loading indicator
- */
-export function showLoading(message = 'Loading...') {
-  const existing = document.getElementById('loading-indicator');
-  if (existing) existing.remove();
-
-  const loader = document.createElement('div');
-  loader.id = 'loading-indicator';
-  loader.className = 'loading-overlay';
-  loader.innerHTML = `
-    <div class="loading-content">
-      <div class="spinner"></div>
-      <p>${message}</p>
-    </div>
-  `;
-  document.body.appendChild(loader);
-}
-
-/**
- * Hide loading indicator
- */
-export function hideLoading() {
-  const loader = document.getElementById('loading-indicator');
-  if (loader) loader.remove();
+export function sizeLabel(weight) {
+  return STORY_SIZE_LABELS[weight] ?? (weight == null ? '' : String(weight));
 }
 
 /**

@@ -11,7 +11,12 @@ Priority Level → Focus → Sub-Focus → Epic → Story  (one direction; a chi
 ## Write spine
 
 All writes to the `stories` store funnel through `window.storyWrites`
-(`commitStoryUpdate` / `commitStoryReorder`). See ADR-0006.
+(`commitStoryUpdate` / `commitStoryReorder` / `commitStoryDelete`). See ADR-0006.
+`commitStoryUpdate` is the enforcement seam: it rejects status changes outside
+`businessRules.canTransitionStatus`'s whitelist and empty names, so every
+caller — badge, panel, modal, drag, future assistant — inherits both rules.
+Status changes from the UI route through `window.storyLifecycle` so completion
+side-effects (timeSpent, dependent unblocking, epic auto-completion) fire.
 
 ## Cache topology
 
@@ -38,6 +43,13 @@ guards against overlapping runs. Without this, concurrent callers resolve
 against a stale snapshot and mint duplicate sprints for the same window — which
 the calendar renders as stacked bars (one full-width row per overlapping sprint,
 no packing). `migrateDedupeSprintsByWindow` repairs any pre-existing duplicates.
+
+## Single capacity-supply model
+
+Location periods are the only source of capacity supply (ADR-0008). Nothing
+writes `travelSegments`; every sprint-capacity read goes through
+`deriveSprintCapacityFromPeriods`. A second supply model with its own editor
+and precedence order is the defect this invariant exists to prevent.
 
 ## One record per name within a focus (triage)
 

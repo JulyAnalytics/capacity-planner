@@ -53,7 +53,7 @@ _(no field annotations yet — add `store.field: note` in `schema.yaml`.)_
 
 Supabase table: `stories`
 
-> Stories (backlog items) owned by an epic; the write-spine store (see ADR-0006).
+> Stories (backlog items) owned by an epic; the write-spine store (see ADR-0006). Effort lives in `weight` alone (ADR-0009).
 
 | field | note |
 |---|---|
@@ -61,19 +61,27 @@ Supabase table: `stories`
 | `attachments` | array (default []); items {id 'att-…', filename, storageKey '{uid}/{storyId}/{attId}/{filename}', size, type ATTACHMENT_TYPES, version ≥1, createdAt}. Content lives in private Storage bucket capacity-planner-docs (RLS user-scoped); records here are pointers only. Seeded by migrateStoriesToIncludeAttachments. |
 | `cellSortOrder` | per-cell (epic×sprint) rank in the story map; sibling of sortOrder. |
 | `epicId` | DB CHECK NOT NULL — a story must pin an epic. |
+| `estimatedBlocks` | DEPRECATED (ADR-0009) — legacy user estimate; read only for variance on completion of pre-migration records. Nothing writes it; new records store null. |
+| `fibonacciSize` | DEPRECATED (ADR-0009) — legacy 7-point scale, display-only history. FIBONACCI_SIZES retained solely so old imports validate. New records store null. |
 | `focus` | denormalized from epic (legacy); prefer epic.focusId. |
 | `id` | created via creationModal generic `${type}-${Date.now()}-${rand}`. |
+| `inFocus` | DEAD (2026-07-27) — the star mechanism it fed was removed (design-review pass 1 A7; true on 0 of 154 prod records). The Today view lists sprint stories directly. |
 | `reviewState` | enum 'proposed'\|'approved'\|'discarded'; ABSENT = approved (legacy + modal-created rows). Set 'proposed' by candidate import (Stage 4 mergeImport); Inbox (Stage 5) sets 'approved' on save, 'discarded' on discard. Existing rows seeded 'approved' by migrateStoriesToIncludeReviewState. |
 | `sortOrder` | sprint-scoped rank; seeded by migrateStoriesToIncludeSortOrder. |
 | `sourceRef` | string\|null — provenance of imported/historical stories: spec filename or git commit hash (importHistoryManifest), or a triage/adapter native_ref e.g. `claude-fs://…` (js/triageQueue.js attach/create paths). Null for app-created rows (seeded by migrateStoriesToIncludeSourceRef). |
+| `timeSpent` | blocks summed from dailyLogs[].stories entries; live again — the Today view's done-ticks write {storyId, blocks} per day (pass 1 A7). |
+| `weight` | the single effort field (ADR-0009) — S/M/L/XL entered, stored as 0.5\|1\|2\|3 blocks; re-weighted from legacy estimatedBlocks by migrateStoriesToSizeWeight. Every capacity read (tier check, allocation, calendar bars) sums this. |
 
 ## DAILY_LOGS → `dailyLogs`
 
 Supabase table: `daily_logs`
 
-> Per-day log entries keyed `log-<dateStr>`.
+> Per-day log entries keyed `log-<dateStr>`. Written by todayView (default surface) and dailyLogOverlay (past days; flushes only when dirty — F1).
 
-_(no field annotations yet — add `store.field: note` in `schema.yaml`.)_
+| field | note |
+|---|---|
+| `actualCapacity` | auto-set to plannedCapacity on first write of the day (F8 — 51 of 74 legacy overrides were the user re-typing the derived value); Adjust reveals the input. |
+| `stories` | array of {storyId, blocks} actuals written by the Today view's done-ticks — the utilized/efficiency feed for analytics and storyLifecycle.getStoryTimeSpent. |
 
 ## METADATA → `metadata`
 
@@ -111,7 +119,7 @@ _(no field annotations yet — add `store.field: note` in `schema.yaml`.)_
 
 Supabase table: `travel_segments`
 
-> Travel segments per sprint, id `seg-<uuid>`.
+> DEPRECATED (ADR-0008) — superseded by locationPeriods as the single capacity-supply model. Store retained for export/import back-compat; no write path or editor remains.
 
 _(no field annotations yet — add `store.field: note` in `schema.yaml`.)_
 

@@ -560,7 +560,44 @@ const MIGRATIONS = [
   migrateDedupeSubFocusesByName,
   migrateDedupeEpicsByName,
   migrateDedupeSprintsByWindow,
+  migrateStoriesToSizeWeight,
 ];
+
+// ── ADR-0009: collapse three effort fields into one ──────────────────────────
+// `weight` becomes the single effort field, snapped to the S/M/L/XL scale
+// (0.5 / 1 / 2 / 3). Basis per story: a deliberately-set legacy weight (≠1)
+// wins; otherwise the user's estimatedBlocks (100% fill rate in prod data);
+// otherwise the old default 1. fibonacciSize/estimatedBlocks stay on records
+// read-only (schema.yaml lineage) — nothing writes them after this.
+async function migrateStoriesToSizeWeight(DB) {
+  const metadata = await DB.get(DB.STORES.METADATA, 'migration:size-weight');
+  if (metadata?.value) return;
+
+  const snap = (v) => (v <= 0.5 ? 0.5 : v <= 1 ? 1 : v <= 2 ? 2 : 3);
+  const stories = await DB.getAll(DB.STORES.STORIES);
+  // @intent one batched upsert, not N awaited puts. Nearly every story changes
+  // weight here, so the serial form was ~150 sequential round-trips to a
+  // Tailscale-hosted backend before the app could paint — a minute-long blank
+  // screen on the first load after the ADR-0009 change.
+  const dirty = [];
+  for (const story of stories) {
+    const basis = (typeof story.weight === 'number' && story.weight !== 1)
+      ? story.weight
+      : (story.estimatedBlocks ?? story.weight ?? 1);
+    const next = snap(Number(basis) || 1);
+    if (next !== story.weight) {
+      story.weight = next;
+      dirty.push(story);
+    }
+  }
+  if (dirty.length) await DB.putAll(DB.STORES.STORIES, dirty);
+  const changed = dirty.length;
+
+  await DB.put(DB.STORES.METADATA, {
+    key: 'migration:size-weight', value: true, timestamp: new Date().toISOString(),
+  });
+  console.log(`migrateStoriesToSizeWeight: ${changed} of ${stories.length} stories re-weighted onto the S/M/L/XL scale`);
+}
 
 const MigrationRunner = {
   async run(DB) {

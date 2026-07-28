@@ -13,8 +13,8 @@
 import DB from './db.js';
 import { isoAddDays, buildDayMap, getSprintCoveringDate } from './locationCapacity.js';
 
-// Floor item keys
-const DLO_FLOOR_ITEMS = [
+// Floor item keys — exported for todayView.js (same checklist, same keys)
+export const DLO_FLOOR_ITEMS = [
   { key: 'movement',        label: 'Movement' },
   { key: 'learning',        label: 'Learning' },
   { key: 'admin',           label: 'Admin' },
@@ -23,7 +23,7 @@ const DLO_FLOOR_ITEMS = [
 
 const DLO_DAY_TYPES = ['stable', 'project', 'buffer', 'travel', 'social'];
 
-const DLO_DAY_TYPE_CAPACITY = {
+export const DLO_DAY_TYPE_CAPACITY = {
   stable:  3.5,
   project: 3.5,
   buffer:  1.5,
@@ -35,6 +35,7 @@ let _currentDate     = null;
 let _overlayEl       = null;
 let _prevFocusEl     = null;
 let _flushPendingSaves = null;
+let _dirty           = false; // any user edit since open — the close-flush gate
 
 /**
  * Open the day log overlay for a given date.
@@ -42,6 +43,7 @@ let _flushPendingSaves = null;
  */
 export function openDayLog(dateStr) {
   _currentDate = dateStr;
+  _dirty = false;
   _prevFocusEl = document.activeElement;
 
   if (!_overlayEl) _buildOverlay();
@@ -61,8 +63,12 @@ export function openDayLog(dateStr) {
  * Close the day log overlay and restore focus.
  */
 export function closeDayLog() {
-  // Flush any pending debounced saves before closing
-  _flushPendingSaves?.();
+  // @intent flush ONLY when the user actually edited something. The old
+  // unconditional flush rewrote every browsed past day from DOM state —
+  // including 72 legacy logs whose floorCompletedCount disagreed with their
+  // checkboxes, silently overwriting history (design-review pass 3, F1).
+  if (_dirty) _flushPendingSaves?.();
+  _dirty = false;
 
   _overlayEl?.classList.remove('dlo-visible');
   _currentDate = null;
@@ -163,17 +169,14 @@ async function _loadAndRender(dateStr) {
   const effectiveType = log.dayTypeOverride || dayTypeInfo.type;
   log.plannedCapacity = effectiveType ? (DLO_DAY_TYPE_CAPACITY[effectiveType] ?? null) : null;
 
-  // Use in-memory cache — avoid extra DB reads
-  const stories = window.app?.data?.stories || [];
-  const sprints = window.app?.data?.sprints || [];
+  // Stories logged against this day (written by the Today view's done-ticks).
+  const allStories = window.app?.data?.stories || [];
+  const loggedStories = (log.stories || []).map(entry => {
+    const st = allStories.find(s => s.id === (entry.storyId || entry.id));
+    return { name: st?.name || entry.name || entry.storyId || 'unknown', blocks: entry.blocks ?? entry.timeSpent ?? entry.effort ?? 0 };
+  });
 
-  const sprint = getSprintCoveringDate(dateStr, sprints);
-
-  const focusedStories = sprint
-    ? stories.filter(s => s.sprintId === sprint.id && s.inFocus === true)
-    : [];
-
-  document.getElementById('dlo-body').innerHTML = _bodyHTML(log, dayTypeInfo, focusedStories);
+  document.getElementById('dlo-body').innerHTML = _bodyHTML(log, dayTypeInfo, loggedStories);
   _bindAutoSave(dateStr, log);
 }
 
@@ -210,7 +213,7 @@ function _deriveDayType(dateStr) {
   return { type: null, source: 'uncovered' };
 }
 
-function _bodyHTML(log, dayTypeInfo, focusedStories = []) {
+function _bodyHTML(log, dayTypeInfo, loggedStories = []) {
   const effectiveType = log.dayTypeOverride || dayTypeInfo.type;
   const derivedLabel = effectiveType
     ? effectiveType.charAt(0).toUpperCase() + effectiveType.slice(1)
@@ -225,24 +228,17 @@ function _bodyHTML(log, dayTypeInfo, focusedStories = []) {
       <span>${item.label}</span>
     </label>`).join('');
 
-  const focusedStoriesHtml = `<div class="dlo-section" id="dlo-stories-section">
-    <div class="dlo-section-label">FOCUSED STORIES</div>
+  // Read-only record of what was worked that day — no star required (pass 1 A7:
+  // inFocus was true on 0 of 154 stories, so the old section was empty for 100
+  // straight logs). Today's ticks live in the Today view; past days show history.
+  const loggedStoriesHtml = loggedStories.length === 0 ? '' : `<div class="dlo-section" id="dlo-stories-section">
+    <div class="dlo-section-label">STORIES WORKED</div>
     <div class="dlo-stories-list" id="dlo-stories-list">
-      ${focusedStories.length === 0
-        ? `<div class="dlo-empty-stories">No stories in focus for this sprint.
-             Star a story in the Backlog to track it here.</div>`
-        : focusedStories.map(s => `
-            <div class="dlo-story-row" data-story-id="${_esc(s.id)}">
-              <button class="bl-focus-star bl-focus-star--on dlo-story-star"
-                aria-label="Remove ${_esc(s.name)} from focus"
-                aria-pressed="true"
-                onclick="window.backlogView?._toggleStoryFocus('${_esc(s.id)}');
-                         window.dailyLogOverlay._refreshStoryRow('${_esc(s.id)}')">★</button>
-              <span class="dlo-story-name">${_esc(s.name)}</span>
-              <span class="dlo-story-status dlo-status--${_esc(s.status)}">${_esc(s.status)}</span>
-            </div>`
-          ).join('')
-      }
+      ${loggedStories.map(s => `
+        <div class="dlo-story-row">
+          <span class="dlo-story-name">${_esc(s.name)}</span>
+          <span class="dlo-story-status">${s.blocks ? _esc(String(s.blocks)) + ' blk' : ''}</span>
+        </div>`).join('')}
     </div>
   </div>`;
 
@@ -284,11 +280,11 @@ function _bodyHTML(log, dayTypeInfo, focusedStories = []) {
       <div class="dlo-floor-grid">${floorItems}</div>
     </div>
 
-    ${focusedStoriesHtml}
+    ${loggedStoriesHtml}
 
     <div class="dlo-section">
       <div class="dlo-section-label">NOTES</div>
-      <textarea class="dlo-notes" id="dlo-notes" rows="4"
+      <textarea class="dlo-notes" id="dlo-notes" rows="2"
         placeholder="Notes for the day…"
         aria-label="Daily notes">${_esc(log.notes || '')}</textarea>
     </div>
@@ -363,6 +359,12 @@ function _bindAutoSave(dateStr, initialLog) {
     };
     save(patch); // fire-and-forget
   });
+
+  // Any interaction marks the log dirty — the close-flush gate (F1)
+  document.getElementById('dlo-body')
+    ?.addEventListener('input', () => { _dirty = true; }, { capture: true });
+  document.getElementById('dlo-body')
+    ?.addEventListener('change', () => { _dirty = true; }, { capture: true });
 
   // Floor checkboxes — immediate save on change
   document.querySelectorAll('.dlo-floor-check').forEach(cb => {
@@ -448,25 +450,7 @@ function _esc(s) {
     .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
 
-export function _refreshStoryRow(storyId) {
-  setTimeout(() => {
-    const story = window.app?.data?.stories?.find(s => s.id === storyId);
-    if (!story?.inFocus) {
-      const row = document.querySelector(`.dlo-story-row[data-story-id="${storyId}"]`);
-      if (row) {
-        row.style.transition = 'opacity 0.2s';
-        row.style.opacity    = '0';
-        setTimeout(() => row.remove(), 200);
-      }
-      // Show empty state if no stories remain
-      const list = document.getElementById('dlo-stories-list');
-      if (list && !list.querySelector('.dlo-story-row')) {
-        list.innerHTML = `<div class="dlo-empty-stories">No stories in focus for this sprint.
-          Star a story in the Backlog to track it here.</div>`;
-      }
-    }
-  }, 50);
-}
+// _refreshStoryRow removed with the star mechanism (pass 1 A7).
 
 // Global export for calendarView and backlogView calls
 // @owns dailyLogOverlay — per-day log overlay; reads/writes dailyLogs (id `log-<date>`).
@@ -474,5 +458,4 @@ window.dailyLogOverlay = {
   open:  openDayLog,
   close: closeDayLog,
   _registerFlush,
-  _refreshStoryRow,
 };

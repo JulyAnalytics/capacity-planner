@@ -20,18 +20,25 @@ subFocuses.icon: max 2 chars.
 
 epics._store: Epics owned by a focus/sub-focus; parent of stories.
 
-stories._store: Stories (backlog items) owned by an epic; the write-spine store (see ADR-0006).
+stories._store: Stories (backlog items) owned by an epic; the write-spine store (see ADR-0006). Effort lives in `weight` alone (ADR-0009).
 stories.id: created via creationModal generic `${type}-${Date.now()}-${rand}`.
 stories.focus: denormalized from epic (legacy); prefer epic.focusId.
 stories.epicId: DB CHECK NOT NULL — a story must pin an epic.
 stories.sortOrder: sprint-scoped rank; seeded by migrateStoriesToIncludeSortOrder.
 stories.cellSortOrder: per-cell (epic×sprint) rank in the story map; sibling of sortOrder.
 stories.actionItems: array; seeded by migrateStoriesToIncludeActionItems.
+stories.weight: the single effort field (ADR-0009) — S/M/L/XL entered, stored as 0.5|1|2|3 blocks; re-weighted from legacy estimatedBlocks by migrateStoriesToSizeWeight. Every capacity read (tier check, allocation, calendar bars) sums this.
+stories.estimatedBlocks: DEPRECATED (ADR-0009) — legacy user estimate; read only for variance on completion of pre-migration records. Nothing writes it; new records store null.
+stories.fibonacciSize: DEPRECATED (ADR-0009) — legacy 7-point scale, display-only history. FIBONACCI_SIZES retained solely so old imports validate. New records store null.
+stories.inFocus: DEAD (2026-07-27) — the star mechanism it fed was removed (design-review pass 1 A7; true on 0 of 154 prod records). The Today view lists sprint stories directly.
+stories.timeSpent: blocks summed from dailyLogs[].stories entries; live again — the Today view's done-ticks write {storyId, blocks} per day (pass 1 A7).
 stories.reviewState: enum 'proposed'|'approved'|'discarded'; ABSENT = approved (legacy + modal-created rows). Set 'proposed' by candidate import (Stage 4 mergeImport); Inbox (Stage 5) sets 'approved' on save, 'discarded' on discard. Existing rows seeded 'approved' by migrateStoriesToIncludeReviewState.
 stories.attachments: array (default []); items {id 'att-…', filename, storageKey '{uid}/{storyId}/{attId}/{filename}', size, type ATTACHMENT_TYPES, version ≥1, createdAt}. Content lives in private Storage bucket capacity-planner-docs (RLS user-scoped); records here are pointers only. Seeded by migrateStoriesToIncludeAttachments.
 stories.sourceRef: string|null — provenance of imported/historical stories: spec filename or git commit hash (importHistoryManifest), or a triage/adapter native_ref e.g. `claude-fs://…` (js/triageQueue.js attach/create paths). Null for app-created rows (seeded by migrateStoriesToIncludeSourceRef).
 
-dailyLogs._store: Per-day log entries keyed `log-<dateStr>`.
+dailyLogs._store: Per-day log entries keyed `log-<dateStr>`. Written by todayView (default surface) and dailyLogOverlay (past days; flushes only when dirty — F1).
+dailyLogs.stories: array of {storyId, blocks} actuals written by the Today view's done-ticks — the utilized/efficiency feed for analytics and storyLifecycle.getStoryTimeSpent.
+dailyLogs.actualCapacity: auto-set to plannedCapacity on first write of the day (F8 — 51 of 74 legacy overrides were the user re-typing the derived value); Adjust reveals the input.
 
 metadata._store: localStorage-only key/value store (not synced to Supabase); holds migration guards + misc.
 
@@ -41,7 +48,7 @@ focuses._store: Top-level focus areas (Priority Level → Focus → …).
 
 sprints._store: Sprints; status enum SPRINT_STATUS. Bare `crypto.randomUUID()` id.
 
-travelSegments._store: Travel segments per sprint, id `seg-<uuid>`.
+travelSegments._store: DEPRECATED (ADR-0008) — superseded by locationPeriods as the single capacity-supply model. Store retained for export/import back-compat; no write path or editor remains.
 
 locationPeriods._store: Location-bound capacity periods, id `loc-<uuid>`.
 

@@ -11,7 +11,7 @@
  */
 
 import DB from './db.js';
-import { CHANNEL_HIERARCHY_SYNC, CHANNEL_CAPACITY_PLANNER, FOCUS_STATUS } from './constants.js';
+import { CHANNEL_HIERARCHY_SYNC, CHANNEL_CAPACITY_PLANNER, FOCUS_STATUS, EPIC_STATUS } from './constants.js';
 import { validateExternalInput } from './barricade.js';
 
 // ============================================================================
@@ -284,7 +284,12 @@ function getSubFocusesForFocus(focusId) {
 
 function getEpicsForSubFocus(subFocusId) {
   if (!subFocusId) return [];
-  return hierarchyCache.data.epics.filter(e => e.subFocusId === subFocusId);
+  // Completed/archived epics are excluded: stories created into them are
+  // invisible in the story map (design-review pass 2, N9). Reactivate the epic
+  // first (detail panel) to file new work under it.
+  return hierarchyCache.data.epics.filter(e =>
+    e.subFocusId === subFocusId &&
+    e.status !== EPIC_STATUS.COMPLETED && e.status !== EPIC_STATUS.ARCHIVED);
 }
 
 function getFocusById(focusId) {

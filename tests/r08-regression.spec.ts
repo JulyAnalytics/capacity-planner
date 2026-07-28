@@ -37,17 +37,15 @@ test.beforeEach(async ({ page }) => {
 // Test 1 — openCreateSprintModal (Fix #1: infinite recursion)
 // ---------------------------------------------------------------------------
 
-test.describe('openCreateSprintModal — fix: infinite recursion on "+ New Sprint"', () => {
-  test('clicking "+ New Sprint" in backlog toolbar opens sprint creation modal without stack overflow', async ({ page }) => {
+test.describe('single sprint form — "+ New Sprint" opens the calendar panel form', () => {
+  test('clicking "+ New Sprint" in backlog toolbar opens the sprint panel form (one form, with ranking + Monday snap)', async ({ page }) => {
     await loadApp(page);
     await page.click('[data-tab="backlog"]');
-    // DECISION: button uses onclick="window.backlogView.openCreateSprintModal()" (confirmed
-    // backlogView.js:280,744). Matching by class is more stable than text matching across
-    // both toolbar (bl-btn-new-sprint) and secondary row (bl-new-sprint-secondary-btn).
+    // openCreateSprintModal was deleted (design-review pass 1 A8): the toolbar
+    // button now routes to calendarView._openCreateSprint, the single sprint
+    // form, rendered in the detail panel.
     await page.locator('.bl-btn-new-sprint').first().click();
-    // The creation modal is the shared global creation modal (not a dedicated sprint modal)
-    // — confirmed by tracing openCreateSprintModal → window.openCreationModal('sprint')
-    await expect(page.locator('#creation-modal')).toBeVisible();
+    await expect(page.locator('#backlog-detail-panel #cv-sprint-start')).toBeVisible();
   });
 });
 
@@ -56,34 +54,12 @@ test.describe('openCreateSprintModal — fix: infinite recursion on "+ New Sprin
 // ---------------------------------------------------------------------------
 
 test.describe('showToast — fix: bulkEdit warning toasts used cm-toast styles', () => {
-  test('opening bulk edit with no items selected shows a .toast.toast-warning element, not .cm-toast', async ({ page }) => {
-    await loadApp(page);
-    await page.click('[data-tab="backlog"]');
-    // Trigger the bulk edit modal — window.openBulkEdit is wired by app.js:4498
-    await page.evaluate(() => (window as any).openBulkEdit?.());
-    // Wait for the modal to appear
-    await expect(page.locator('#bulk-edit-modal')).toBeVisible();
-    // Clear the selection (starts at 0) and click "Save Changes" — that path fires
-    // showToast('No items selected', 'warning') in bulkEdit.js:476.
-    // The Save button is disabled by default; use applyBulkAction path instead by
-    // invoking the exported function directly via evaluate.
-    await page.evaluate(() => (window as any).applyBulkAction?.('status'));
-    const toast = page.locator('.toast.toast-warning');
-    await expect(toast).toBeVisible();
-    // The cm-toast variant must NOT appear for this global warning
-    await expect(page.locator('.cm-toast')).not.toBeVisible();
-  });
-
-  test('bulk edit "No items selected" toast appears in document body, not inside a modal container', async ({ page }) => {
-    await loadApp(page);
-    await page.click('[data-tab="backlog"]');
-    await page.evaluate(() => (window as any).openBulkEdit?.());
-    await expect(page.locator('#bulk-edit-modal')).toBeVisible();
-    await page.evaluate(() => (window as any).applyBulkAction?.('status'));
-    // Toast is appended to document.body by showToast (utils.js:75) — not inside a container div
-    const toast = page.locator('body > .toast.toast-warning');
-    await expect(toast).toBeVisible();
-  });
+  // RETIRED (2026-07-27): bulkEdit was deleted with the portfolio view
+  // (git 5aeecb2) — window.openBulkEdit no longer exists, so this spec had been
+  // failing on a phantom feature. Same treatment as r04's T10. The distinct
+  // toast surfaces it guarded (utils showToast vs cm-toast) are still asserted
+  // by the creation-modal toast spec below.
+  test.skip('retired — bulkEdit feature removed', () => {});
 });
 
 // ---------------------------------------------------------------------------
@@ -169,29 +145,13 @@ test.describe('_ddClearSelection — fix: drill-down clear button mutated bulkEd
 });
 
 // ---------------------------------------------------------------------------
-// Test 6 — _renderPortfolioSubFocusCard (Fix #6: portfolio tiles emitted drill-down markup)
+// Test 6 — _renderPortfolioSubFocusCard
 // ---------------------------------------------------------------------------
 
 test.describe('_renderPortfolioSubFocusCard — fix: portfolio sub-focus cards used drill-down markup', () => {
-  test('portfolio sub-focus cards have .subfocus-card class, not .dd-subfocus-* classes', async ({ page }) => {
-    await loadApp(page);
-    await page.click('[data-tab="portfolio"]');
-    // Wait for the portfolio grid to render
-    const grid = page.locator('.portfolio-grid');
-    await expect(grid).toBeVisible();
-    const cards = page.locator('.subfocus-card');
-    // Only assert class structure if sub-focus cards are present
-    const count = await cards.count();
-    if (count === 0) {
-      test.skip(true, 'BT01: no sub-focus cards in portfolio — create a sub-focus to run this test');
-      return;
-    }
-    const first = cards.first();
-    await expect(first).toBeVisible();
-    // Must NOT carry any drill-down class prefix
-    const hasDdClass = await first.evaluate(el => el.className.includes('dd-'));
-    expect(hasDdClass).toBe(false);
-  });
+  // RETIRED (2026-07-27): the portfolio view was deleted (git 5aeecb2); there
+  // is no [data-tab="portfolio"] to click. Same treatment as the bulkEdit spec.
+  test.skip('retired — portfolio view removed', () => {});
 });
 
 // ---------------------------------------------------------------------------

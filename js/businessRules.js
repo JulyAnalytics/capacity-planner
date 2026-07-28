@@ -212,11 +212,13 @@ export function validateStory(story, context = {}) {
     }
   }
 
-  // Business rule: Can't complete without estimate
-  if (story.status === 'completed' && !story.estimatedBlocks) {
+  // Business rule: completed work must carry effort. Post-ADR-0009 the effort
+  // field is `weight` (always set); the old "complete requires estimatedBlocks"
+  // rule would reject every new-format record.
+  if (story.status === 'completed' && !(story.weight > 0)) {
     errors.push({
-      field: 'estimatedBlocks',
-      message: 'Cannot complete story without an estimate'
+      field: 'weight',
+      message: 'Cannot complete a story with no weight'
     });
   }
 
@@ -425,43 +427,7 @@ export function validateEpics(epics, context = {}) {
 // SPRINT + TRAVEL SEGMENT VALIDATION
 // ============================================================================
 
-/**
- * Validate a TravelSegment record against its parent sprint.
- * Returns array of validation errors (empty = valid).
- */
-export function validateTravelSegment(seg, sprint) {
-  const errors = [];
-
-  const { endDate: sprintEnd } = deriveSprintMeta(sprint.startDate, sprint.durationWeeks);
-  if (seg.startDate < sprint.startDate || seg.endDate > sprintEnd) {
-    errors.push({ field: 'dateRange', message: 'Segment dates must fall within sprint range' });
-  }
-  if (seg.endDate < seg.startDate) {
-    errors.push({ field: 'endDate', message: 'End date must be on or after start date' });
-    return errors;
-  }
-
-  const segmentDays = daysBetween(seg.startDate, seg.endDate) + 1;
-  const dayTypeSum  = Object.values(seg.dayTypes).reduce((a, b) => a + b, 0);
-  if (dayTypeSum !== segmentDays) {
-    errors.push({
-      field: 'dayTypes',
-      message: `Day types sum to ${dayTypeSum} but segment spans ${segmentDays} day${segmentDays !== 1 ? 's' : ''}. They must match exactly.`,
-    });
-  }
-
-  for (const [type, count] of Object.entries(seg.dayTypes)) {
-    if (count < 0)                errors.push({ field: 'dayTypes', message: `${type} count cannot be negative` });
-    if (!Number.isInteger(count)) errors.push({ field: 'dayTypes', message: `${type} count must be a whole number` });
-  }
-
-  const validOverrides = ['travel', 'buffer', null, undefined];
-  if (!validOverrides.includes(seg.departureDayOverride)) {
-    errors.push({ field: 'departureDayOverride', message: 'Override must be "travel", "buffer", or null' });
-  }
-
-  return errors;
-}
+// validateTravelSegment removed with the segment model (ADR-0008).
 
 // DECISION: validateSprint moved back from locationCapacity.js (2026-05-03).
 // The single authoritative definition now lives here alongside all other

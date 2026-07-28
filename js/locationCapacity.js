@@ -244,11 +244,20 @@ export function validateLocationPeriod(period, existingPeriods = []) {
  * @param {Object[]} sprints - Array of sprint records
  * @returns {Object|null} The covering sprint, or null
  */
+// @intent skip malformed sprints instead of throwing. isoAddDays on a missing
+// startDate/durationWeeks yields an Invalid Date whose toISOString() throws a
+// RangeError — and this runs inside the Today view's render, where one bad
+// record would blank the app's default screen (2026-07-27).
 export function getSprintCoveringDate(dateStr, sprints) {
   if (!sprints || !sprints.length) return null;
   return sprints.find(s => {
-    const end = isoAddDays(s.startDate, s.durationWeeks * 7 - 1);
-    return dateStr >= s.startDate && dateStr <= end;
+    if (!s?.startDate || !s?.durationWeeks) return false;
+    try {
+      const end = isoAddDays(s.startDate, s.durationWeeks * 7 - 1);
+      return dateStr >= s.startDate && dateStr <= end;
+    } catch {
+      return false;
+    }
   }) || null;
 }
 

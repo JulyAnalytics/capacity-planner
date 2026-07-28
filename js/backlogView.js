@@ -4,19 +4,21 @@
  */
 
 import DB from './db.js';
-import { esc } from './utils.js';
-import { daysBetween } from './locationCapacity.js';
+import { esc, sizeLabel } from './utils.js';
+import { daysBetween, deriveSprintCapacityFromPeriods } from './locationCapacity.js';
 import { deriveSprintMeta } from './sprintCapacity.js';
+import { deriveFocusAllocation, deriveTierCheck } from './sprintAllocation.js';
 import { STORY_STATUS, EPIC_STATUS, FOCUS_STATUS, SPRINT_STATUS, PRIORITY_LEVELS, PRIORITY_LABELS } from './constants.js';
 
 // ── State ─────────────────────────────────────────────────────────────────────
 
-let _blGroupBy = 'sprint'; // 'sprint' | 'focus' | 'calendar' | 'storymap'
+let _blGroupBy = 'sprint'; // 'sprint' | 'focus' | 'storymap'
 let activeFocus = null; // focus.id | null (null = All)
 let activeStatuses = new Set([STORY_STATUS.ACTIVE]);
 let openPanelType = null; // 'story' | 'epic' | 'focus' | 'subFocus' | null
 let openPanelId = null;
 let epicFilter = null; // epic.id | null
+let nameFilter = ''; // toolbar text filter — the search stopgap (pass 2 §II.8 B)
 const collapseState = { sprints: {}, focuses: {}, subFocuses: {} };
 let _historyTriggered = false;
 
@@ -84,9 +86,10 @@ function _fmtBacklogDate(dateStr) {
 
 // daysBetween imported from locationCapacity.js — single source (R08, 2026-04-25).
 
-async function _loadSprintCapacityHeaders() {
-  const { deriveSprintCapacity, deriveSprintMeta } = await import('./sprintCapacity.js');
-  const { deriveFocusAllocation, deriveTierCheck } = await import('./sprintAllocation.js');
+// Location periods are the single capacity-supply model (ADR-0008); the old
+// travel-segment branch — which silently took precedence when even one segment
+// existed — is gone. Synchronous now: everything reads app.data.
+function _loadSprintCapacityHeaders() {
   const headers = document.querySelectorAll('.bl-sprint-hdr[data-sprint-id]');
   const sprints = window.app?.data?.sprints || [];
   const allFocuses = window.app?.data?.focuses || [];
@@ -99,79 +102,37 @@ async function _loadSprintCapacityHeaders() {
     const tier2El = hdrEl.querySelector('.bl-sprint-tier-2');
     if (!tier2El) continue;
 
-    const segments = await window.sprintManager?.getSegmentsForSprint(sprintId) || [];
     const { endDate } = deriveSprintMeta(sprint.startDate, sprint.durationWeeks);
     const sprintDays = daysBetween(sprint.startDate, endDate) + 1;
 
-    // Allocation dots (Phase 1)
     const sprintStories = (window.app?.data?.stories || [])
       .filter(s => s.sprintId === sprintId && s.status !== STORY_STATUS.ABANDONED);
 
-    if (segments.length === 0) {
-      // Fallback: check location periods overlapping this sprint's date range
-      const periods = (window.app?.data?.locationPeriods || []).filter(p =>
-        p.endDate >= sprint.startDate && p.startDate <= endDate
-      );
-      if (periods.length === 0) {
-        tier2El.innerHTML = `
-          <div class="bl-cov-track-wrap">
-            <div class="bl-cov-rail">
-              <div class="bl-cov-seg bl-cov-seg--uncov" style="width:100%"></div>
-            </div>
-            <span class="bl-cov-warn">${sprintDays} day${sprintDays !== 1 ? 's' : ''} uncovered</span>
-          </div>
-        `;
-        continue;
-      }
-      // Derive capacity + coverage from location periods
-      const { deriveSprintCapacityFromPeriods } = await import('./locationCapacity.js');
-      const overrides = window.app?.data?.dayTypeOverrides || [];
-      const cap = deriveSprintCapacityFromPeriods(sprint, periods, overrides);
-
-      let domDays = 0;
-      let intlDays = 0;
-      for (const p of periods) {
-        const pStart = p.startDate > sprint.startDate ? p.startDate : sprint.startDate;
-        const pEnd   = p.endDate   < endDate   ? p.endDate   : endDate;
-        const overlapDays = daysBetween(pStart, pEnd) + 1;
-        if (p.locationType === 'international') intlDays += overlapDays;
-        else domDays += overlapDays;
-      }
-      const uncovDays = Math.max(0, sprintDays - domDays - intlDays);
-      const domPct  = Math.round((domDays  / sprintDays) * 100);
-      const intlPct = Math.round((intlDays / sprintDays) * 100);
-      const uncPct  = 100 - domPct - intlPct;
-
-      const allocation = deriveFocusAllocation(sprintStories, allFocuses);
-      const tierCheck  = deriveTierCheck(sprintStories, cap);
-      const allocHtml  = _renderAllocDots(allocation) + _renderTierStatus(tierCheck);
-      _fillBandCapacities(hdrEl.closest('[data-section-id]'), tierCheck);
-
+    const periods = (window.app?.data?.locationPeriods || []).filter(p =>
+      p.endDate >= sprint.startDate && p.startDate <= endDate
+    );
+    if (periods.length === 0) {
       tier2El.innerHTML = `
         <div class="bl-cov-track-wrap">
           <div class="bl-cov-rail">
-            ${domPct  > 0 ? `<div class="bl-cov-seg bl-cov-seg--dom"  style="width:${domPct}%"></div>`  : ''}
-            ${intlPct > 0 ? `<div class="bl-cov-seg bl-cov-seg--intl" style="width:${intlPct}%"></div>` : ''}
-            ${uncPct  > 0 ? `<div class="bl-cov-seg bl-cov-seg--uncov" style="width:${uncPct}%"></div>` : ''}
+            <div class="bl-cov-seg bl-cov-seg--uncov" style="width:100%"></div>
           </div>
-          ${uncovDays > 0 ? `<span class="bl-cov-warn">${uncovDays} day${uncovDays !== 1 ? 's' : ''} uncovered</span>` : ''}
+          <span class="bl-cov-warn">${sprintDays} day${sprintDays !== 1 ? 's' : ''} uncovered</span>
         </div>
-        <span class="bl-cap-sep">·</span>
-        <span class="bl-sprint-cap-total">${cap.total.toFixed(1)} total</span>
-        <span class="bl-sprint-cap-priority">· ${cap.priority.toFixed(1)} priority</span>
-        ${allocHtml ? `<span class="bl-cap-sep">·</span><span class="bl-sprint-alloc">${allocHtml}</span>` : ''}
       `;
       continue;
     }
-
-    const cap  = deriveSprintCapacity(segments);
+    const overrides = window.app?.data?.dayTypeOverrides || [];
+    const cap = deriveSprintCapacityFromPeriods(sprint, periods, overrides);
 
     let domDays = 0;
     let intlDays = 0;
-    for (const seg of segments) {
-      const segDays = daysBetween(seg.startDate, seg.endDate) + 1;
-      if (seg.locationType === 'international') intlDays += segDays;
-      else domDays += segDays;
+    for (const p of periods) {
+      const pStart = p.startDate > sprint.startDate ? p.startDate : sprint.startDate;
+      const pEnd   = p.endDate   < endDate   ? p.endDate   : endDate;
+      const overlapDays = daysBetween(pStart, pEnd) + 1;
+      if (p.locationType === 'international') intlDays += overlapDays;
+      else domDays += overlapDays;
     }
     const uncovDays = Math.max(0, sprintDays - domDays - intlDays);
     const domPct  = Math.round((domDays  / sprintDays) * 100);
@@ -180,7 +141,7 @@ async function _loadSprintCapacityHeaders() {
 
     const allocation = deriveFocusAllocation(sprintStories, allFocuses);
     const tierCheck  = deriveTierCheck(sprintStories, cap);
-    const allocHtml  = _renderAllocDots(allocation) + _renderTierStatus(tierCheck);
+    const allocHtml  = _renderAllocDots(allocation) + _renderTierStatus(tierCheck) + _renderThroughputNote(sprint, sprintStories);
     _fillBandCapacities(hdrEl.closest('[data-section-id]'), tierCheck);
 
     tier2El.innerHTML = `
@@ -198,6 +159,22 @@ async function _loadSprintCapacityHeaders() {
       ${allocHtml ? `<span class="bl-cap-sep">·</span><span class="bl-sprint-alloc">${allocHtml}</span>` : ''}
     `;
   }
+}
+
+// Throughput calibration (pass 2 §II.1 C): completed sprints' delivered story
+// counts are the honest capacity signal. Warn when a non-completed sprint holds
+// >1.25× the historical mean — the check that would have flagged the 41-story
+// sprint before it lapsed.
+function _renderThroughputNote(sprint, sprintStories) {
+  if (sprint.status === SPRINT_STATUS.COMPLETED) return '';
+  const allSprints = window.app?.data?.sprints || [];
+  const allStories = window.app?.data?.stories || [];
+  const done = allSprints.filter(s => s.status === SPRINT_STATUS.COMPLETED);
+  if (done.length < 2) return '';
+  const counts = done.map(sp => allStories.filter(st => st.sprintId === sp.id).length);
+  const mean = counts.reduce((a, b) => a + b, 0) / counts.length;
+  if (mean === 0 || sprintStories.length <= mean * 1.25) return '';
+  return `<span class="bl-tier-warn" title="Completed sprints have absorbed ~${Math.round(mean)} stories each">⚠ ${sprintStories.length} stories · hist ~${Math.round(mean)}</span>`;
 }
 
 // Fill a sprint section's per-band capacity labels from a computed tierCheck.
@@ -284,19 +261,43 @@ function _applyEpicFilter(stories) {
   return stories.filter(s => s.epicId === epicFilter);
 }
 
+function _applyNameFilter(stories) {
+  const q = nameFilter.trim().toLowerCase();
+  if (!q) return stories;
+  return stories.filter(s => (s.name || '').toLowerCase().includes(q));
+}
+
 // ── Toolbar ───────────────────────────────────────────────────────────────────
 
+// One toolbar row (design-review pass 1 B5 / pass 3 Wave 3): view control,
+// then filters (focus dropdown replaces the 9-pill wrap, a text filter is the
+// search stopgap — pass 2 §II.8 B), then the single primary action. The
+// Calendar and Story-map entries are gone — those are nav tabs now (Option A).
 function _renderToolbar(focuses, allEpics) {
-  // Focus pills (row 1)
-  const pillAll = `<button class="bl-focus-pill-dark ${activeFocus === null ? 'bl-pill-active' : ''}"
-    onclick="window.backlogView._setActiveFocus(null)">All focuses</button>`;
-  const pills = focuses.map(f => {
-    const active = activeFocus === f.id;
-    return `<button class="bl-focus-pill-dark ${active ? 'bl-pill-active' : ''}"
-      onclick="window.backlogView._setActiveFocus('${esc(f.id)}')">${esc(f.name)}</button>`;
-  });
+  const isStoryMap = _blGroupBy === 'storymap';
 
-  // Epic filter chip (row 1)
+  const groupBtns = `
+    <button class="bl-toggle-btn ${_blGroupBy === 'sprint' ? 'on' : ''}"
+      onclick="window.backlogView._setGroupBy('sprint')"
+      aria-pressed="${_blGroupBy === 'sprint'}">By sprint</button>
+    <button class="bl-toggle-btn ${_blGroupBy === 'focus' ? 'on' : ''}"
+      onclick="window.backlogView._setGroupBy('focus')"
+      aria-pressed="${_blGroupBy === 'focus'}">By focus</button>`;
+
+  const focusSelect = `
+    <select class="bl-focus-select" aria-label="Filter by focus"
+      onchange="window.backlogView._setActiveFocus(this.value || null)">
+      <option value="">All focuses</option>
+      ${focuses.map(f =>
+        `<option value="${esc(f.id)}" ${activeFocus === f.id ? 'selected' : ''}>${esc(f.name)}</option>`
+      ).join('')}
+    </select>`;
+
+  const filterInput = `
+    <input type="search" class="bl-filter-input" placeholder="Filter stories…"
+      value="${esc(nameFilter)}" aria-label="Filter stories by name"
+      oninput="window.backlogView._setNameFilter(this.value)">`;
+
   let epicChip = '';
   if (epicFilter) {
     const epic = allEpics.find(e => e.id === epicFilter);
@@ -310,54 +311,37 @@ function _renderToolbar(focuses, allEpics) {
     }
   }
 
-  // Group-by toggle — row 1 left (before focus pills)
-  const byFocusBtn = `<button class="bl-toggle-btn ${_blGroupBy === 'focus' ? 'on' : ''}"
-    onclick="window.backlogView._setGroupBy('focus')"
-    aria-pressed="${_blGroupBy === 'focus'}">By focus</button>
-  <span class="bl-toolbar-sep">|</span>
-  <button class="bl-toggle-btn ${_blGroupBy === 'calendar' ? 'on' : ''}"
-    onclick="window.backlogView._setGroupBy('calendar')"
-    aria-pressed="${_blGroupBy === 'calendar'}">Calendar</button>
-  <span class="bl-toolbar-sep bl-toolbar-sep--calendar ${_blGroupBy === 'calendar' ? 'bl-hidden' : ''}">|</span>
-  <button class="bl-toggle-btn ${_blGroupBy === 'storymap' ? 'on' : ''}"
-    onclick="window.backlogView._setGroupBy('storymap')"
-    aria-pressed="${_blGroupBy === 'storymap'}"
-    style="${window.innerWidth < 640 ? 'display:none' : ''}">Story map</button>
-  <span class="bl-toolbar-sep ${_blGroupBy === 'storymap' ? 'bl-hidden' : ''}">|</span>`;
-
-  // Status chips (row 2)
+  // All five statuses are filterable — Backlog and Abandoned were missing, so a
+  // parked story was invisible under a header that still counted it (pass 1 A6).
   const chipDefs = [
-    { key: 'all',       label: 'All'     },
-    { key: STORY_STATUS.ACTIVE,    label: 'Active'  },
-    { key: STORY_STATUS.BLOCKED,   label: 'Blocked' },
-    { key: STORY_STATUS.COMPLETED, label: 'Done'    },
+    { key: 'all',                  label: 'All'       },
+    { key: STORY_STATUS.BACKLOG,   label: 'Backlog'   },
+    { key: STORY_STATUS.ACTIVE,    label: 'Active'    },
+    { key: STORY_STATUS.BLOCKED,   label: 'Blocked'   },
+    { key: STORY_STATUS.COMPLETED, label: 'Done'      },
+    { key: STORY_STATUS.ABANDONED, label: 'Abandoned' },
   ];
   const chips = chipDefs.map(c => {
     const isActive = activeStatuses.has(c.key);
     return `<button class="bl-status-chip${isActive ? ' bl-chip-active' : ''}"
+      aria-pressed="${isActive}"
       onclick="window.backlogView._setStatus('${c.key}')">${c.label}</button>`;
   });
 
-  // Group-by toggle — row 2 left (before status chips)
-  const bySprintBtn = `<button class="bl-toggle-btn ${_blGroupBy === 'sprint' ? 'on' : ''}"
-    onclick="window.backlogView._setGroupBy('sprint')"
-    aria-pressed="${_blGroupBy === 'sprint'}">By sprint</button>
-  <span class="bl-toolbar-sep">|</span>`;
-
-  // New Sprint button (row 2, flush right)
+  // Single sprint form — the calendar panel version, which snaps to Monday and
+  // includes focus ranking (pass 1 A8).
   const newSprintBtn = `<button class="bl-btn-new-sprint"
-    onclick="window.backlogView.openCreateSprintModal()">+ New Sprint</button>`;
+    onclick="window.calendarView._openCreateSprint(null)">+ New Sprint</button>`;
 
   return `<div class="bl-toolbar">
-    <div class="bl-toolbar-row bl-toolbar-row--focus">
-      ${byFocusBtn}
-      ${pillAll}
-      ${pills.join('')}
+    <div class="bl-toolbar-row">
+      ${groupBtns}
+      <span class="bl-toolbar-sep">|</span>
+      ${focusSelect}
+      ${filterInput}
+      <span class="bl-chip-group ${isStoryMap ? 'sm2-chips-inactive' : ''}">${chips.join('')}</span>
       ${epicChip}
-    </div>
-    <div class="bl-toolbar-row ${_blGroupBy === 'storymap' ? 'sm2-chips-inactive' : ''}">
-      ${bySprintBtn}
-      ${chips.join('')}
+      <span class="bl-hdr-spacer"></span>
       ${newSprintBtn}
     </div>
   </div>`;
@@ -385,7 +369,7 @@ function _renderStatusBadge(status, storyId) {
   const label = STATUS_DISPLAY_LABELS[status] || status;
   return `<button type="button" class="bl-status-badge bl-status-badge--${esc(status)}"
     onclick="event.stopPropagation(); window.backlogView._toggleStoryStatus('${esc(storyId)}')"
-    title="Click to toggle status">${esc(label)}</button>`;
+    title="${status === STORY_STATUS.COMPLETED ? 'Click to reopen' : 'Click to mark done'} — other statuses in the panel">${esc(label)}</button>`;
 }
 
 // ── Story row ─────────────────────────────────────────────────────────────────
@@ -394,9 +378,6 @@ function _renderStoryRow(story, mode, allData) {
   const { allEpics, allFocuses } = allData;
   const epic = allEpics.find(e => e.id === story.epicId);
   const isSelected = openPanelType === 'story' && openPanelId === story.id;
-
-  // Story ID: trailing 5 characters
-  const idDisplay = story.id.slice(-5);
 
   // Focus dot (sprint mode only)
   let focusDot = '';
@@ -437,18 +418,12 @@ function _renderStoryRow(story, mode, allData) {
       onclick="${clickHandler}">${esc(_sprintDisplayName(story.sprintId))}</button>`;
   }
 
-  const fibBadge = story.fibonacciSize
-    ? `<span class="bl-fib-badge">${esc(String(story.fibonacciSize))}</span>`
-    : `<span class="bl-fib-badge"></span>`;
+  // Size badge — weight is the single effort field (ADR-0009)
+  const sizeBadge = `<span class="bl-fib-badge" title="${story.weight ?? 1} block${story.weight === 1 ? '' : 's'}">${esc(sizeLabel(story.weight ?? 1))}</span>`;
 
-  const starBtn = (mode === 'sprint')
-    ? `<button class="bl-focus-star${story.inFocus ? ' bl-focus-star--on' : ''}"
-         title="${story.inFocus ? 'Remove from focus' : 'Add to focus'}"
-         aria-label="${story.inFocus ? 'Remove from focus' : 'Add to focus'}"
-         aria-pressed="${story.inFocus ? 'true' : 'false'}"
-         onclick="event.stopPropagation(); window.backlogView._toggleStoryFocus('${esc(story.id)}')">
-         ${story.inFocus ? '★' : '☆'}
-       </button>`
+  const attCount = (story.attachments || []).length;
+  const attBadge = attCount > 0
+    ? `<span class="bl-att-badge" title="${attCount} attached document${attCount === 1 ? '' : 's'}">📎${attCount > 1 ? attCount : ''}</span>`
     : '';
 
   return `<div class="bl-story-row bl-story-row--${mode}${isSelected ? ' bl-story-row--selected' : ''}"
@@ -456,13 +431,12 @@ function _renderStoryRow(story, mode, allData) {
     data-priority="${esc(story.priority || '')}"
     onclick="window.backlogView._onStoryRowClick('${esc(story.id)}', event)">
     <span class="bl-drag-handle" title="Drag to move">⠿</span>
-    ${starBtn}
-    <span class="bl-story-id">${esc(idDisplay)}</span>
     ${focusDot}
     <span class="bl-story-title">${esc(story.name)}</span>
+    ${attBadge}
     ${epicTag}
     ${sprintTag}
-    ${fibBadge}
+    ${sizeBadge}
     ${_renderStatusBadge(story.status, story.id)}
     <span class="bl-row-pad"></span>
   </div>`;
@@ -704,24 +678,39 @@ function _onStoryRowClick(storyId, _event) {
 async function _toggleStoryStatus(storyId) {
   const story = _getStoryFromData(storyId);
   if (!story) return;
-  const cycle = [STORY_STATUS.ACTIVE, STORY_STATUS.COMPLETED, STORY_STATUS.BLOCKED, STORY_STATUS.BACKLOG];
-  const idx   = cycle.indexOf(story.status);
-  const next  = cycle[(idx + 1) % cycle.length];
-
-  const now     = new Date().toISOString();
-  const updates = { status: next, updatedAt: now };
-  if (next === STORY_STATUS.COMPLETED) updates.completedAt = now;
-
-  // Spine owns the write + rollback + toast. The structured 'story' emit patches the row
-  // badge (sprint) / card (storymap) and re-syncs an open detail panel; on failure the
-  // rollback emit repaints the row from the restored status — no manual revert here.
-  await window.storyWrites.commitStoryUpdate(storyId, updates);
+  // Done-toggle, not a blind 4-step cycle (design-review pass 1, A6):
+  // completed is the overwhelming transition; the other states live one click
+  // away in the detail panel's status select. Routed through storyLifecycle so
+  // epic auto-completion, dependent unblocking and timeSpent capture fire.
+  const next = story.status === STORY_STATUS.COMPLETED
+    ? STORY_STATUS.ACTIVE
+    : STORY_STATUS.COMPLETED;
+  await window.storyLifecycle.setStatus(storyId, next);
 }
 
 function _setGroupBy(mode) {
   closePanel();
   _blGroupBy = mode;
+  // Story map with no focus filter is ~26 columns of horizontal scroll — default
+  // to the active sprint's top-ranked focus so the first render is usable
+  // (design-review pass 2, N10). "All focuses" stays one click away.
+  if (mode === 'storymap' && !activeFocus) {
+    const active = (window.app?.data?.sprints || []).find(sp => sp.status === SPRINT_STATUS.ACTIVE);
+    const topName = active?.focusRanking?.[0];
+    const focus = topName && (window.app?.data?.focuses || []).find(f => f.name === topName);
+    if (focus) activeFocus = focus.id;
+  }
+  _syncNavTab(mode);
   _renderBacklogView();
+}
+
+// Keep the nav tabs honest about toolbar-driven mode changes (pass 1 A4: the
+// Sprints tab used to stay lit while the toolbar showed By focus).
+function _syncNavTab(mode) {
+  const tab = mode === 'storymap' ? 'storymap' : 'backlog';
+  document.querySelectorAll('.nav-tab').forEach(t =>
+    t.classList.toggle('active', t.dataset.tab === tab));
+  if (window.app) window.app.currentTab = tab;
 }
 
 function _setActiveFocus(focusId) {
@@ -746,6 +735,23 @@ function _setStatus(key) {
     }
   }
   _renderBacklogView();
+}
+
+let _nameFilterTimer = null;
+function _setNameFilter(value) {
+  nameFilter = value;
+  clearTimeout(_nameFilterTimer);
+  // Debounced re-render; the input is rebuilt with the current value, so we
+  // restore focus + caret so typing isn't interrupted (uses performance.js's
+  // debounce-by-hand because the timer needs clearing across re-renders).
+  _nameFilterTimer = setTimeout(async () => {
+    await _renderBacklogView();
+    const input = document.querySelector('.bl-filter-input');
+    if (input) {
+      input.focus();
+      input.setSelectionRange(input.value.length, input.value.length);
+    }
+  }, 220);
 }
 
 function _clearEpicFilter() {
@@ -865,9 +871,9 @@ async function _renderBySprintMode(allSprints, allStories, filteredStories, allE
     </div>
   </div>`);
 
-  // Secondary new sprint row
+  // Secondary new sprint row — same single form as the toolbar (pass 1 A8)
   parts.push(`<div class="bl-new-sprint-row">
-    <button class="bl-new-sprint-secondary-btn" onclick="window.backlogView.openCreateSprintModal()">+ New Sprint</button>
+    <button class="bl-new-sprint-secondary-btn" onclick="window.calendarView._openCreateSprint(null)">+ New Sprint</button>
   </div>`);
 
   return parts.join('');
@@ -1084,9 +1090,7 @@ function _renderStoryMapCard(story) {
   const status = story.status || STORY_STATUS.BACKLOG;
   const { border, bg } = _sm2StatusStyle(status);
 
-  const fibBadge = story.fibonacciSize
-    ? `<span class='sm2-card-fib'>${esc(String(story.fibonacciSize))}</span>`
-    : '';
+  const fibBadge = `<span class='sm2-card-fib' title='${story.weight ?? 1} blk'>${esc(sizeLabel(story.weight ?? 1))}</span>`;
 
   return `
     <div class='sm2-card sm2-card--${esc(status)}'
@@ -1096,7 +1100,7 @@ function _renderStoryMapCard(story) {
       aria-label='${esc(story.name)}, ${esc(status)}'>
       <div class='sm2-card-title'>${esc(story.name)}</div>
       <div class='sm2-card-ft'>
-        <span class='sm2-card-id'>${esc(story.id.slice(-6))}</span>
+        ${(story.attachments || []).length ? `<span class='sm2-card-att'>📎${story.attachments.length > 1 ? story.attachments.length : ''}</span>` : ''}
         ${fibBadge}
         <span class='sm2-card-dot' style='background:${border}'></span>
       </div>
@@ -1271,27 +1275,34 @@ function _restoreStoryMapCollapseState(container, orderedSprints) {
   }
 }
 
-async function _loadStoryMapCapacityBars(orderedSprints, allStories) {
-  const { deriveSprintCapacity } = await import('./sprintCapacity.js');
+function _loadStoryMapCapacityBars(orderedSprints, allStories) {
+  // Periods-only capacity (ADR-0008); a full sprint object is required for the
+  // date math, so resolve ids against app.data.
+  const sprints  = window.app?.data?.sprints || [];
+  const periods  = window.app?.data?.locationPeriods || [];
+  const overrides = window.app?.data?.dayTypeOverrides || [];
 
-  await Promise.allSettled(orderedSprints.map(async (sprint) => {
+  for (const ref of orderedSprints) {
+    const sprint = sprints.find(s => s.id === ref.id) || ref;
     const barEl   = document.querySelector(
       `.sm2-sprint-cap-bar[data-sprint-id='${sprint.id}']`
     );
     const labelEl = barEl
       ?.closest('.sm2-sprint-cell')
       ?.querySelector('.sm2-cap-label');
-    if (!barEl || !labelEl) return;
+    if (!barEl || !labelEl) continue;
 
-    const segments = await window.sprintManager
-      ?.getSegmentsForSprint(sprint.id) || [];
+    if (!sprint.startDate) { labelEl.textContent = '···'; continue; }
+    const { endDate } = deriveSprintMeta(sprint.startDate, sprint.durationWeeks);
+    const overlapping = periods.filter(p =>
+      p.endDate >= sprint.startDate && p.startDate <= endDate);
 
-    if (segments.length === 0) {
+    if (overlapping.length === 0) {
       labelEl.textContent = 'Uncovered';
-      return;
+      continue;
     }
 
-    const cap = deriveSprintCapacity(segments);
+    const cap = deriveSprintCapacityFromPeriods(sprint, overlapping, overrides);
 
     const allocated = allStories
       .filter(s => s.sprintId === sprint.id && s.status !== STORY_STATUS.ABANDONED)
@@ -1301,8 +1312,8 @@ async function _loadStoryMapCapacityBars(orderedSprints, allStories) {
       ? Math.min(100, Math.round(allocated / cap.total * 100)) : 0;
 
     barEl.style.width   = `${pct}%`;
-    labelEl.textContent = `${allocated}/${cap.total}b`;
-  }));
+    labelEl.textContent = `${allocated.toFixed(1)}/${cap.total.toFixed(1)}b`;
+  }
 }
 
 // ── Structured 'story' notification routing (storymap targeted patches) ──────
@@ -1343,10 +1354,10 @@ function _patchStoryMapCard(storyId, changed) {
 // Refresh capacity bars for one sprint only (status changes can cross the
 // abandoned filter that _loadStoryMapCapacityBars applies). No-op for the backlog
 // bucket, which has no capacity bars.
-async function _refreshCapacityBars(sprintId) {
+function _refreshCapacityBars(sprintId) {
   if (!sprintId) return;
   const allStories = window.app?.data?.stories ?? [];
-  await _loadStoryMapCapacityBars([{ id: sprintId }], allStories);
+  _loadStoryMapCapacityBars([{ id: sprintId }], allStories);
 }
 
 // Route a 'story' notification. In storymap mode, patch when every changed field
@@ -1360,6 +1371,14 @@ function _handleStoryNotification(payload) {
   // relies on this early return to avoid a full rebuild that would destroy the cell's
   // element-attached Sortable.
   if (payload?.reorder) return;
+
+  // A deletion can't be patched — the node must leave the DOM. Full render,
+  // and close the panel if it was showing the deleted story.
+  if (payload?.deleted) {
+    if (openPanelType === 'story' && openPanelId === payload.id) closePanel();
+    _renderBacklogView();
+    return;
+  }
 
   if (_blGroupBy !== 'storymap') {
     if (payload?.id) patchStoryRow(payload.id);
@@ -1489,16 +1508,13 @@ export async function _renderBacklogView() {
   // Apply filters
   let filteredStories = _applyStatusFilter(allStories);
   if (epicFilter) filteredStories = _applyEpicFilter(filteredStories);
+  filteredStories = _applyNameFilter(filteredStories);
 
   // Build HTML
   const toolbarHtml = _renderToolbar(allFocuses.filter(f => f.status === FOCUS_STATUS.ACTIVE), allEpics);
 
-  // Calendar view is rendered by calendarView.js
-  if (_blGroupBy === 'calendar') {
-    root.innerHTML = `${toolbarHtml}<div id="bl-list"></div>`;
-    if (window.calendarView) window.calendarView.render();
-    return;
-  }
+  // ('calendar' group-by removed — the Calendar is a nav tab, not a backlog
+  // sort order; two calendars in two containers was pass 1 A4.)
 
   // Story map mode — renders its own container then returns
   if (_blGroupBy === 'storymap') {
@@ -1680,85 +1696,13 @@ function _destroySprintSortables(rootEl) {
   });
 }
 
-// ── Create Sprint modal ───────────────────────────────────────────────────────
+// ── Create Sprint modal: REMOVED (pass 1 A8) ─────────────────────────────────
+// Two sprint forms existed — this injected overlay (no ranking, no Monday
+// snap) and calendarView's panel form. The panel form is the only one now.
 
-export function openCreateSprintModal() {
-  const overlay = document.createElement('div');
-  overlay.className = 'modal-overlay';
-  overlay.id        = 'create-sprint-overlay';
-  overlay.innerHTML = `
-    <div class="creation-modal" style="max-width:420px">
-      <div class="creation-modal-header">
-        <h2>New Sprint</h2>
-        <button class="creation-close-btn" onclick="document.getElementById('create-sprint-overlay')?.remove()">&#215;</button>
-      </div>
-      <div class="creation-modal-body">
-        <div class="cm-form-group">
-          <label class="cm-form-label">Start Date (Monday) <span class="cm-required">*</span></label>
-          <input type="date" id="new-sprint-start" class="cm-form-input" />
-        </div>
-        <div class="cm-form-group">
-          <label class="cm-form-label">Duration</label>
-          <select id="new-sprint-duration" class="cm-form-select">
-            <option value="1">1 week</option>
-            <option value="2">2 weeks</option>
-          </select>
-        </div>
-        <div class="cm-form-group">
-          <label class="cm-form-label">Goal (optional)</label>
-          <input type="text" id="new-sprint-goal" class="cm-form-input" placeholder="Sprint goal…" />
-        </div>
-        <p id="new-sprint-error" class="cm-inline-error" style="display:none"></p>
-      </div>
-      <div class="creation-modal-footer">
-        <button class="cm-btn cm-btn-secondary" onclick="document.getElementById('create-sprint-overlay')?.remove()">Cancel</button>
-        <button class="cm-btn cm-btn-primary" onclick="window.backlogView._submitCreateSprint()">Create Sprint</button>
-      </div>
-    </div>
-  `;
-  document.body.appendChild(overlay);
-}
-
-export async function _submitCreateSprint() {
-  const startDate     = document.getElementById('new-sprint-start')?.value;
-  const durationWeeks = parseInt(document.getElementById('new-sprint-duration')?.value || '1');
-  const goal          = document.getElementById('new-sprint-goal')?.value.trim() || null;
-  const errEl         = document.getElementById('new-sprint-error');
-
-  try {
-    await window.sprintManager.createSprint({ startDate, durationWeeks, goal });
-    document.getElementById('create-sprint-overlay')?.remove();
-    NotificationRegistry.emit('sprint');
-    _renderBacklogView();
-  } catch (err) {
-    if (errEl) { errEl.textContent = err.message; errEl.style.display = ''; }
-  }
-}
-
-async function _toggleStoryFocus(storyId) {
-  const story = _getStoryFromData(storyId);
-  if (!story) return;
-
-  // Compute the target WITHOUT mutating the model — commitStoryUpdate owns the write and
-  // its rollback snapshots `prev` from the un-toggled story (pre-mutating would poison it).
-  const next = !story.inFocus;
-
-  // Optimistic DOM patch — all matching star buttons (sprint view + overlay), driven by
-  // `next` (not story.inFocus, which we intentionally leave untouched).
-  const paintStar = (on) => {
-    document.querySelectorAll(`[data-story-id="${storyId}"] .bl-focus-star`).forEach(btn => {
-      btn.textContent = on ? '★' : '☆';
-      btn.title = on ? 'Remove from focus' : 'Add to focus';
-      btn.setAttribute('aria-label', btn.title);
-      btn.setAttribute('aria-pressed', on ? 'true' : 'false');
-      btn.classList.toggle('bl-focus-star--on', on);
-    });
-  };
-  paintStar(next);
-
-  const ok = await window.storyWrites.commitStoryUpdate(storyId, { inFocus: next });
-  if (!ok) paintStar(!next); // spine already reverted the model; repaint the star to match
-}
+// _toggleStoryFocus removed with the star mechanism — `inFocus` was true on
+// 0 of 154 production stories and the Today view lists the sprint's stories
+// directly (design-review pass 1, A7).
 
 // ── Epic filter exposure for backlogDetailPanel ───────────────────────────────
 // @owns _backlogEpicFilter — accessor exposing the current epic filter to the detail panel.
@@ -1786,6 +1730,7 @@ window.backlogView = {
   _setGroupBy: (mode) => { _setGroupBy(mode); },
   _setActiveFocus,
   _setStatus,
+  _setNameFilter,
   _clearEpicFilter,
   _setEpicFilter: (id) => {
     epicFilter = id;
@@ -1794,10 +1739,6 @@ window.backlogView = {
     history.replaceState(null, '', `${window.location.pathname}?${params}`);
     _renderBacklogView();
   },
-  openCreateSprintModal,
-  _submitCreateSprint,
-  _toggleStoryFocus,
-  _openSegmentBuilder: (sprintId) => window.backlogDetailPanel?.openSegmentBuilder(sprintId),
   _openSprintDetail: (sprintId) => window.backlogDetailPanel?.openSprint?.(sprintId),
   _currentGroupBy: () => _blGroupBy,
   get _historyTriggered() { return _historyTriggered; },
@@ -1821,7 +1762,6 @@ NotificationRegistry.on('epic', () => {
   if (window.backlogView._currentGroupBy() === 'storymap') window.backlogView.render();
 });
 NotificationRegistry.on('sprint',          () => window.backlogView.render());
-NotificationRegistry.on('travelSegment',   () => window.backlogView.renderSprintCapacityHeaders());
 NotificationRegistry.on('locationPeriod',  () => window.backlogView.renderSprintCapacityHeaders());
 NotificationRegistry.on('dayTypeOverride', () => window.backlogView.renderSprintCapacityHeaders());
 

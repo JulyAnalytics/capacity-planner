@@ -196,7 +196,16 @@ async function restoreSnapshot(snapshotId) {
       console.log('✓ Deleted entity:', snapshot.entityId);
     }
 
+    // @intent undo must reach memory and the screen, not just the DB. Before
+    // this sync, undoing a creation deleted the row from Supabase while the
+    // phantom stayed in app.data — where any later edit would DB.put it back
+    // to life (design-review pass 3, F3).
+    if (window.app?.data && window.app.data[storeName] !== undefined) {
+      window.app.data[storeName] = await DB.getAll(storeName);
+    }
     await invalidateCache(snapshot.entityType);
+    NotificationRegistry.emit(snapshot.entityType);
+    if (snapshot.entityType === 'story') window.backlogView?.render?.();
     errorState.snapshots.delete(snapshotId);
 
     showToast('Undone successfully', 'success');

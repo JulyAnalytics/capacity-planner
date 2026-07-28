@@ -13,6 +13,17 @@
   `migration:cell-sort-order`); new stories get `max(cell)+1`.
 - See ADR-0005.
 
+## Navigation (Option A, 2026-07-27)
+Tabs: Today (default) · Calendar · Backlog · Story Map · Inbox (badge in-tab) ·
+Analytics (auto-runs the report). Backlog keeps its last group-by (sprint/focus)
+— the toolbar sort control also syncs the tab highlight (`_syncNavTab`). The
+floating sidebar, `focus`/`sprints` tabs, and the toolbar's Calendar/Story-map
+entries are gone. The single sprint form is calendarView's panel
+(`_openCreateSprint`); `openCreateSprintModal` is deleted. Sprint statuses
+auto-advance on load (`app._autoAdvanceSprints`): planning→active on start,
+→completed past end. The `inFocus` star is gone — the Today view lists sprint
+stories and its done-ticks write `{storyId, blocks}` into `dailyLogs[].stories`.
+
 ## Sprint-view drag (SortableJS)
 Replaces HTML5 drag. 5 priority bands per section
 (`primary/secondary1/secondary2/floor/unassigned`); SortableJS attached per
@@ -30,11 +41,13 @@ Each `.sm2-cell-body[data-epic-id][data-sprint-id]` is an isolated Sortable (no
 
 ## Story write spine
 All story writes funnel through `window.storyWrites`:
-`commitStoryUpdate(storyId, updates)` and `commitStoryReorder(orderedIds, field)`.
-`backlogView._handleStoryNotification` early-returns on `{reorder:true}` payloads
-(no-op — Sortable already placed the DOM). `ModalManager` story-edit save funnels
-through `commitStoryUpdate`. `app.saveStory` is retained for ~7 other callers
-(dependency/blocking/status) pending a future cut. See ADR-0006.
+`commitStoryUpdate(storyId, updates)`, `commitStoryReorder(orderedIds, field)`,
+`commitStoryDelete(storyId)`. `commitStoryUpdate` enforces the
+`canTransitionStatus` whitelist + non-empty names for every caller (2026-07-27).
+`backlogView._handleStoryNotification` early-returns on `{reorder:true}` and
+full-renders on `{deleted:true}`. UI status changes route through
+`window.storyLifecycle` (strangler-fig cut #3) so completion side-effects fire;
+`app.saveStory` is retired. See ADR-0006, ADR-0009.
 
 ## Browser tests (Playwright)
 Config: `playwright.config.ts` — port 8080, `python3 -m http.server`. Auth from

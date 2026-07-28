@@ -177,6 +177,25 @@ const dataPortability = {
         return;
       }
 
+      // Destructive-import gate (design-review pass 2, N7): a VALID but WRONG
+      // file — an older backup, the wrong download — used to clear twelve
+      // stores with no confirmation while the additive history import had a
+      // full preview. Summarize and ask before the first write.
+      const incomingSummary = KNOWN_STORE_KEYS
+        .map(k => [k, data[k]?.length ?? 0])
+        .filter(([, n]) => n > 0)
+        .map(([k, n]) => `${k}: ${n}`)
+        .join(', ');
+      if (!confirm(
+        'Import REPLACES all current data with this file.\n\n' +
+        `Incoming — ${incomingSummary || 'no records'}\n` +
+        (totalRejected > 0 ? `Rejected by validation: ${totalRejected}\n` : '') +
+        '\nA snapshot is taken first and restored automatically if the write fails. Continue?'
+      )) {
+        app.showNotification('Import cancelled — nothing changed.', 'info');
+        return;
+      }
+
       try {
         await DB.clear(DB.STORES.FOCUSES); await DB.clear(DB.STORES.CALENDAR); await DB.clear(DB.STORES.PRIORITIES);
         await DB.clear(DB.STORES.SUB_FOCUSES); await DB.clear(DB.STORES.EPICS); await DB.clear(DB.STORES.STORIES);
@@ -208,7 +227,11 @@ const dataPortability = {
       }
 
       await app.loadAllData();
-      app.renderAll();
+      // app.renderAll() was an empty method — imports completed with no visible
+      // change (design-review pass 2, N7). Rebuild the hierarchy index, then
+      // re-render whatever view is open.
+      await window.invalidateCache('focuses');
+      app.switchTab(app.currentTab);
 
       if (totalRejected > 0) {
         const storeSummary = Object.entries(storeImportResult).filter(([, s]) => s.rejected > 0)

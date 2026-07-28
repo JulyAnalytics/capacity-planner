@@ -19,6 +19,23 @@ const storyWrites = {
     const story = window.app?.data?.stories?.find(s => s.id === storyId);
     if (!story) return false;
 
+    // @intent enforcement seam (design-review pass 2 §II.7 C): businessRules'
+    // transition whitelist + the non-empty-name rule are enforced HERE, at the
+    // single writer, so every caller — badge, panel, modal, drag, future
+    // assistant — inherits them. canTransitionStatus resolves as a bundle
+    // global (businessRules.js precedes this file in JS_FILES).
+    if (typeof updates.name === 'string' && !updates.name.trim()) {
+      window.showToast?.('Name cannot be empty', 'warning');
+      return false;
+    }
+    if (updates.status && updates.status !== story.status) {
+      const t = canTransitionStatus(story.status, updates.status, 'story');
+      if (!t.allowed) {
+        window.showToast?.(`Not allowed: ${t.reason}`, 'warning');
+        return false;
+      }
+    }
+
     const prev    = { ...story };
     const context = { epicId: story.epicId, sprintId: story.sprintId };
 
@@ -42,6 +59,29 @@ const storyWrites = {
   // view patches once per drag, not once per story. Rolls every value back on
   // failure. Field-agnostic — carries no status/priority literals.
   // @intent the {reorder:true} payload is a NO-OP patch — Sortable already placed the DOM, so _handleStoryNotification early-returns and the view patches once per drag, not once per story.
+  // Delete a story in memory + DB as one unit. The row is restored (memory) and
+  // re-emitted on DB failure. Callers own the confirm UI and any view refresh a
+  // removed row needs beyond the structured emit (a full render — patch helpers
+  // can't patch an absent node).
+  async commitStoryDelete(storyId) {
+    const stories = window.app?.data?.stories;
+    if (!Array.isArray(stories)) return false;
+    const idx = stories.findIndex(s => s.id === storyId);
+    if (idx < 0) return false;
+
+    const [removed] = stories.splice(idx, 1);
+    try {
+      await DB.delete(DB.STORES.STORIES, storyId);
+      NotificationRegistry.emit('story', { id: storyId, deleted: true, prev: removed });
+      return true;
+    } catch (err) {
+      stories.splice(idx, 0, removed); // restore in place
+      NotificationRegistry.emit('story', { id: storyId, error: err, prev: removed });
+      window.showToast?.('Failed to delete — restored', 'error', { duration: 4000 });
+      return false;
+    }
+  },
+
   async commitStoryReorder(orderedIds, field) {
     const stories = window.app?.data?.stories;
     if (!Array.isArray(stories) || !orderedIds?.length) return false;

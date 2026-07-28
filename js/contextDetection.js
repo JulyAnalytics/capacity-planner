@@ -74,8 +74,10 @@ function validateStoredDefaults(stored) {
 
     if (stored.subFocusId) {
       const sf = getSubFocusById(stored.subFocusId);
-      // SubFocuses link via `focus` (string), not focusId
-      if (sf && sf.focus === stored.focusId) {
+      // Sub-focuses link via focusId. This comparison used `sf.focus` (a legacy
+      // name string) for months — always false, silently dropping the stored
+      // sub-focus AND epic defaults on every modal open (design-review pass 1 A3).
+      if (sf && sf.focusId === stored.focusId) {
         result.subFocusId = stored.subFocusId;
 
         if (stored.type === 'story' && stored.epicId) {

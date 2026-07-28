@@ -16,6 +16,7 @@ const JS_FILES = [
   'js/auth.js',
   'js/db.js',
   'js/storyWrites.js',
+  'js/storyLifecycle.js',
   'js/businessRules.js',
   'js/hierarchyCache.js',
   'js/contextDetection.js',
@@ -37,6 +38,7 @@ const JS_FILES = [
   'js/barricade.js',
   'js/calendarView.js',
   'js/dailyLogOverlay.js',
+  'js/todayView.js',
   'js/importUtils.js',
   'js/dataPortability.js',
   'js/triageQueue.js',
@@ -51,6 +53,7 @@ const CSS_FILES = [
   'css/backlog.css',
   'css/dailyLogOverlay.css',
   'css/storyMapV2.css',
+  'css/todayView.css',
 ];
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -277,9 +280,12 @@ function updateIndexHtml(jsFile, cssFile) {
 
   let html = fs.readFileSync('index.html', 'utf8');
 
-  // 1. Remove old CSS/JS tags (only local app files, not external CDN)
-  html = html.replace(/<link\s+rel="stylesheet"\s+href="(?:css\/|dist\/)[^"]*"\s*>\s*\n?/g, '');
-  html = html.replace(/<script[^>]*\bsrc="(?:js\/|dist\/)[^"]*"[^>]*>\s*<\/script>\s*\n?/g, '');
+  // 1. Remove old CSS/JS tags (only local app files, not external CDN).
+  //    [ \t]* consumes leading indentation too — without it every build left the
+  //    removed tag's indent behind and re-added its own, growing index.html by
+  //    four spaces per run (design-review pass 3, F16).
+  html = html.replace(/[ \t]*<link\s+rel="stylesheet"\s+href="(?:css\/|dist\/)[^"]*"\s*>\s*\n?/g, '');
+  html = html.replace(/[ \t]*<script[^>]*\bsrc="(?:js\/|dist\/)[^"]*"[^>]*>\s*<\/script>\s*\n?/g, '');
   // 2. Insert new CSS link before </head>
   html = html.replace(/<\/head>/, `    <link rel="stylesheet" href="${cssBare}">\n  </head>`);
   // 3. Insert new JS bundle before </body>
@@ -305,6 +311,10 @@ function updateIndexHtml(jsFile, cssFile) {
 
 async function main() {
   console.log('Building capacity-planner…\n');
+
+  // Fourth doc gate: an undefined CSS token without a fallback fails the build
+  // (scripts/css-check.mjs — see knowledge/DESIGN_SYSTEM.md).
+  require('child_process').execSync('node scripts/css-check.mjs', { stdio: 'inherit' });
 
   // Ensure dist/ exists and clean old built assets
   if (!fs.existsSync('dist')) fs.mkdirSync('dist');

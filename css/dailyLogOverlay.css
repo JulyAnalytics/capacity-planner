@@ -136,11 +136,14 @@
   width: 72px;
   font-size: var(--text-sm);
   padding: var(--space-sm) var(--space-sm);
-  background: var(--bg-subtle, rgba(255,255,255,0.05));
-  color: var(--bg-white, #fff);
-  border: 1px solid var(--border, rgba(255,255,255,0.1));
+  /* The overlay panel sits on --bg-card (white), not a dark surface — the
+     dark rgba()/bg-white fallbacks below are dead. Use readable dark text. */
+  background: var(--bg-white);
+  color: var(--text-primary);
+  border: 1px solid var(--border-strong);
   border-radius: var(--radius-sm, 4px);
   min-height: 44px;
+  box-sizing: border-box;
 }
 .dlo-cap-input:focus-visible {
   outline: 2px solid var(--primary);
@@ -163,10 +166,13 @@
   cursor: pointer;
   border-radius: var(--radius-sm, 4px);
   font-size: var(--text-sm);
-  color: var(--bg-white, #e0e0e0);
+  /* Readable dark text — the overlay sits on white --bg-card (the dark
+     fallbacks were dead) and these classes are also reused by the Today
+     view on --bg-light. var(--text-primary) works on both. */
+  color: var(--text-primary);
 }
 .dlo-floor-item:hover {
-  background: var(--bg-subtle, rgba(255,255,255,0.04));
+  background: var(--primary-subtle);
 }
 
 .dlo-floor-check {
@@ -184,9 +190,9 @@
   font-size: var(--text-sm);
   font-family: inherit;
   padding: var(--space-md) var(--space-md);
-  background: var(--bg-subtle, rgba(255,255,255,0.05));
-  color: var(--bg-white, #e0e0e0);
-  border: 1px solid var(--border, rgba(255,255,255,0.1));
+  background: var(--bg-white);
+  color: var(--text-primary);
+  border: 1px solid var(--border-strong);
   border-radius: var(--radius, 6px);
   line-height: 1.5;
   box-sizing: border-box;

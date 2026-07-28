@@ -109,6 +109,42 @@
   --radius-sm: 4px;
   --radius-lg: 12px;
 
+  /* ── Type scale (recovered R2, design-review pass 3 §1) ──────────────────
+     These six tokens were referenced 145× but never defined — the half-applied
+     remediation of the 2026-05-05 evaluation. Definitions are the R2 values.
+     Enforced by scripts/css-check.mjs (fourth doc gate). */
+  --text-xs: 0.75rem;    /* 12px — captions, badges, dense list chrome */
+  --text-sm: 0.875rem;   /* 14px — secondary text, labels, list rows   */
+  --text-base: 1rem;     /* 16px — body default                        */
+  --text-lg: 1.125rem;   /* 18px — emphasized text                     */
+  --text-xl: 1.25rem;    /* 20px — small headings                      */
+  --text-2xl: 1.5rem;    /* 24px — section headings                    */
+  --leading-normal: 1.5;
+
+  /* ── Semantic aliases (recovered R6) ── */
+  --text: var(--text-body);
+  --text-primary: var(--text-dark);
+  --text-secondary: var(--text-body);
+  --gray-900: #111827;
+  --bg: var(--bg-white);
+  --bg-page: var(--bg-light);
+  --bg-surface: var(--bg-white);
+  --bg-subtle: var(--bg-light);
+  --bg-card: var(--bg-white);
+  --border-light: var(--border);
+  --border-color: var(--border);
+  --border-medium: var(--border-strong);
+  --accent: var(--primary);
+  --space-2xl: 32px;
+  --space-3xl: 48px;
+  --focus-ring: 0 0 0 3px var(--primary-subtle);
+
+  /* AA-compliant solid-button surface: white text on #cc4141 = 4.77:1.
+     --primary (#f06a6a, 3.01:1) stays for tints, accents, and focus rings —
+     never as a background under white text (design-review pass 3 §3). */
+  --primary-strong: #cc4141;
+  --primary-strong-hover: #b93a3a;
+
   /* Sprint identity */
   --sprint-bg:         #eef2ff;
   --sprint-border:     #6366f1;
@@ -305,16 +341,15 @@ body {
 }
 
 /* Layout */
+/* The 200px margin-left assumed the floating sidebar (deleted — pass 1 A4).
+   The max-width cap is the prior evaluation's R4, finally applied: content no
+   longer stretches across ultrawide monitors. */
 .container {
-  margin-left: 200px;
+  margin: 0 auto;
+  max-width: 1280px;
   background: var(--bg-white);
   min-height: 100vh;
   box-shadow: var(--shadow-lg);
-  transition: margin-left 0.3s ease;
-}
-
-.floating-sidebar.collapsed ~ .container {
-  margin-left: 0;
 }
 
 /* Header */
@@ -645,12 +680,12 @@ input[type="number"] {
 }
 
 .btn-primary {
-  background: var(--primary);
+  background: var(--primary-strong);
   color: white;
 }
 
 .btn-primary:hover {
-  background: var(--primary-hover);
+  background: var(--primary-strong-hover);
 }
 
 .btn-secondary {
@@ -925,7 +960,7 @@ tbody tr:last-child td {
 }
 
 .progress-fill {
-  background: var(--primary);
+  background: var(--primary-strong);
   height: 100%;
   display: flex;
   align-items: center;
@@ -2220,8 +2255,8 @@ tbody tr:last-child td {
 }
 
 .btn-view.active {
-  background: var(--primary);
-  border-color: var(--primary);
+  background: var(--primary-strong);
+  border-color: var(--primary-strong);
   color: white;
 }
 
@@ -3081,12 +3116,12 @@ tbody tr:last-child td {
 }
 
 .cm-btn-primary {
-  background: #007bff;
+  background: var(--primary-strong);
   color: #fff;
 }
 
 .cm-btn-primary:hover {
-  background: #0069d9;
+  background: var(--primary-strong-hover);
 }
 
 /* Form elements (scoped to creation modal) */
@@ -3250,9 +3285,9 @@ tbody tr:last-child td {
   font-weight: 600;
   cursor: pointer;
   border: none;
-  background: #007bff;
+  background: var(--primary-strong);
   color: #fff;
-  box-shadow: 0 4px 12px rgba(0, 123, 255, 0.4);
+  box-shadow: 0 4px 12px rgba(204, 65, 65, 0.35);
   transition: all 0.3s;
 }
 
@@ -3710,12 +3745,12 @@ textarea:focus:not(:focus-visible) {
   }
 }
 
-/* ── Universal Item Modal (F-1) ── */
-.modal-overlay {
-  position: fixed; inset: 0; z-index: 1000;
-  background: rgba(0,0,0,0.55);
-  display: flex; align-items: center; justify-content: center;
-}
+/* ── Universal Item Modal (F-1) ──
+   NOTE: no .modal-overlay redeclaration here. A duplicate block used to live at
+   this spot and — being later in the cascade at equal specificity — silently
+   downgraded every modal's z-index (10000→1000), scrim, padding and fade-in
+   (design-review pass 3, F14). The single definition lives in the creation-modal
+   section above. */
 body.modal-open { overflow: hidden; }
 
 .modal-container {
@@ -3854,3 +3889,20 @@ body.modal-open { overflow: hidden; }
 .daily-expander-toggle:hover { color: var(--text); }
 
 .empty-state.small { font-size: 12px; color: var(--text-muted); margin: 4px 0; }
+
+
+/* ── Nav-tab count badge (Inbox) — replaces the sidebar badge ───────────────── */
+.tab-badge {
+  background: var(--primary-strong);
+  color: #fff;
+  border-radius: 9px;
+  font-size: 10px;
+  min-width: 18px;
+  height: 18px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 5px;
+  margin-left: 4px;
+  vertical-align: middle;
+}
