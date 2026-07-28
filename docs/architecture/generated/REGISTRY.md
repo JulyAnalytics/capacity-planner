@@ -54,13 +54,13 @@
 |---|---|
 | `${prefix}-{…}` | `utils.js:215` |
 | `${type}-{…}` | `creationModal.js:665`, `dataPortability.js:291`, `dataPortability.js:54` |
-| `ai-{…}` | `app.js:1091`, `app.js:426`, `backlogDetailPanel.js:658`, `dataPortability.js:71` |
+| `ai-{…}` | `app.js:1096`, `app.js:426`, `backlogDetailPanel.js:656`, `dataPortability.js:71` |
 | `att-{…}` | `storyAttachmentPanel.js:90`, `triageQueue.js:69` |
-| `bdp-ai-input-{…}` | `backlogDetailPanel.js:653` |
+| `bdp-ai-input-{…}` | `backlogDetailPanel.js:651` |
 | `capacity-data-{…}` | `dataPortability.js:103` |
 | `crypto.randomUUID(){…}` | `locationManager.js:24`, `sprintManager.js:45`, `utils.js:30` |
-| `cv-dt-val-{…}` | `calendarView.js:1159` |
-| `focus-{…}` | `app.js:817`, `migrationRunner.js:186` |
+| `cv-dt-val-{…}` | `calendarView.js:1175` |
+| `focus-{…}` | `app.js:822`, `migrationRunner.js:186` |
 | `loc-{…}` | `locationManager.js:24` |
 | `log-{…}` | `dailyLogOverlay.js:161`, `dailyLogOverlay.js:186`, `dailyLogOverlay.js:309`, `dailyLogOverlay.js:425`, `todayView.js:35` |
 | `plan-{…}` | `db.js:429`, `db.js:438`, `db.js:453`, `db.js:485`, `db.js:497`, `db.js:512` |

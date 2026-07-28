@@ -1,9 +1,19 @@
 /* ── Story Map v2 ─────────────────────────────────────────────────────────── */
 
 :root {
-  --sm2-col-w: 180px;
+  /* Renamed from --sm2-col-w: the semantics changed from "the width" to "the
+     FLOOR". Columns now flex — they fill when few epics are visible and scroll
+     with a readable minimum when many are (ADR-0010). */
+  --sm2-col-min: 180px;
   --sm2-sidebar-w: 172px;
   --sm2-row-min-h: 120px;
+  /* @intent declared here so scripts/css-check.mjs passes: these are SET INLINE
+     by backlogView.js on .sm2-matrix, and a var() with no fallback whose token is
+     undeclared fails the build. The defaults also guard the degenerate case — an
+     invalid count would make grid-template-columns invalid-at-computed-value-time
+     and collapse every column into one. */
+  --sm2-col-count: 1;
+  --sm2-row-count: 1;
 }
 
 /* Chip dimming when in storymap mode */
@@ -16,13 +26,23 @@
 /* ── Matrix layout ─────────────────────────────────────────────────────────── */
 
 .sm2-matrix {
+  /* Header rows and body rows are both in column 2, so sharing ONE track list
+     makes their alignment true by construction — previously they were two
+     different layout systems (grid vs flex) that agreed only because both
+     resolved to the literal 180px. */
+  --sm2-tracks: repeat(var(--sm2-col-count), minmax(var(--sm2-col-min), 1fr));
   display: grid;
   grid-template-columns: var(--sm2-sidebar-w) 1fr;
-  grid-template-rows: auto 1fr;
-  grid-template-areas:
-    "sidebar-hdr header-cols"
-    "sidebar     body";
+  /* One row per sprint (+ the backlog row). Explicit line placement replaces
+     grid-template-areas so .sm2-sidebar and .sm2-body can span these rows and
+     adopt them with `subgrid` — which is what stops a sidebar sprint cell from
+     drifting out of line with its body row once that row exceeds 120px. */
+  grid-template-rows: auto repeat(var(--sm2-row-count), auto);
   overflow: auto;
+  /* The sticky header (position: sticky; top: 0 on .sm2-header-cols) was dead:
+     .sm2-matrix had no height, so it never scrolled vertically and there was no
+     scrollport to stick against. Under the shell height model it does now. */
+  block-size: 100%;
   min-height: 0;
   border: 1px solid #E5E7EB;
   border-radius: 8px;
@@ -31,18 +51,23 @@
 
 /* Sticky sidebar column */
 .sm2-sidebar {
-  grid-area: sidebar;
+  grid-column: 1;
+  grid-row: 2 / -1;
+  /* display: grid + subgrid — NOT flex. The stale `display: flex` that used to
+     sit at the end of this block silently won the cascade and made every sprint
+     cell take its natural 120px instead of adopting the parent's row heights. */
+  display: grid;
+  grid-template-rows: subgrid;
   position: sticky;
   left: 0;
   z-index: 10;
   background: #F9FAFB;
   border-right: 1px solid #E5E7EB;
-  display: flex;
-  flex-direction: column;
 }
 
 .sm2-sidebar-hdr {
-  grid-area: sidebar-hdr;
+  grid-column: 1;
+  grid-row: 1;
   position: sticky;
   left: 0;
   top: 0;
@@ -62,7 +87,8 @@
 /* ── Column headers ─────────────────────────────────────────────────────────── */
 
 .sm2-header-cols {
-  grid-area: header-cols;
+  grid-column: 2;
+  grid-row: 1;
   position: sticky;
   top: 0;
   z-index: 15;
@@ -74,6 +100,7 @@
 .sm2-subfocus-row,
 .sm2-epic-row {
   display: grid;
+  grid-template-columns: var(--sm2-tracks);
 }
 
 .sm2-focus-col {
@@ -176,9 +203,10 @@
 /* ── Body rows ──────────────────────────────────────────────────────────────── */
 
 .sm2-body {
-  grid-area: body;
-  display: flex;
-  flex-direction: column;
+  grid-column: 2;
+  grid-row: 2 / -1;
+  display: grid;
+  grid-template-rows: subgrid;
 }
 
 .sm2-body-row {
@@ -192,7 +220,8 @@
 }
 
 .sm2-row-content {
-  display: flex;
+  display: grid;
+  grid-template-columns: var(--sm2-tracks);
   flex: 1;
 }
 
@@ -217,8 +246,8 @@
 /* ── Cells ──────────────────────────────────────────────────────────────────── */
 
 .sm2-cell {
-  width: var(--sm2-col-w);
-  min-width: var(--sm2-col-w);
+  inline-size: auto;
+  min-inline-size: 0;
   padding: var(--space-sm);
   border-right: 1px solid #E5E7EB;
   display: flex;
@@ -319,7 +348,7 @@
   background: #F3F4F6;
 }
 
-.sm2-sprint-cell--done {
+.sm2-sprint-cell--completed {
   opacity: 0.6;
 }
 

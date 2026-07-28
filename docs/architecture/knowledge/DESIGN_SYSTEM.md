@@ -18,6 +18,10 @@
 | Text | `--text-primary` (headings/data) · `--text-secondary` (body) · `--text-muted` (labels/hints) — never `--border-*` as a text colour |
 | Surfaces | `--bg-page` · `--bg-surface` · `--bg-subtle` · `--bg-card` |
 | Space | `--space-xs` 4 · `-sm` 8 · `-md` 12 · `-lg` 16 · `-xl` 24 · `-2xl` 32 · `-3xl` 48 |
+| Layout | `--gutter` `clamp(12px,2.5vw,32px)` fluid page inset · `--measure-form` 36rem (text **controls**, never surfaces) · `--shell-max` 2400px · `--bdp-w` `clamp(360px,26vw,460px)` docked-panel column · `--cmp-w` `calc(--bdp-w − --space-xl)` default companion column (**derived — never type it independently**) |
+| Interaction | `--row-h` 36→44px · `--hit` 28→44px — set by the **single** `(pointer: coarse)` block; every list row and hit target reads these |
+| Calendar rows | `--cal-row-h` / `--cal-row-h-tall` — **`svh`, not `dvh`**: `dvh` re-computes as the iOS address bar collapses and would animate every row height mid-scroll |
+| Story map | `--sm2-col-min` (the column **floor**, not its width) · `--sm2-col-count` / `--sm2-row-count` — set inline by `backlogView.js`, but **declared in `:root`** or `css-check` fails the build |
 | Brand | `--primary` #f06a6a — tints, accents, focus only. **`--primary-strong` #cc4141 (4.77:1 with white) is the ONLY background under white text** — buttons fail WCAG AA otherwise (pass 3 §3) |
 | Focus | `--focus-ring` — every focusable control gets it (or a 2px outline); never `outline: none` without a replacement |
 | Day types / location / sprint | the `styles.css` families (`--dt-*-bg/-text`, `--loc-*`, `--sprint-*`). The duplicate family that lived in `backlog.css` is deleted — do not re-add |
@@ -41,3 +45,34 @@
    new number.
 7. **Empty states advise a real action.** An empty state that names a control
    that doesn't exist (the 100-day star nag, pass 1 B8) is a defect.
+8. **Surfaces fill; only text-shaped controls get a measure** (ADR-0010). Story
+   rows are single-line with ellipsis, calendar cells are grid cells — capping
+   the *surface* is the wrong tool and is what left 62% of a 1920px screen
+   empty. Cap `.tv-notes`, `.form-grid`, descriptions; never `#bl-list`.
+9. **One companion slot per surface.** A surface may show one secondary column,
+   decided by a **container query on `.tab-content`** (`container-name: view`),
+   never a viewport query — the docked panel changes the space a surface has, and
+   only a container query can see that. When the detail panel docks it *takes*
+   the slot, so nothing ever renders three columns of chrome. Prefix `cmp-`.
+   **"Same slot" is a measurable invariant: the primary column must not change
+   width when the panel takes the slot over.** Hence `--cmp-w` is *derived* from
+   `--bdp-w`, and the companion is dropped **only at `--xl`** — in the overlay and
+   sheet states no shell gutter replaces it, so removing it would reflow the
+   primary column underneath an overlay that is covering it.
+10. **The detail panel has two stacking modes.** `position: fixed; z-index: 1100`
+    as sheet/overlay; docked it keeps `position: fixed` (it is a sibling of
+    `<main>` and can never be a grid child) but drops to `z-index: auto` with no
+    shadow. Docking adds no new layer — do not "restore" one.
+    **Never size a viewport-anchored element in `cqi`:** `.bdp-container` has no
+    container ancestor so `cqi` silently falls back to the viewport, while the
+    same token read inside `.tab-content` resolves against the surface. That cost
+    a 16.6px slot mismatch at 1600px; layout units for the slot are `vw`.
+11. **Breakpoints come from `@custom-media`,** resolved at build time by
+    `postcss-custom-media`. Custom *properties* cannot appear in a `@media`
+    condition, so never write a raw literal: use `--sm/--md/--lg/--xl`. Max-width
+    halves use `.98` (e.g. `767.98px`) to avoid a 1px dead zone at fractional DPR.
+    The build fails on an unresolved alias, because one silently never matches.
+12. **`container-type` has two hazards** worth an `@intent` at any new use: it
+    makes the element a containing block for `position: fixed` descendants, and
+    an inactive (`display: none`) container makes every `@container` query read
+    false — so the un-queried default must be the narrow state.

@@ -13,7 +13,7 @@
 import DB from './db.js';
 import { esc, sprintLabel, sizeLabel } from './utils.js';
 import { STORY_STATUS } from './constants.js';
-import { buildDayMap, getSprintCoveringDate } from './locationCapacity.js';
+import { buildDayMap, getSprintCoveringDate, isoDateRange, isoAddDays } from './locationCapacity.js';
 import { deriveSprintMeta } from './sprintCapacity.js';
 import { daysBetween } from './locationCapacity.js';
 import { DLO_FLOOR_ITEMS, DLO_DAY_TYPE_CAPACITY } from './dailyLogOverlay.js';
@@ -122,6 +122,99 @@ function _tvMarkSaved() {
   el.textContent = `Saved ${new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
 }
 
+// ── Companion: the next 14 days (ADR-0010) ──────────────────────────────────
+// Today is otherwise blind past midnight, and capacity SUPPLY is exactly what
+// changes when travelling — so the companion shows what is coming, while the
+// Calendar tab stays the place to change it. Deliberately an agenda list, not a
+// month grid: a month grid in a ~400px column is unreadable.
+//
+// @intent cached and invalidated only on locationPeriod / dayTypeOverride /
+// sprint. It depends on dates, periods and overrides — NOT on stories — so
+// without this every done-tick would re-run buildDayMap over 14 days.
+let _agendaCache = null;
+function invalidateAgenda() { _agendaCache = null; }
+
+const AGENDA_DAYS = 14;
+
+function _renderAgenda() {
+  const today = _todayStr();
+  if (_agendaCache && _agendaCache.key === today) return _agendaCache.html;
+
+  const periods   = _tvData().locationPeriods || [];
+  const overrides = _tvData().dayTypeOverrides || [];
+  const sprints   = _tvData().sprints || [];
+  const end       = isoAddDays(today, AGENDA_DAYS - 1);
+  const dayMap    = buildDayMap(today, end, periods, overrides);
+
+  let totalBlocks = 0, uncovered = 0, lastCity = null;
+  const rows = [];
+
+  for (const ds of isoDateRange(today, end)) {
+    const info   = dayMap[ds] || { dayType: null, source: 'uncovered' };
+    const blocks = info.dayType ? (DLO_DAY_TYPE_CAPACITY[info.dayType] ?? 0) : 0;
+    totalBlocks += blocks;
+
+    // Location change marker
+    const period = periods.find(p => ds >= p.startDate && ds <= p.endDate) || null;
+    const city   = period ? (period.city || period.country || '') : null;
+    if (city && city !== lastCity) {
+      rows.push(`<div class="cmp-marker">📍 ${esc(city)}${lastCity ? ' · from ' + esc(_fmtShort(ds)) : ''}</div>`);
+    }
+    lastCity = city;
+
+    // Sprint boundary marker
+    const sp = getSprintCoveringDate(ds, sprints);
+    if (sp) {
+      const spEnd = deriveSprintMeta(sp.startDate, sp.durationWeeks).endDate;
+      if (spEnd === ds) rows.push(`<div class="cmp-marker">${esc(sprintLabel(sp))} ends</div>`);
+    }
+
+    const isUncov = info.source === 'uncovered';
+    if (isUncov) uncovered++;
+    const label = info.dayType
+      ? info.dayType.charAt(0).toUpperCase() + info.dayType.slice(1)
+      : 'No location';
+
+    rows.push(`
+      <button class="cmp-day${ds === today ? ' cmp-day--today' : ''}${isUncov ? ' cmp-day--uncovered' : ''}"
+        onclick="${isUncov
+          ? `window.calendarView._openNewPeriodRange('${ds}','${ds}')`
+          : `window.dailyLogOverlay.open('${ds}')`}">
+        <span class="cmp-day-date">${esc(_fmtShort(ds))}</span>
+        <span class="cmp-day-type">${esc(label)}</span>
+        <span class="cmp-day-blocks">${isUncov ? '+ location' : blocks.toFixed(1) + ' blk'}</span>
+      </button>`);
+  }
+
+  const html = `
+    <div class="cmp-slot-title">Next ${AGENDA_DAYS} days</div>
+    <div class="cmp-panel">
+      <div class="cmp-summary">
+        ${totalBlocks.toFixed(1)} blocks
+        ${uncovered ? `· <span class="cmp-warn">${uncovered} uncovered</span>` : ''}
+      </div>
+      <div class="cmp-agenda">${rows.join('')}</div>
+    </div>`;
+  _agendaCache = { key: today, html };
+  return html;
+}
+
+// Narrow fallback so nothing is reachable ONLY in the companion.
+function _renderNextUp() {
+  const tomorrow = isoAddDays(_todayStr(), 1);
+  const info = _tvDayInfo(tomorrow);
+  const blocks = info.dayType ? (DLO_DAY_TYPE_CAPACITY[info.dayType] ?? 0) : 0;
+  const label = info.dayType
+    ? info.dayType.charAt(0).toUpperCase() + info.dayType.slice(1)
+    : 'No location set';
+  return `<div class="cmp-nextup">Tomorrow · ${esc(label)}${info.dayType ? ` · ${blocks.toFixed(1)} blk` : ''}</div>`;
+}
+
+function _fmtShort(ds) {
+  const [y, m, d] = ds.split('-').map(Number);
+  return new Date(y, m - 1, d).toLocaleDateString('en-US', { weekday: 'short', day: 'numeric' });
+}
+
 // ── Render ────────────────────────────────────────────────────────────────────
 // Named renderToday — a bare top-level `render` collides with calendarView's in
 // the shared IIFE scope (same rename inboxView made; the build's duplicate gate
@@ -211,7 +304,9 @@ function renderToday() {
          <button class="tv-cap-adjust" onclick="window.todayView._openAdjust()">Adjust</button>`;
 
   rootEl.innerHTML = `
+   <div class="cmp-surface cmp-surface--companion">
     <div class="tv-wrap">
+      ${_renderNextUp()}
       <div class="tv-header">
         <div>
           <div class="tv-date">${esc(dateLabel)}</div>
@@ -240,17 +335,22 @@ function renderToday() {
           placeholder="One line about today…" aria-label="Daily note"
           oninput="window.todayView._notesInput(this.value)">
       </div>
-    </div>`;
+    </div>
+    <aside class="cmp-slot" aria-label="Next 14 days">${_renderAgenda()}</aside>
+   </div>`;
 }
 
 // Re-render when visible and the data underneath moves.
 function _rerenderIfVisible() {
   if (document.getElementById('today')?.classList.contains('active')) renderToday();
 }
+// @intent 'story' deliberately does NOT invalidate the agenda cache — the agenda
+// depends on dates/periods/overrides only, so a done-tick must not re-run
+// buildDayMap over 14 days.
 NotificationRegistry.on('story',           _rerenderIfVisible);
-NotificationRegistry.on('sprint',          _rerenderIfVisible);
-NotificationRegistry.on('locationPeriod',  _rerenderIfVisible);
-NotificationRegistry.on('dayTypeOverride', _rerenderIfVisible);
+NotificationRegistry.on('sprint',          () => { invalidateAgenda(); _rerenderIfVisible(); });
+NotificationRegistry.on('locationPeriod',  () => { invalidateAgenda(); _rerenderIfVisible(); });
+NotificationRegistry.on('dayTypeOverride', () => { invalidateAgenda(); _rerenderIfVisible(); });
 
 // @owns todayView — the default Today surface: sprint stories with done-ticks that write per-day {storyId, blocks} actuals into dailyLogs, floor checklist, auto-confirmed capacity, one-line notes.
 window.todayView = {

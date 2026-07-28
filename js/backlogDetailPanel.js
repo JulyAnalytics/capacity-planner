@@ -11,7 +11,10 @@ import { deriveSprintMeta } from './sprintCapacity.js';
 import { STORY_STATUS, EPIC_STATUS, FOCUS_STATUS, SPRINT_STATUS, PRIORITY_LEVELS, STORY_SIZES, STORY_SIZE_LABELS } from './constants.js';
 
 const container = () => document.getElementById('backlog-detail-panel');
-const root      = () => document.getElementById('backlog-root');
+// root() removed 2026-07-27 (ADR-0010): it returned #backlog-root, so the dock
+// gutter was applied to a hidden element whenever the panel was opened from Today
+// or Calendar. The shell now yields space itself via `body:has(.bdp-open)` in
+// styles.css, so no class toggle is needed at all.
 
 let _currentStoryId   = null;
 let _currentEpicId    = null;
@@ -52,7 +55,6 @@ export function open(storyId) {
   _render(storyId);
   container().classList.add('bdp-open');
   container().setAttribute('aria-hidden', 'false');
-  root()?.classList.add('bdp-active');
   _attachPanelSwipeToClose();
 }
 
@@ -64,7 +66,6 @@ export async function openEpic(epicId) {
   await _renderEpicPanel(epicId);
   container().classList.add('bdp-open');
   container().setAttribute('aria-hidden', 'false');
-  root()?.classList.add('bdp-active');
   _attachPanelSwipeToClose();
 }
 
@@ -76,7 +77,6 @@ export async function openFocus(focusId) {
   await _renderFocusPanel(focusId);
   container().classList.add('bdp-open');
   container().setAttribute('aria-hidden', 'false');
-  root()?.classList.add('bdp-active');
   _attachPanelSwipeToClose();
 }
 
@@ -88,14 +88,12 @@ export async function openSubFocus(sfId) {
   await _renderSubFocusPanel(sfId);
   container().classList.add('bdp-open');
   container().setAttribute('aria-hidden', 'false');
-  root()?.classList.add('bdp-active');
   _attachPanelSwipeToClose();
 }
 
 export function close() {
   container().classList.remove('bdp-open');
   container().setAttribute('aria-hidden', 'true');
-  root()?.classList.remove('bdp-active');
   _currentStoryId    = null;
   _currentEpicId     = null;
   _currentFocusId    = null;
@@ -733,6 +731,10 @@ function _toggleEpicFilter(epicId) {
 // an unused modal arg, which then queried the wrong DOM via container()).
 // The two helpers serve different surfaces; this rename preserves both.
 function _attachPanelSwipeToClose() {
+  // @intent coarse pointers only. Docked, the panel is persistent furniture
+  // rather than a modal, and a trackpad flick should not dismiss it
+  // (design-review: "persistent, not modal").
+  if (window.matchMedia('(pointer: fine)').matches) return;
   const el = container();
   el.removeEventListener('touchstart', _onTouchStart);
   el.removeEventListener('touchend',   _onTouchEnd);
@@ -781,7 +783,6 @@ export async function openSprint(sprintId) {
   await _renderSprintPanel(sprint);
   container().classList.add('bdp-open');
   container().setAttribute('aria-hidden', 'false');
-  root()?.classList.add('bdp-active');
 }
 
 async function _renderSprintPanel(sprint) {

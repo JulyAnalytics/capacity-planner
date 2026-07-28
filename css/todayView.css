@@ -2,12 +2,18 @@
    Reuses dailyLogOverlay's floor-grid styles; everything else is tv-*. */
 
 .tv-wrap {
-  max-width: 720px;
-  margin: 0 auto;
+  /* No outer cap (ADR-0010) — the notes control below carries the measure.
+     @intent no `margin-inline: auto` here: as a GRID ITEM of .cmp-surface an
+     auto inline margin makes the box shrink-to-fit its max-content and centre,
+     which collapsed the primary column to ~289px inside a 1372px track. */
+  min-inline-size: 0;
   /* Bottom gutter clears the floating + Create button, which otherwise sits on
      top of the last story row (pass 3, F15). 72px is enough on desktop (the
      FAB sits beside the centered column); narrow viewports still clear it. */
-  padding: var(--space-lg) var(--space-lg) 72px;
+  /* Inline inset comes from .container's --gutter now; only block padding here,
+     plus the bottom gutter that clears the floating + Create button. */
+  padding-block: var(--space-lg) 72px;
+  padding-inline: 0;
   display: flex;
   flex-direction: column;
   gap: var(--space-lg);
@@ -89,7 +95,6 @@
   display: flex;
   align-items: center;
   gap: var(--space-md);
-  min-height: 40px;
   padding: 0 var(--space-sm);
   border-bottom: 1px solid var(--border);
   font-size: var(--text-sm);
@@ -153,6 +158,7 @@
 
 .tv-notes {
   width: 100%;
+  max-inline-size: var(--measure-form);
   padding: var(--space-sm) var(--space-md);
   border: 1px solid var(--border);
   border-radius: var(--radius);
@@ -162,10 +168,8 @@
 }
 .tv-notes:focus { outline: none; box-shadow: var(--focus-ring); border-color: var(--primary); }
 
-@media (pointer: coarse) {
-  .tv-story-row { min-height: 48px; }
-  .tv-story-check { width: 20px; height: 20px; }
-  /* Floor checkboxes are reused from the daily log; bump them here so touch
-     targets are consistent with the story rows above. */
-  .dlo-floor-check { width: 20px; height: 20px; }
-}
+/* Touch sizing reads --row-h / --hit — the single (pointer: coarse) override
+   lives in styles.css so all three surfaces stay consistent. */
+.tv-story-row  { min-height: var(--row-h); }
+.tv-story-check,
+.dlo-floor-check { inline-size: var(--hit); block-size: var(--hit); }

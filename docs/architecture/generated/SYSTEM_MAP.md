@@ -93,12 +93,17 @@
 - `storyWrites.js:56` — **@intent:** the {reorder:true} payload is a NO-OP patch — Sortable already placed the DOM, so _handleStoryNotification early-returns and the view patches once per drag, not once per story.
 - `locationCapacity.js:240` — **@intent:** skip malformed sprints instead of throwing. isoAddDays on a missing
 - `errorHandler.js:199` — **@intent:** undo must reach memory and the screen, not just the DB. Before
+- `mobileOptimizations.js:40` — **@intent:** pinch-zoom is NOT disabled. This used to append
 - `creationModal.js:105` — **@intent:** recovery only applies to a cold open. A contextual open (a "+"
 - `sprintManager.js:10` — **@intent:** Sprint creation is a non-atomic check-then-create (resolveOrCreateSprintForDate
 - `sprintManager.js:94` — **@intent:** process candidates in ascending date order (caller's responsibility)
 - `storyAttachmentPanel.js:149` — **@intent:** innerHTML of marked output — single-user app rendering the user's own
+- `backlogDetailPanel.js:734` — **@intent:** coarse pointers only. Docked, the panel is persistent furniture
 - `inboxView.js:20` — **@intent:** this is the
+- `calendarView.js:24` — **@intent:** the app's ONLY viewport listener. _viewMode used to be read once at
 - `dailyLogOverlay.js:66` — **@intent:** flush ONLY when the user actually edited something. The old
+- `todayView.js:125` — **@intent:** cached and invalidated only on locationPeriod / dayTypeOverride /
+- `todayView.js:347` — **@intent:** 'story' deliberately does NOT invalidate the agenda cache — the agenda
 - `dataPortability.js:30` — **@intent:** mergeImport / attachNewStoryToEpic resolve-or-create sub-focuses and **@see:** ADR-0007
 - `dataPortability.js:250` — **@intent:** bulk additive import — putAll (never clear); the sanctioned bulk path
 - `dataPortability.js:448` — **@intent:** bulk additive import — putAll, no clear; sanctioned bulk path.
@@ -106,7 +111,7 @@
 - `triageQueue.js:141` — **@intent:** process in ascending inferred-date order — resolveOrCreateSprintForDate **@intent:** re-entrancy guard: start() drains immediately AND on a 5-min interval,
 - `migrationRunner.js:578` — **@intent:** one batched upsert, not N awaited puts. Nearly every story changes
 - `app.js:637` — **@intent:** the watchdog exists because DB.init() awaits initAuth(), whose
-- `app.js:706` — **@intent:** render BEFORE the optional maintenance work. Until 2026-07-27 a
+- `app.js:711` — **@intent:** render BEFORE the optional maintenance work. Until 2026-07-27 a
 
 ## Migration ordering
 

@@ -649,6 +649,11 @@ class CapacityManager {
       const bootWatchdog = setInterval(() => {
         const secs = Math.round((Date.now() - bootStarted) / 1000);
         if (secs < 8) return;
+        // One-shot diagnostic, not a monitor. DB.init() awaits initAuth(), whose
+        // promise never settles when the backend is unreachable — so the `finally`
+        // that clears this interval never runs, and without stopping here it would
+        // re-render the message every 2s forever, stomping anything else in #today.
+        clearInterval(bootWatchdog);
         const overlayEl = document.getElementById('auth-overlay');
         const overlayUp = overlayEl && getComputedStyle(overlayEl).display !== 'none';
         if (window.currentUserId) {

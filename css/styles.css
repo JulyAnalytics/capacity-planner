@@ -82,6 +82,35 @@
 /* ── End Auth Overlay ─────────────────────────────────────────────────────── */
 
 
+/* ── Breakpoints (2026-07-27) ─────────────────────────────────────────────────
+   ONE source for every width breakpoint. Custom PROPERTIES cannot be used in a
+   @media condition, so these @custom-media aliases are resolved at build time by
+   postcss-custom-media (build.js). Consuming CSS never repeats a literal.
+
+   Consolidated from the previous 600 / 767 / 768 mix. Max-width halves use
+   767.98 because 767/768 leaves a 1px dead zone at fractional device pixel
+   ratios where NEITHER of a max/min pair matches — the source of the old
+   "at exactly 768px two rules both fire" bug.
+
+   Only three viewport breakpoints are needed, because component-level
+   adaptation is done with container queries instead (ADR-0010):
+     --md  the scroll model flips and the detail panel becomes a rail
+     --xl  the detail panel DOCKS
+     --sm  small-phone tightening
+
+   @intent --xl is 1280, not 1440. A 13" MacBook is 1440 or 1470 logical px, so
+   a 1440 threshold docked only when the browser was BOTH maximised and at 100%
+   zoom — window it slightly, or zoom to 110% (1440 → 1309 css px), and the
+   laptop silently fell back to an overlay. 1280 docks reliably on that hardware
+   at the cost of a narrower primary column (856px vs 1002px at 1280). Below
+   1280 a split genuinely does not fit: the panel floors at 360px. */
+@custom-media --sm       (min-width: 480px);
+@custom-media --md       (min-width: 768px);
+@custom-media --lg       (min-width: 1024px);
+@custom-media --xl       (min-width: 1280px);
+@custom-media --below-md (max-width: 767.98px);
+@custom-media --below-sm (max-width: 479.98px);
+
 :root {
   --primary: #f06a6a;
   --primary-hover: #e05555;
@@ -142,6 +171,39 @@
   /* AA-compliant solid-button surface: white text on #cc4141 = 4.77:1.
      --primary (#f06a6a, 3.01:1) stays for tints, accents, and focus rings —
      never as a background under white text (design-review pass 3 §3). */
+  /* ── Fluid layout (2026-07-27, ADR-0010) ─────────────────────────────────
+     Surfaces FILL; only text-shaped controls get a measure. The four outer
+     caps this replaces (.container 1280 / #calendar-root 1200 / #bl-list 1100
+     / .tv-wrap 720) were what left 62% of a 1920px screen empty — this app's
+     dense surfaces have no line-length problem (single-line rows with
+     ellipsis, grid cells), so capping the surface was the wrong tool. */
+  --gutter: clamp(12px, 2.5vw, 32px);   /* fluid page inset, 375→12 · 1280→32 */
+  --measure-form: 36rem;                /* 576px — text CONTROLS, not surfaces */
+  --shell-max: 2400px;                  /* safety on absurd widths only        */
+  /* The slot width. @intent vw, NOT cqi — this token is read from two different
+     containment contexts and cqi silently resolved to two different bases:
+     .bdp-container is a sibling of <main> with no container ancestor (cqi falls
+     back to the small viewport), while .cmp-surface--companion sits inside
+     .tab-content, a real inline-size container. Measured at 1600: panel 416px
+     vs companion 399.4px for the same token. vw means one thing everywhere. */
+  --bdp-w: clamp(360px, 26vw, 460px);   /* docked-panel column                 */
+  /* The companion is the SAME SLOT as the docked panel (ADR-0010), so the
+     primary column must not change width when the panel takes it over:
+        closed  [content][--space-xl][companion][--gutter]
+        open    [content][--gutter  ][      panel       ]  (flush to viewport)
+     Both resolve to the same content width only when companion = panel −
+     --space-xl. Derived, not typed twice, so the two cannot drift apart. */
+  --cmp-w: calc(var(--bdp-w) - var(--space-xl));  /* default companion column  */
+
+  /* Interactive sizing. One override block below feeds every list row and hit
+     target, replacing three scattered (pointer: coarse) blocks. */
+  /* Calendar row heights. svh (not dvh) on purpose: dvh would re-compute as the
+     iOS address bar collapses, animating every row height during a scroll. */
+  --cal-row-h: clamp(76px, 11svh, 190px);
+  --cal-row-h-tall: clamp(150px, 30svh, 420px);
+  --row-h: 36px;
+  --hit: 28px;
+
   --primary-strong: #cc4141;
   --primary-strong-hover: #b93a3a;
 
@@ -203,150 +265,26 @@ body {
   background: var(--bg-page);
 }
 
-/* Floating Sidebar */
-.floating-sidebar {
-  position: fixed;
-  left: 0;
-  top: 0;
-  bottom: 0;
-  width: 200px;
-  background: white;
-  border-right: 2px solid var(--border);
-  z-index: 100;
-  transition: transform 0.3s ease;
-  overflow-y: auto;
-  box-shadow: 2px 0 8px rgba(0, 0, 0, 0.05);
-}
-
-.floating-sidebar.collapsed {
-  transform: translateX(-200px);
-}
-
-.sidebar-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 16px;
-  border-bottom: 1px solid var(--border);
-  background: var(--bg-light);
-}
-
-.sidebar-header h4 {
-  margin: 0;
-  color: var(--text-dark);
-  font-size: 0.9em;
-  font-weight: 600;
-}
-
-.sidebar-toggle {
-  background: none;
-  border: none;
-  font-size: 1.2em;
-  color: var(--text-muted);
-  cursor: pointer;
-  padding: 4px 8px;
-  line-height: 1;
-  transition: all 0.2s;
-}
-
-.sidebar-toggle:hover {
-  color: var(--text-dark);
-  background: var(--border);
-  border-radius: 4px;
-}
-
-.sidebar-sections {
-  padding: 8px 0;
-}
-
-.sidebar-link {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 10px 16px;
-  color: var(--text-muted);
-  text-decoration: none;
-  font-size: 0.85em;
-  transition: all 0.2s;
-  cursor: pointer;
-  border-left: 3px solid transparent;
-}
-
-.sidebar-link:hover {
-  background: var(--bg-light);
-  color: var(--text-dark);
-}
-
-.sidebar-link.active {
-  background: var(--warning-bg);
-  color: var(--primary);
-  border-left-color: var(--primary);
-  font-weight: 600;
-}
-
-.sidebar-icon {
-  font-size: 1.1em;
-  width: 20px;
-  text-align: center;
-}
-
-.sidebar-link-indent {
-  padding-left: 32px;
-  font-size: 0.8em;
-  padding-top: 6px;
-  padding-bottom: 6px;
-  color: #9aa5b1;
-}
-
-.sidebar-link-indent .sidebar-icon {
-  font-size: 0.9em;
-  width: 16px;
-}
-
-.sidebar-empty {
-  padding: 20px 16px;
-  text-align: center;
-  color: #9aa5b1;
-  font-size: 0.85em;
-  font-style: italic;
-}
-
-/* Sidebar Expand Button (when collapsed) */
-.sidebar-expand-button {
-  position: fixed;
-  left: 0;
-  top: 50%;
-  transform: translateY(-50%);
-  background: white;
-  border: 2px solid var(--border);
-  border-left: none;
-  border-radius: 0 8px 8px 0;
-  padding: 12px 6px;
-  cursor: pointer;
-  z-index: 99;
-  box-shadow: 2px 0 8px rgba(0, 0, 0, 0.1);
-  transition: all 0.2s;
-  display: none;
-  font-size: 0.8em;
-  color: var(--text-muted);
-}
-
-.floating-sidebar.collapsed ~ .sidebar-expand-button {
-  display: block;
-}
-
-.sidebar-expand-button:hover {
-  background: var(--bg-light);
-  padding-left: 8px;
-}
+/* Floating sidebar: DELETED 2026-07-27. The element was removed from index.html
+   in Wave 3 (nav Option A); these ~135 lines of rules — plus a `.floating-sidebar
+   .collapsed ~ .container` reset that could never match — survived it. Their
+   @media companions went with them; see the note on .container below. */
 
 /* Layout */
 /* The 200px margin-left assumed the floating sidebar (deleted — pass 1 A4).
    The max-width cap is the prior evaluation's R4, finally applied: content no
    longer stretches across ultrawide monitors. */
 .container {
-  margin: 0 auto;
-  max-width: 1280px;
+  --panel-w: 0px;
+  margin-inline: auto;
+  max-width: var(--shell-max);
+  /* The docked panel's gutter is added to the END inset. @intent this lives on the
+     SHELL, not on a view: the old rule was `#backlog-root.bdp-active{margin-right}`,
+     but the panel also opens from Today and Calendar, where #backlog-root is
+     `display:none` — so the gutter was applied to a hidden element and the rail
+     simply covered the content. Verified at 1500px before the fix. */
+  padding-inline: var(--gutter) calc(var(--gutter) + var(--panel-w));
+  box-sizing: border-box;
   background: var(--bg-white);
   min-height: 100vh;
   box-shadow: var(--shadow-lg);
@@ -354,7 +292,7 @@ body {
 
 /* Header */
 header {
-  padding: 20px 24px 16px;
+  padding: 20px 0 16px;
   border-bottom: 1px solid var(--border);
 }
 
@@ -381,9 +319,12 @@ header h1 {
 /* Navigation Tabs */
 .nav-tabs {
   display: flex;
+  /* @intent the strip scrolls when the six tabs do not fit, but had no visual
+     cue that more existed. The mask is scoped to widths where it actually
+     overflows so wide screens get no phantom fade. */
   overflow-x: auto;
   border-bottom: 1px solid var(--border);
-  padding: 0 24px;
+  padding: 0;
   gap: 0;
   -webkit-overflow-scrolling: touch;
   scrollbar-width: none;
@@ -394,6 +335,8 @@ header h1 {
 }
 
 .nav-tab {
+  /* ≥44px touch target (DESIGN_SYSTEM rule 4) — was 41px. */
+  min-block-size: var(--hit);
   padding: 12px 16px;
   background: none;
   border: none;
@@ -417,23 +360,31 @@ header h1 {
 }
 
 /* Tab Content */
+/* @intent `container-type: inline-size` makes each tab panel a query container so
+   surfaces adapt to THEIR OWN width, not the viewport's — which is what lets a
+   docked detail panel collapse a companion column. Two hazards, both real:
+     1. It makes the element a containing block for `position: fixed` descendants.
+        Audited 2026-07-27: all thirteen fixed elements in the app (auth overlay,
+        toasts, modals, FAB, detail panel) live OUTSIDE .tab-content. Anything
+        fixed added inside a tab from now on becomes panel-relative.
+     2. An inactive tab is `display: none`, so it has no size and EVERY
+        @container query against it reads false. The un-queried default must
+        therefore be the narrow/single-column state, or a tab renders wrong for
+        one frame when revealed.
+   @see ADR-0010 */
 .tab-content {
   display: none;
+  container-type: inline-size;
+  container-name: view;
 }
 
 .tab-content.active {
   display: block;
 }
 
-/* Layout Zones */
-.panel-focused {
-  max-width: 720px;
-  margin: 0 auto;
-}
-
-.panel-expanded {
-  /* Full width - no constraint */
-}
+/* Layout Zones — .panel-focused deleted (never in the DOM); .panel-expanded's
+   empty rule deleted too, though the CLASS is still live on all six tab panels
+   in index.html and is left there as a semantic marker. */
 
 /* Cards */
 .card {
@@ -489,8 +440,15 @@ header h1 {
 }
 
 /* Form Components */
+/* @intent capped because .container is now uncapped: a two-field form must not
+   become a 1856px-wide row on a 1920px monitor. .form-grid and .metrics-grid are
+   the only two LIVE grids in this file — the other eight auto-fit rules
+   (.day-types-grid, .priority-levels, .capacity-breakdown, .focus-allocation-grid,
+   .missing-days-grid, .archive-grid, .es-priority-lanes, .form-grid-3) have zero
+   render sites, so they cannot explode. */
 .form-grid {
   display: grid;
+  max-inline-size: var(--measure-form);
   grid-template-columns: 1fr 1fr;
   gap: 12px;
   margin-bottom: 16px;
@@ -988,7 +946,7 @@ tbody tr:last-child td {
 
 .metrics-grid {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: repeat(auto-fit, minmax(11rem, 14rem));
   gap: 8px;
 }
 
@@ -2407,39 +2365,12 @@ tbody tr:last-child td {
   margin-bottom: 10px;
 }
 
-/* Responsive */
-@media (max-width: 768px) {
-  .floating-sidebar {
-    width: 180px;
-  }
-
-  .container {
-    margin-left: 180px;
-  }
-
-  .floating-sidebar.collapsed ~ .container {
-    margin-left: 0;
-  }
-
-  .panel-focused {
-    max-width: 100%;
-  }
-}
+/* The @media(max-width:768px) block that lived here shifted .container 180px
+   right to clear the deleted sidebar, with a `~` reset that could never match —
+   so between 601px and 768px content was squeezed into 520px of a 700px window
+   behind a phantom gutter. Deleted 2026-07-27. */
 
 @media (max-width: 600px) {
-  .floating-sidebar {
-    transform: translateX(-200px);
-  }
-
-  .container {
-    margin-left: 0;
-    box-shadow: none;
-  }
-
-  .sidebar-expand-button {
-    display: block;
-  }
-
   .form-grid, .form-grid-3 {
     grid-template-columns: 1fr;
   }
@@ -3905,4 +3836,61 @@ body.modal-open { overflow: hidden; }
   padding: 0 5px;
   margin-left: 4px;
   vertical-align: middle;
+}
+
+/* ── Docked detail panel: the shell yields (≥xl) ─────────────────────────────
+   `:has()` keyed to the panel's id needs no JS at all — which is why the six
+   `root()?.classList.add('bdp-active')` call sites could be deleted.
+
+   @intent the gutter is NOT transitioned. Animating `padding-inline` would run
+   layout on the entire shell for every frame of a 280ms transition; the panel's
+   own `transform` slide already reads as the motion, so the gutter snaps. */
+@media (--xl) {
+  body:has(#backlog-detail-panel.bdp-open) .container {
+    --panel-w: var(--bdp-w);
+  }
+  /* Without this the floating + Create button sits underneath the docked panel —
+     silent overlap, no error. */
+  body:has(#backlog-detail-panel.bdp-open) .global-actions {
+    inset-inline-end: calc(2rem + var(--bdp-w));
+  }
+}
+
+/* ── Shell height model (≥md) ─────────────────────────────────────────────────
+   Above --md the shell owns a bounded height and the active tab scrolls inside
+   it. That is what makes three things work at once: the detail panel can use
+   `inset-block: 0` instead of a hand-measured `top: 44px`, the backlog toolbar's
+   `position: sticky` resolves against a real scrollport, and the story map's
+   sticky header (dead until now, because .sm2-matrix never scrolled vertically)
+   comes alive.
+
+   Below --md the DOCUMENT keeps scrolling: an inner scroll container stops
+   mobile browser chrome from collapsing, which is worse than the benefit. Two
+   scroll models split on one breakpoint — the detail panel already works this
+   way, so this is the established pattern here, not a new one. */
+@media (--md) {
+  .container {
+    display: grid;
+    grid-template-rows: auto auto 1fr;   /* header · nav · active tab */
+    block-size: 100dvh;
+    min-block-size: 0;
+  }
+  .tab-content.active {
+    min-block-size: 0;
+    overflow: auto;
+  }
+}
+
+/* ── Touch sizing: the ONE coarse-pointer override ───────────────────────────
+   DESIGN_SYSTEM rule 4 (≥44px). Consumers read --row-h / --hit so this block
+   stays the only place the values change. */
+@media (pointer: coarse) {
+  :root { --row-h: 44px; --hit: 44px; }
+}
+
+/* Scroll affordance on the tab strip, only where it can overflow. */
+@media (--below-md) {
+  .nav-tabs {
+    mask-image: linear-gradient(to right, #000 calc(100% - 28px), transparent);
+  }
 }

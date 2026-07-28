@@ -10,10 +10,14 @@
 /* The story list centers and caps so wide monitors don't strand content on
    the left (the toolbar above stays full-width; #calendar is a different tab
    and unaffected). Matches the file's existing hardcoded-cap style. */
-#bl-list {
-  max-width: 1100px;
-  margin: 0 auto;
-}
+/* #bl-list fills its surface (ADR-0010). The old 1100px cap did not merely cap
+   the story map — it MANUFACTURED its horizontal scroll, squeezing a 26-epic
+   matrix into 1100px on any monitor. */
+#bl-list { min-inline-size: 0; }
+/* The story map is a scroll surface, not a measured list — it gets the full
+   surface width so a 26-epic matrix uses a wide monitor instead of being
+   squeezed and scrolled. Set by backlogView when group-by is 'storymap'. */
+#bl-list.bl-list--map { inline-size: auto; margin-inline: 0; }
 
 /* ── Toolbar ─────────────────────────────────────────────────────────────────── */
 
@@ -29,10 +33,14 @@
 .bl-toolbar-row {
   display: flex;
   align-items: center;
-  padding: var(--space-sm) var(--space-xl);
+  padding: var(--space-sm) 0;
   gap: var(--space-sm);
-  flex-wrap: nowrap;
-  overflow: hidden;
+  /* @intent wrap, never clip. `nowrap` + `overflow: hidden` silently dropped
+     controls off the right edge — first casualty was "+ New Sprint", which uses
+     margin-inline-start:auto. Docking the detail panel takes another ~460px off
+     this row, so clipping would only get worse (ADR-0010, plan §3.5). */
+  flex-wrap: wrap;
+  row-gap: var(--space-xs);
 }
 
 .bl-toolbar-row + .bl-toolbar-row {
@@ -164,7 +172,11 @@
   display: flex;
   align-items: center;
   gap: var(--space-sm);
-  height: 36px;
+  /* min-block-size, not height: a fixed 36px clipped the 44px touch target on
+     coarse pointers. Drag drop-rects are measured live by SortableJS, so this is
+     safe — but re-test drag after changing it. */
+  min-block-size: var(--row-h);
+  min-inline-size: 0;
   padding: 0 var(--space-lg) 0 var(--space-sm);
   border-bottom: 1px solid var(--border);
   background: var(--bg-white);
@@ -496,7 +508,10 @@ button.bl-focus-name {
   border-top: 1px solid var(--border);
 }
 
-@media (max-width: 768px) {
+/* @intent a CONTAINER query, not a viewport one: this row must also disappear
+   when the docked detail panel narrows the backlog — a @media query cannot see
+   that the surface shrank (ADR-0010). */
+@container view (max-width: 47.99rem) {
   .bl-sprint-tier-2 { display: none; }
 }
 
@@ -706,10 +721,23 @@ button.bl-focus-name {
   overflow: hidden;
 }
 
-@media (max-width: 767px) {
+/* ── Detail panel: three states (ADR-0010) ────────────────────────────────────
+   Panel STATE is a viewport question, not a container one: #backlog-detail-panel
+   is a sibling of <main>, so no container query can address it — and "phone vs
+   laptop vs wide desktop" is genuinely a property of the viewport.
+
+     --below-md   bottom sheet (overlays)
+     --md         right rail   (overlays)
+     --xl         DOCKED — the shell yields inline space, nothing is covered
+
+   The old `top: 44px` is gone rather than corrected: it was a hand-measured
+   header height, and the real chrome is ~150px, so the rail used to start inside
+   the header. Under the shell height model the panel is simply full-height. */
+
+@media (--below-md) {
   .bdp-container {
-    bottom: 0; left: 0; right: 0;
-    height: 72vh;
+    inset: auto 0 0 0;
+    block-size: min(72dvh, 100dvh - 56px);
     border-radius: 16px 16px 0 0;
     transform: translateY(100%);
   }
@@ -717,32 +745,55 @@ button.bl-focus-name {
   .bdp-container::before {
     content: '';
     display: block;
-    width: 36px; height: 4px;
+    inline-size: 36px;
+    block-size: 4px;
     border-radius: 2px;
     background: var(--border-strong);
     margin: var(--space-md) auto 0;
     flex-shrink: 0;
   }
+  /* 16px prevents iOS zoom-on-focus */
   .bdp-container input,
   .bdp-container select,
   .bdp-container textarea { font-size: 16px; }
 }
 
-@media (min-width: 768px) {
+@media (--md) {
   .bdp-container {
-    top: 44px; right: 0; bottom: 0;
-    width: 360px;
-    border-left: 1px solid var(--border);
-    border-top: none;
+    inset-block: 0;
+    inset-inline-end: 0;
+    inline-size: var(--bdp-w);
+    border-inline-start: 1px solid var(--border);
+    border-block-start: none;
     box-shadow: var(--shadow-md);
     transform: translateX(100%);
   }
   .bdp-container.bdp-open { transform: translateX(0); }
-  #backlog-root.bdp-active {
-    margin-right: 360px;
-    transition: margin-right 0.28s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* Docked: two-column field layout finally fits (a 360px overlay forced the
+   cramped stacked rows). */
+@media (--xl) {
+  .bdp-container.bdp-open .bdp-field-row {
+    display: grid;
+    grid-template-columns: 7rem minmax(0, 1fr);
+    align-items: center;
+    gap: var(--space-sm);
+  }
+
+  /* @intent second stacking mode (ADR-0010, DESIGN_SYSTEM rule 6). Docked, the
+     shell yields real inline space via --panel-w, so the rail covers nothing:
+     it drops off the layer ladder (z-index: auto) and loses the overlay shadow,
+     which would otherwise claim a float that no longer happens. The border
+     alone separates it. It stays `position: fixed` — #backlog-detail-panel is a
+     sibling of <main> and cannot become a grid child of a surface — so this is
+     a stacking change, not a positioning one. Do not "restore" the z-index. */
+  .bdp-container.bdp-open {
+    z-index: auto;
+    box-shadow: none;
   }
 }
+
 
 .bdp-header {
   display: flex;
@@ -1032,9 +1083,18 @@ button.bl-focus-name {
   user-select: none;
 }
 
-.cv-grid--month {
-  min-width: 560px;
+/* @intent the scrollport is a WRAPPER, not the grid. Putting overflow-x on the
+   same element as min-width meant it could never scroll its own content — it
+   just refused to shrink and pushed the overflow onto the document. And moving
+   overflow-x to #calendar-root would not work either: overflow-x:auto with
+   overflow-y:visible computes y to auto too, silently making it a vertical
+   scroller. Hence .cv-scroll. */
+.cv-scroll {
   overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+.cv-grid--month {
+  min-inline-size: 35rem;   /* 560px — an 80px floor per day column */
 }
 
 /* Calendar scales fluidly with the window, capped for readability on wide screens.
@@ -1046,8 +1106,7 @@ button.bl-focus-name {
    promote this to a :root custom property (e.g. --comfortable-max) at that time —
    deferred now as a one-off (see "Review Notes"). */
 #calendar-root {
-  max-width: 1200px; /* TUNABLE */
-  margin: 0 auto;
+  min-inline-size: 0;
 }
 
 .cv-day-headers {
@@ -1082,7 +1141,11 @@ button.bl-focus-name {
 .cal-sprint-row {
   display: grid;
   grid-template-columns: repeat(7, minmax(0, 1fr));
-  padding: var(--space-xs) var(--space-xs) 0;
+  /* @intent inline padding moved off the ROW and onto the bars. With padding
+     here the bar tracks were (W-8)/7 while .cv-week-cells tracks were W/7, so
+     every bar drifted from its day column — visibly by the Sunday edge. */
+  padding-block: var(--space-xs) 0;
+  padding-inline: 0;
 }
 
 .cal-sprint-spacer { height: 4px; }
@@ -1091,7 +1154,8 @@ button.bl-focus-name {
 .cal-loc-row {
   display: grid;
   grid-template-columns: repeat(7, minmax(0, 1fr));
-  padding: var(--space-xs) var(--space-xs) 0;
+  padding-block: var(--space-xs) 0;
+  padding-inline: 0;
 }
 
 .cal-loc-spacer { height: 4px; }
@@ -1105,11 +1169,11 @@ button.bl-focus-name {
 .cv-week-cells {
   display: grid;
   grid-template-columns: repeat(7, minmax(0, 1fr));
-  grid-auto-rows: minmax(clamp(80px, 13vh, 140px), auto);
+  grid-auto-rows: minmax(var(--cal-row-h), auto);
 }
 
 .cv-week-cells--tall {
-  grid-auto-rows: minmax(clamp(160px, 26vh, 280px), auto);
+  grid-auto-rows: minmax(var(--cal-row-h-tall), auto);
 }
 
 /* ── Day cell ───────────────────────────────────────────────────────────────── */
@@ -1319,6 +1383,7 @@ button.bl-focus-name {
 /* ── Location period bands ─────────────────────────────────────────────────── */
 
 .cal-loc-band {
+  margin-inline: 2px;
   height: 16px;
   border-radius: 3px;
   display: flex;
@@ -1352,7 +1417,7 @@ button.bl-focus-name {
 .cal-loc-band::after {
   content: '';
   position: absolute;
-  inset: -var(--space-sm) 0;
+  inset-block: calc(-1 * var(--space-sm)); inset-inline: 0;
 }
 
 .cal-loc-band--no-round-left  { border-radius: 0 3px 3px 0; border-left: none; }
@@ -1362,6 +1427,15 @@ button.bl-focus-name {
 /* ── Sprint bars ────────────────────────────────────────────────────────────── */
 
 .cal-sprint-bar {
+  /* @intent the bar is its own query container so its contents drop by
+     INFORMATION VALUE as the span narrows, instead of six flex-shrink:0 children
+     being clipped by overflow:hidden. The uncovered-days warning is the only
+     actionable item, so it survives longest; the dates go first because they are
+     already in the title attribute. */
+  container-type: inline-size;
+  container-name: bar;
+  min-inline-size: 0;
+  margin-inline: 2px;
   height: 22px;
   border-radius: 3px;
   display: flex;
@@ -1380,7 +1454,7 @@ button.bl-focus-name {
 .cal-sprint-bar::after {
   content: '';
   position: absolute;
-  inset: -var(--space-sm) 0;
+  inset-block: calc(-1 * var(--space-sm)); inset-inline: 0;
 }
 
 .cal-sprint-bar:hover { filter: brightness(0.97); }
@@ -1417,7 +1491,7 @@ button.bl-focus-name {
 
 /* 1× display fallback — 9px elements bump to 10px on non-Retina */
 @media (-webkit-max-device-pixel-ratio: 1), (max-resolution: 96dpi) {
-  .cv-dt-badge,
+  .cv-day-type-badge,
   .cv-story-count,
   .p-tl-cell,
   .p-pip,
@@ -1900,10 +1974,20 @@ button.bl-focus-name {
   scrollbar-width: none;
 }
 
+/* @intent wraps instead of holding one rigid line. This strip is rendered INTO
+   `.p-tl-row`, a flex container with `overflow: hidden` built for shrinkable
+   `.p-tl-cell` children — so the old `min-width: max-content` made a 14×24px
+   sprint overflow its 295px parent and the last three days were silently
+   clipped, unreachable (no scrollbar). Measured at a 360px panel: 388px of
+   content in a 295px box, losing Jul 31 / Aug 1 / Aug 2. Wrapping keeps every
+   day reachable at any panel width and for any sprint length; wide panels still
+   fit a single row, so nothing changes at ≥1385px. */
 .bdp-tl-row {
   display: flex;
+  flex-wrap: wrap;
   gap: var(--space-xs);
-  min-width: max-content;
+  flex: 1;
+  min-inline-size: 0;
 }
 
 .bdp-tl-cell {
@@ -2060,16 +2144,15 @@ button.bl-focus-name {
 }
 .bdp-dt-controls { display: flex; align-items: center; justify-content: center; gap: 2px; }
 .bdp-dt-btn {
-  width: 20px; height: 20px; border-radius: 50%;
+  width: var(--hit); height: var(--hit); border-radius: 50%;
   background: var(--bg-light); border: 1px solid var(--border);
   cursor: pointer; font-size: 14px; line-height: 1;
   display: flex; align-items: center; justify-content: center;
   flex-shrink: 0; padding: 0;
 }
 
-@media (pointer: coarse) {
-  .bdp-dt-btn { width: 28px; height: 28px; }
-}
+/* .bdp-dt-btn sizing now reads --hit (styles.css) — see the single
+   (pointer: coarse) override there. */
 .bdp-dt-val { font-size: 13px; font-weight: 600; min-width: 16px; text-align: center; }
 
 .bdp-sum-indicator { font-size: 11px; margin-left: 8px; font-weight: normal; vertical-align: middle; }
@@ -2595,25 +2678,8 @@ button.bl-focus-name {
 }
 
 /* Focus star toggle — sprint story rows, overlay focused stories */
-.bl-focus-star {
-  background: none;
-  border: none;
-  cursor: pointer;
-  font-size: var(--text-sm);
-  color: var(--text-muted, rgba(255,255,255,0.35));
-  min-width: 44px;
-  min-height: 44px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  line-height: 1;
-  transition: color 0.15s;
-  flex-shrink: 0;
-}
-.bl-focus-star:hover,
-.bl-focus-star--on {
-  color: var(--warning, #f59e0b);
-}
+/* .bl-focus-star rules deleted 2026-07-27 — the inFocus star was removed from JS
+   in Wave 3 (0 refs). Its min-height:44px also overflowed the 36px row. */
 
 /* ── SortableJS drag states ───────────────────────────────────────────── */
 .bl-story-row--ghost  { opacity: 0.4; background: var(--bg-subtle) !important; }
@@ -2718,7 +2784,23 @@ button.bl-focus-name {
 }
 
 /* 44px touch rows (pass 1 B4 — pointer-coarse enlarged only one control) */
-@media (pointer: coarse) {
-  .bl-story-row { height: 44px; }
-  .bl-status-badge { min-height: 28px; }
+/* .bl-story-row / .bl-status-badge read --row-h / --hit — see the single
+   (pointer: coarse) override in styles.css. */
+
+/* ── Sprint-bar progressive disclosure (ADR-0010) ────────────────────────────── */
+.cal-bar-dates,
+.cal-bar-cap,
+.cal-bar-status,
+.cal-bar-warn { display: none; }
+
+@container bar (min-width: 130px) { .cal-bar-warn   { display: inline; } }
+@container bar (min-width: 200px) { .cal-bar-cap    { display: inline; } }
+@container bar (min-width: 290px) { .cal-bar-status { display: inline; } }
+@container bar (min-width: 400px) { .cal-bar-dates  { display: inline; } }
+
+.cal-bar-dates {
+  flex: 0 1 auto;
+  min-inline-size: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }

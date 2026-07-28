@@ -1,0 +1,165 @@
+/* ── Companion columns ────────────────────────────────────────────────────────
+   The layout primitive behind ADR-0010: every surface may carry ONE secondary
+   column. Two mechanisms, deliberately separate:
+
+     1. A surface's DEFAULT companion (Today's agenda, the Calendar inspector,
+        the Inbox preview) is a real grid column inside the surface, shown by a
+        CONTAINER query — so it responds to the space the surface actually has,
+        not to the window.
+
+     2. The detail panel docks by the SHELL yielding inline space
+        (`--panel-w` in styles.css). It stays `position: fixed` because
+        #backlog-detail-panel is a sibling of <main> and cannot be a grid child
+        of a surface.
+
+   The "one slot per surface" rule falls out of combining them: when the panel
+   is docked, the default companion hides, so a surface never shows two
+   secondary columns at once.
+
+   Prefix: cmp-. (The codebase partitions by prefix: bl-, cv-, tv-, dlo-, sm2-,
+   bdp-.) @see ADR-0010, knowledge/DESIGN_SYSTEM.md */
+
+.cmp-surface {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-xl);
+  align-items: start;
+  min-inline-size: 0;
+}
+
+/* @intent single-column is the UN-QUERIED default on purpose. An inactive tab is
+   `display: none`, so it has no inline size and every @container query against it
+   reads false — if the two-column state were the default, a tab would render
+   wrong for one frame when revealed. Narrow-first inside container queries. */
+@container view (min-width: 62rem) {
+  .cmp-surface--companion {
+    /* --cmp-w, not --bdp-w: the companion sits inside the .tab-content container
+       and must still measure the same SLOT the viewport-anchored panel will take
+       over. See the token definition in styles.css for the arithmetic. */
+    grid-template-columns: minmax(0, 1fr) var(--cmp-w);
+  }
+}
+
+/* The panel takes the slot: when it is DOCKED, a surface drops its default
+   companion rather than showing three columns of chrome.
+
+   @intent scoped to --xl deliberately. Unscoped, this also fired in the overlay
+   and sheet states, where no shell gutter replaces the vacated column — so
+   opening the panel at 1439px widened the primary column by 374px *underneath*
+   the overlay that was covering it, then snapped it back on close. An overlay is
+   temporary and covers the companion for as long as it is up; only a dock, which
+   permanently yields the space, has any business removing it. */
+@media (--xl) {
+  body:has(#backlog-detail-panel.bdp-open) .cmp-surface--companion {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  body:has(#backlog-detail-panel.bdp-open) .cmp-slot {
+    display: none;
+  }
+}
+
+/* Hidden by default (narrow-first — see the container-query note above). The
+   .cmp-nextup line carries the essential fact inline at narrow widths, so
+   nothing is ever reachable ONLY in the companion. */
+.cmp-slot { display: none; }
+
+@container view (min-width: 62rem) {
+  .cmp-slot {
+    min-inline-size: 0;
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-md);
+  }
+}
+
+.cmp-slot-title {
+  font-size: var(--text-xs);
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.cmp-panel {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-surface);
+  overflow: hidden;
+}
+
+/* ── Agenda rows (Today's companion) ───────────────────────────────────────── */
+
+.cmp-agenda { display: flex; flex-direction: column; }
+
+.cmp-day {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  min-block-size: var(--row-h);
+  padding-inline: var(--space-md);
+  border-block-end: 1px solid var(--border);
+  font-size: var(--text-sm);
+  cursor: pointer;
+  background: none;
+  border-inline: none;
+  border-block-start: none;
+  inline-size: 100%;
+  text-align: start;
+  color: var(--text-secondary);
+}
+.cmp-day:last-child { border-block-end: none; }
+.cmp-day:hover { background: var(--primary-subtle); }
+.cmp-day--today { font-weight: 600; color: var(--text-primary); }
+.cmp-day--uncovered { background: var(--uncov-gap-bg); }
+
+.cmp-day-date { min-inline-size: 3.5rem; flex-shrink: 0; }
+.cmp-day-type { flex: 1; min-inline-size: 0; }
+.cmp-day-blocks {
+  font-variant-numeric: tabular-nums;
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+  flex-shrink: 0;
+}
+
+/* Location change / sprint boundary markers */
+.cmp-marker {
+  display: flex;
+  align-items: center;
+  gap: var(--space-xs);
+  padding: var(--space-xs) var(--space-md);
+  background: var(--bg-subtle);
+  border-block-end: 1px solid var(--border);
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+  font-weight: 600;
+}
+
+.cmp-summary {
+  padding: var(--space-sm) var(--space-md);
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+  border-block-end: 1px solid var(--border);
+  background: var(--bg-subtle);
+}
+.cmp-warn { color: var(--warning); font-weight: 600; }
+
+/* Narrow fallback: the agenda collapses to a single "next up" line above the
+   primary content, so nothing is ever reachable ONLY in the companion. */
+.cmp-nextup {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  padding: var(--space-sm) var(--space-md);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-subtle);
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+}
+@container view (min-width: 62rem) {
+  .cmp-nextup { display: none; }
+}
+
+/* NOTE: the panel's "Select a story" empty state ships with selection-follows-list
+   keyboard navigation, which is deferred. No .cmp-empty rule is defined until
+   something renders it — an unused rule is the debt this project keeps paying. */

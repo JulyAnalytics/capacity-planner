@@ -21,6 +21,12 @@ import { createSprint } from './sprintManager.js';
 // ── Module state ───────────────────────────────────────────────────────────────
 
 let _viewMode    = _defaultMode(); // 'month' | 'week'
+// @intent the app's ONLY viewport listener. _viewMode used to be read once at
+// module load, so resizing a window or rotating a tablet never re-adapted the
+// calendar — it kept whatever mode it booted with until the user clicked. A
+// matchMedia CHANGE event (not a resize handler) costs nothing between
+// breakpoint crossings. An explicit user choice always wins.
+let _userPickedMode = false;
 let _anchorDate  = new Date().toISOString().slice(0, 10); // YYYY-MM-DD
 
 // Panel state
@@ -207,10 +213,10 @@ function _renderMonthGrid(periods, overrides, sprints, stories, loggedDates) {
   const dayHeaders = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
     .map(d => `<div class="cv-day-header">${d}</div>`).join('');
 
-  return `<div class="cv-grid cv-grid--month">
+  return `<div class="cv-scroll"><div class="cv-grid cv-grid--month">
     <div class="cv-day-headers">${dayHeaders}</div>
     ${rows.join('')}
-  </div>`;
+  </div></div>`;
 }
 
 function _renderWeekRow(week, currentMonth, dayMap, periodMap, sprintMeta, overrideByDate, storyCountByDate, today, periods, overrides, sprints, stories, loggedDates) {
@@ -458,14 +464,14 @@ function _renderWeekGrid(periods, overrides, sprints, stories, loggedDates) {
     ? `<div class="cal-loc-row">${periodBandsHtml}</div>`
     : '<div class="cal-loc-spacer"></div>';
 
-  return `<div class="cv-grid cv-grid--week">
+  return `<div class="cv-scroll"><div class="cv-grid cv-grid--week">
     <div class="cv-day-headers">${dayHeaders}</div>
     <div class="cv-week-row">
       ${sprintRows}
       ${locRow}
       <div class="cv-week-cells cv-week-cells--tall">${cells}</div>
     </div>
-  </div>`;
+  </div></div>`;
 }
 
 function _renderWeekViewCell(ds, dayMap, periodMap, overrideByDate, storyCountByDate, today, loggedDates) {
@@ -582,7 +588,17 @@ function _goToday() {
 
 function _setViewMode(mode) {
   _viewMode = mode;
+  _userPickedMode = true;
   render();
+}
+
+// Keep the default mode honest across resize / rotation.
+if (typeof window !== 'undefined' && window.matchMedia) {
+  window.matchMedia('(max-width: 767.98px)').addEventListener('change', (e) => {
+    if (_userPickedMode) return;
+    _viewMode = e.matches ? 'week' : 'month';
+    if (document.getElementById('calendar')?.classList.contains('active')) render();
+  });
 }
 
 // ── Cell click ─────────────────────────────────────────────────────────────────

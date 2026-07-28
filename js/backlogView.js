@@ -1214,16 +1214,16 @@ function _buildMatrixHTML(orderedSprints, visibleEpics, focusGroups, allStories,
   const colCount = orderedEpics.length;
 
   return `
-    <div class='sm2-matrix' style='--sm2-col-count:${colCount}'>
+    <div class='sm2-matrix' style='--sm2-col-count:${colCount};--sm2-row-count:${orderedSprints.length + 1}'>
+      ${_renderSprintSidebarHeader()}
       <div class='sm2-sidebar'>
-        ${_renderSprintSidebarHeader()}
         ${orderedSprints.map(s => _renderSprintSidebarCell(s, allStories)).join('')}
         ${_renderBacklogSidebarCell(allStories)}
       </div>
       <div class='sm2-header-cols'>
-        <div class='sm2-focus-row' style='grid-template-columns:repeat(${colCount},var(--sm2-col-w))'>${focusHeaderHtml}</div>
-        <div class='sm2-subfocus-row' style='grid-template-columns:repeat(${colCount},var(--sm2-col-w))'>${subFocusHeaderHtml}</div>
-        <div class='sm2-epic-row' style='grid-template-columns:repeat(${colCount},var(--sm2-col-w))'>${epicHeaderHtml}</div>
+        <div class='sm2-focus-row'>${focusHeaderHtml}</div>
+        <div class='sm2-subfocus-row'>${subFocusHeaderHtml}</div>
+        <div class='sm2-epic-row'>${epicHeaderHtml}</div>
       </div>
       <div class='sm2-body'>
         ${rowsHtml}
@@ -1518,7 +1518,7 @@ export async function _renderBacklogView() {
 
   // Story map mode — renders its own container then returns
   if (_blGroupBy === 'storymap') {
-    root.innerHTML = `${toolbarHtml}<div id="bl-list"></div>`;
+    root.innerHTML = `${toolbarHtml}<div id="bl-list" class="bl-list--map"></div>`;
     await _renderByStoryMapMode(allSprints, allStories, allEpics, allFocuses, allSubFocuses);
     if (openPanelId) _applySelectedRow();
     return;

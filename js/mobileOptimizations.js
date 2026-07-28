@@ -37,7 +37,13 @@ function _initGlobalMobile() {
 function _preventInputZoom() {
   const vp = document.querySelector('meta[name="viewport"]');
   if (vp) {
-    vp.content = 'width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no';
+    // @intent pinch-zoom is NOT disabled. This used to append
+    // `maximum-scale=1.0, user-scalable=no`, a WCAG 1.4.4 failure. Its purpose
+    // was to stop iOS zooming when focusing an input, and that is already solved
+    // properly: modal and detail-panel inputs are 16px (creationModal,
+    // backlog.css --below-md). Suppressing zoom for everyone to fix an input
+    // quirk is the wrong trade (design-review pass 3, §5 / plan §7.5).
+    vp.content = 'width=device-width, initial-scale=1.0';
   }
 }
 

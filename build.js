@@ -54,6 +54,7 @@ const CSS_FILES = [
   'css/dailyLogOverlay.css',
   'css/storyMapV2.css',
   'css/todayView.css',
+  'css/companion.css',
 ];
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -255,14 +256,28 @@ async function buildJS() {
 async function buildCSS() {
   const postcss = require('postcss');
   const cssnano = require('cssnano');
+  // @custom-media resolves the --sm/--md/--lg/--xl breakpoint aliases declared in
+  // styles.css. Custom PROPERTIES cannot appear in a @media condition, so without
+  // this plugin every breakpoint literal would be duplicated across four
+  // stylesheets — which "derive, never hardcode" (PHILOSOPHY.md) forbids.
+  // Must run BEFORE cssnano so the minifier only ever sees resolved conditions.
+  const customMedia = require('postcss-custom-media');
 
   const combined = CSS_FILES.map(f => {
     if (!fs.existsSync(f)) throw new Error(`CSS file not found: ${f}`);
     return fs.readFileSync(f, 'utf8');
   }).join('\n');
 
-  const result = await postcss([cssnano({ preset: 'default' })])
+  const result = await postcss([customMedia(), cssnano({ preset: 'default' })])
     .process(combined, { from: undefined });
+
+  // Guard: an unresolved alias silently means "never matches", which would make
+  // a whole responsive tier vanish with no error. Fail loudly instead.
+  const unresolved = result.css.match(/@media\s*\([^)]*--[a-z]/g);
+  if (unresolved) {
+    throw new Error(`Unresolved @custom-media alias(es) in built CSS: ${unresolved.join(', ')}. ` +
+      `Declare them with @custom-media in css/styles.css.`);
+  }
 
   const hash    = contentHash(result.css);
   const outFile = `dist/styles.${hash}.min.css`;
