@@ -16,32 +16,40 @@
 8. `js/storyWrites.js`
 9. `js/storyLifecycle.js`
 10. `js/businessRules.js`
-11. `js/hierarchyCache.js`
-12. `js/contextDetection.js`
-13. `js/locationCapacity.js`
-14. `js/locationManager.js`
-15. `js/errorHandler.js`
-16. `js/dbValidator.js`
-17. `js/accessibility.js`
-18. `js/performance.js`
-19. `js/mobileOptimizations.js`
-20. `js/creationModal.js`
-21. `js/sprintManager.js`
-22. `js/sprintCapacity.js`
-23. `js/sprintAllocation.js`
-24. `js/backlogView.js`
-25. `js/storyAttachmentPanel.js`
-26. `js/backlogDetailPanel.js`
-27. `js/inboxView.js`
-28. `js/barricade.js`
-29. `js/calendarView.js`
-30. `js/dailyLogOverlay.js`
-31. `js/todayView.js`
-32. `js/importUtils.js`
-33. `js/dataPortability.js`
-34. `js/triageQueue.js`
-35. `js/migrationRunner.js`
-36. `js/app.js`
+11. `js/epicWrites.js`
+12. `js/hierarchyCache.js`
+13. `js/contextDetection.js`
+14. `js/locationCapacity.js`
+15. `js/locationManager.js`
+16. `js/errorHandler.js`
+17. `js/dbValidator.js`
+18. `js/accessibility.js`
+19. `js/performance.js`
+20. `js/mobileOptimizations.js`
+21. `js/creationModal.js`
+22. `js/sprintManager.js`
+23. `js/sprintCapacity.js`
+24. `js/sprintAllocation.js`
+25. `js/strategyModel.js`
+26. `js/strategyTemplates.mjs`
+27. `js/strategyWrites.js`
+28. `js/strategyExport.js`
+29. `js/backlogView.js`
+30. `js/attachmentPanel.js`
+31. `js/backlogDetailPanel.js`
+32. `js/strategyView.js`
+33. `js/candidateParse.mjs`
+34. `js/inboxView.js`
+35. `js/barricade.js`
+36. `js/calendarView.js`
+37. `js/dailyLogOverlay.js`
+38. `js/todayView.js`
+39. `js/importUtils.js`
+40. `js/dataPortability.js`
+41. `js/triageQueue.js`
+42. `js/analyticsView.js`
+43. `js/migrationRunner.js`
+44. `js/app.js`
 
 ## Module table
 
@@ -57,61 +65,109 @@
 | 8 | `storyWrites.js` | `storyWrites` | storyWrites — the single coordinated write spine for the stories store. |
 | 9 | `storyLifecycle.js` | `storyLifecycle` | storyLifecycle — story status lifecycle side-effects (complete/abandon/block/unblock, dependent unblocking, epic auto-completion); all writes via storyWrites. |
 | 10 | `businessRules.js` | — | — |
-| 11 | `hierarchyCache.js` | `hierarchyCache`, `invalidateCache` | hierarchyCache — synchronous lookup index for mid-render/mid-validation sites.; invalidateCache — rebuilds hierarchyCache for focuses/epics/subFocuses only. @see ADR-0001 |
-| 12 | `contextDetection.js` | — | — |
-| 13 | `locationCapacity.js` | `_locationCapacityUtils` | _locationCapacityUtils — date helpers (isoAddDays) shared with sprint capacity math. |
-| 14 | `locationManager.js` | `locationManager` | locationManager — location-period CRUD (id `loc-<uuid>`); emits locationPeriod. |
-| 15 | `errorHandler.js` | `clearInlineErrors`, `createSnapshot`, `restoreFormState`, `restoreSnapshot`, `saveFormState`, `showInlineError`, `showToastWithActions` | showInlineError — inline field error renderer.; clearInlineErrors — clears inline field errors.; createSnapshot — captures form state snapshot for recovery.; restoreSnapshot — restores a form state snapshot.; saveFormState — persists in-progress form state (recovery).; restoreFormState — rehydrates saved form state.; showToastWithActions — toast with action buttons (undo/retry). |
-| 16 | `dbValidator.js` | — | — |
-| 17 | `accessibility.js` | — | — |
-| 18 | `performance.js` | — | — |
-| 19 | `mobileOptimizations.js` | — | — |
-| 20 | `creationModal.js` | `closeCreationModal`, `isModalOpen`, `openCreationModal`, `renderForm` | openCreationModal — opens the entity creation modal; routes form config.; closeCreationModal — tears down the modal + restores scroll/focus.; isModalOpen — predicate used by mobile/key handlers.; renderForm — renders the creation form fields from a config object. |
-| 21 | `sprintManager.js` | `sprintManager` | sprintManager — sprint CRUD; emits sprint; resolveOrCreateSprintForDate resolves chronological sprint placement for triage-inferred dates. @see ADR-0008 |
-| 22 | `sprintCapacity.js` | — | — |
-| 23 | `sprintAllocation.js` | — | — |
-| 24 | `backlogView.js` | `_backlogEpicFilter`, `backlogView` | _backlogEpicFilter — accessor exposing the current epic filter to the detail panel.; backlogView — backlog + sprint + story-map views; listens on story/epic/sprint/travelSegment/locationPeriod/dayTypeOverride. |
-| 25 | `storyAttachmentPanel.js` | `storyAttachmentPanel` | storyAttachmentPanel — story .md attachments: section renderer, viewer modal, upload/replace/delete, version history. |
-| 26 | `backlogDetailPanel.js` | `_bdpRankingCurrent`, `_bdpRankingEdit`, `backlogDetailPanel` | backlogDetailPanel — detail panel for focus/epic/story/sprint; emits focus/subFocus/epic/sprint.; _bdpRankingCurrent — transient in-progress ranking snapshot (edit state).; _bdpRankingEdit — transient edit-mode ranking draft (edit state). |
-| 27 | `inboxView.js` | `inboxView` | inboxView — review Inbox for proposed (candidate-imported) stories; sidebar badge; candidates file-pick → mergeImport; history import preview → importHistoryManifest. |
-| 28 | `barricade.js` | — | — |
-| 29 | `calendarView.js` | `calendarView` | calendarView — calendar render + navigation; emits locationPeriod/dayTypeOverride. |
-| 30 | `dailyLogOverlay.js` | `dailyLogOverlay` | dailyLogOverlay — per-day log overlay; reads/writes dailyLogs (id `log-<date>`). |
-| 31 | `todayView.js` | `todayView` | todayView — the default Today surface: sprint stories with done-ticks that write per-day {storyId, blocks} actuals into dailyLogs, floor checklist, auto-confirmed capacity, one-line notes. |
-| 32 | `importUtils.js` | — | — |
-| 33 | `dataPortability.js` | `dataPortability` | dataPortability — whole-store export (version 5) + destructive full-replace import; every data-in/out path lives here. attachNewStoryToEpic adds a single-story additive path for an already-matched epic (spec-triage queue); _nameSimilarity exposed for js/triageQueue.js reuse. |
-| 34 | `triageQueue.js` | `triageQueue` | triageQueue — drains import_queue (new Ashurbanipal Triage entries + the |
-| 35 | `migrationRunner.js` | — | — |
-| 36 | `app.js` | `app` | app — CapacityManager singleton; the view-layer coordinator + god-class. |
+| 11 | `epicWrites.js` | `epicWrites` | epicWrites — the single coordinated write spine for the epics store. |
+| 12 | `hierarchyCache.js` | `hierarchyCache`, `invalidateCache` | hierarchyCache — synchronous lookup index for mid-render/mid-validation sites.; invalidateCache — rebuilds hierarchyCache for focuses/epics/subFocuses only. @see ADR-0001 |
+| 13 | `contextDetection.js` | — | — |
+| 14 | `locationCapacity.js` | `_locationCapacityUtils` | _locationCapacityUtils — date helpers (isoAddDays) shared with sprint capacity math. |
+| 15 | `locationManager.js` | `locationManager` | locationManager — location-period CRUD (id `loc-<uuid>`); emits locationPeriod. |
+| 16 | `errorHandler.js` | `clearInlineErrors`, `createSnapshot`, `restoreFormState`, `restoreSnapshot`, `saveFormState`, `showInlineError`, `showToastWithActions` | showInlineError — inline field error renderer.; clearInlineErrors — clears inline field errors.; createSnapshot — captures form state snapshot for recovery.; restoreSnapshot — restores a form state snapshot.; saveFormState — persists in-progress form state (recovery).; restoreFormState — rehydrates saved form state.; showToastWithActions — toast with action buttons (undo/retry). |
+| 17 | `dbValidator.js` | — | — |
+| 18 | `accessibility.js` | — | — |
+| 19 | `performance.js` | — | — |
+| 20 | `mobileOptimizations.js` | — | — |
+| 21 | `creationModal.js` | `closeCreationModal`, `isModalOpen`, `openCreationModal`, `renderForm` | openCreationModal — opens the entity creation modal; routes form config.; closeCreationModal — tears down the modal + restores scroll/focus.; isModalOpen — predicate used by mobile/key handlers.; renderForm — renders the creation form fields from a config object. |
+| 22 | `sprintManager.js` | `sprintManager` | sprintManager — sprint CRUD; emits sprint; resolveOrCreateSprintForDate resolves chronological sprint placement for triage-inferred dates. @see ADR-0008 |
+| 23 | `sprintCapacity.js` | — | — |
+| 24 | `sprintAllocation.js` | — | — |
+| 25 | `strategyModel.js` | — | — |
+| 26 | `strategyTemplates.mjs` | — | — |
+| 27 | `strategyWrites.js` | `strategyWrites` | strategyWrites — the single coordinated write spine for the cycles and strategicSessions stores, plus the synchronous cycle cache the calendar renders from. |
+| 28 | `strategyExport.js` | `strategyExport` | strategyExport — generates and downloads a cycle's Obsidian .md template folder as a zip. |
+| 29 | `backlogView.js` | `_backlogEpicFilter`, `backlogView` | _backlogEpicFilter — accessor exposing the current epic filter to the detail panel.; backlogView — backlog + sprint + story-map views; listens on story/epic/sprint/travelSegment/locationPeriod/dayTypeOverride. |
+| 30 | `attachmentPanel.js` | `attachmentPanel` | attachmentPanel — .md attachments on any entity: section renderer, viewer modal, upload/replace/delete, version history. |
+| 31 | `backlogDetailPanel.js` | `_bdpRankingCurrent`, `_bdpRankingEdit`, `backlogDetailPanel` | backlogDetailPanel — detail panel for focus/subFocus/epic/story/sprint/cycle; emits focus/subFocus/epic/sprint/cycle.; _bdpRankingCurrent — transient in-progress ranking snapshot (edit state).; _bdpRankingEdit — transient edit-mode ranking draft (edit state). |
+| 32 | `strategyView.js` | `strategyView` | strategyView — the Strategy tab: the six-step ritual strip, focus portfolio (1.2), theme portfolio + balance check (2.1), candidate pool with distribution check and the capacity-derived WSJF cut line (2.3/3.1), capacity reconciliation (3.2), roadmap sequencing (propose→approve, 3.3), the coherence check (1.4), the activation gate (3.5), the live outcome funnel, and session history. |
+| 33 | `candidateParse.mjs` | — | — |
+| 34 | `inboxView.js` | `inboxView` | inboxView — review Inbox for proposed (candidate-imported) stories; sidebar badge; candidates file-pick → mergeImport; history import preview → importHistoryManifest. |
+| 35 | `barricade.js` | — | — |
+| 36 | `calendarView.js` | `calendarView` | calendarView — calendar render + navigation; emits locationPeriod/dayTypeOverride. |
+| 37 | `dailyLogOverlay.js` | `dailyLogOverlay` | dailyLogOverlay — per-day log overlay; reads/writes dailyLogs (id `log-<date>`). |
+| 38 | `todayView.js` | `todayView` | todayView — the default Today surface: sprint stories with done-ticks that write per-day {storyId, blocks} actuals into dailyLogs, floor checklist, auto-confirmed capacity, one-line notes. |
+| 39 | `importUtils.js` | — | — |
+| 40 | `dataPortability.js` | `dataPortability` | dataPortability — whole-store export (version 6, includes the strategic-layer stores cycles + strategicSessions) + destructive full-replace import; every data-in/out path lives here. attachNewStoryToEpic adds a single-story additive path for an already-matched epic (spec-triage queue); _nameSimilarity exposed for js/triageQueue.js reuse (now defined in businessRules as the single source). |
+| 41 | `triageQueue.js` | `triageQueue` | triageQueue — drains import_queue (new Ashurbanipal Triage entries + the |
+| 42 | `analyticsView.js` | `analyticsView` | analyticsView — the Analytics tab report: planned/actual/utilized/adherence metrics + the daily summary table. |
+| 43 | `migrationRunner.js` | — | — |
+| 44 | `app.js` | `app` | app — CapacityManager singleton; the view-layer coordinator + god-class. |
 
 ## Behavioral notes (source docblocks: @intent / @rationale / @see)
 
-- `db.js:107` — **@intent:** A failed fetch is NOT an empty store. Leave the slice null so
-- `db.js:152` — **@intent:** _uid()-before-await ordering — SessionExpiredError must reject the caller's promise, never be swallowed internally.
+- `notificationRegistry.js:46` — **@intent:** schedule BEFORE adding — _scheduleFlush is what allocates _pending.
+- `utils.js:254` — **@intent:** one module-level `_pendingConfirm`, deliberately shared. It lived in
+- `db.js:115` — **@intent:** A failed fetch is NOT an empty store. Leave the slice null so
+- `db.js:160` — **@intent:** _uid()-before-await ordering — SessionExpiredError must reject the caller's promise, never be swallowed internally.
 - `storyWrites.js:1` — **@rationale:** single-writer contract — every story mutation funnels here so optimistic mutation, rollback, and the 'story' notification payload are uniform. **@see:** ADR-0006
 - `storyWrites.js:22` — **@intent:** enforcement seam (design-review pass 2 §II.7 C): businessRules'
 - `storyWrites.js:56` — **@intent:** the {reorder:true} payload is a NO-OP patch — Sortable already placed the DOM, so _handleStoryNotification early-returns and the view patches once per drag, not once per story.
+- `storyLifecycle.js:142` — **@intent:** a candidate never auto-completes. Without this, finishing the stories
+- `businessRules.js:181` — **@intent:** returns null, not 0, when the inputs are incomplete. A candidate with
+- `businessRules.js:220` — **@intent:** this exists because canTransitionStatus takes no record — its **@see:** ADR-0011
+- `epicWrites.js:1` — **@rationale:** single-writer contract — every epic mutation funnels here so the transition whitelist and the business-case promotion gate apply to every caller. **@see:** ADR-0011
+- `epicWrites.js:47` — **@intent:** the promotion gate is checked against the epic MERGED with the
 - `locationCapacity.js:240` — **@intent:** skip malformed sprints instead of throwing. isoAddDays on a missing
 - `errorHandler.js:199` — **@intent:** undo must reach memory and the screen, not just the DB. Before
 - `mobileOptimizations.js:40` — **@intent:** pinch-zoom is NOT disabled. This used to append
 - `creationModal.js:105` — **@intent:** recovery only applies to a cold open. A contextual open (a "+"
+- `creationModal.js:674` — **@intent:** when no sprint is chosen, prefill from the parent epic's
+- `creationModal.js:734` — **@intent:** new epics enter LATER, per the MVP spec's standing rule:
 - `sprintManager.js:10` — **@intent:** Sprint creation is a non-atomic check-then-create (resolveOrCreateSprintForDate
 - `sprintManager.js:94` — **@intent:** process candidates in ascending date order (caller's responsibility)
-- `storyAttachmentPanel.js:149` — **@intent:** innerHTML of marked output — single-user app rendering the user's own
-- `backlogDetailPanel.js:734` — **@intent:** coarse pointers only. Docked, the panel is persistent furniture
-- `inboxView.js:20` — **@intent:** this is the
+- `strategyModel.js:37` — **@intent:** overlap, NOT containment. Sprints snap to Monday
+- `strategyModel.js:99` — **@intent:** the overlap rule mirrors validateLocationPeriod (locationCapacity.js)
+- `strategyModel.js:171` — **@intent:** DERIVED LIVE from current epic state, not read from a frozen ledger. **@intent:** `scored` counts any in-pipeline epic whose WSJF inputs resolve to a
+- `strategyWrites.js:1` — **@intent:** this module owns its OWN cache rather than a slice of window.app.data. **@see:** ADR-0012
+- `strategyWrites.js:21` — **@intent:** this module subscribes to the shared capacity_planner channel itself **@intent:** _tabId guard: a BroadcastChannel does not deliver to the object that
+- `strategyWrites.js:70` — **@intent:** leave the cache null, not []. A failed fetch must not be
+- `strategyWrites.js:195` — **@intent:** auto-created rather than started by a ceremony. A "start session"
+- `strategyWrites.js:233` — **@intent:** a re-cut CAPTURES the plan at this instant — the candidate ranking
+- `strategyWrites.js:266` — **@intent:** writes epic.plannedSprintId, NOT story.sprintId — a promoted epic has
+- `strategyWrites.js:298` — **@intent:** distinct from approveRoadmap, which does the actual work (writes
+- `strategyExport.js:1` — **@intent:** a .zip DOWNLOAD, not the File System Access API. The user's browser is
+- `backlogView.js:336` — **@intent:** a select, not a chip group — the row already carries six status chips,
+- `attachmentPanel.js:1` — **@intent:** the storage key is `{uid}/{entityId}/{attId}/{filename}` and did NOT **@see:** ADR-0011
+- `attachmentPanel.js:193` — **@intent:** innerHTML of marked output — single-user app rendering the user's own
+- `backlogDetailPanel.js:391` — **@intent:** no colour scale on the score and no coloured band on the gate —
+- `backlogDetailPanel.js:1013` — **@intent:** coarse pointers only. Docked, the panel is persistent furniture
+- `strategyView.js:24` — **@intent:** the tab used to show ONLY strategyWrites.current() — the cycle whose
+- `strategyView.js:229` — **@intent:** the cut line is DERIVED from the focus's capacity target, not typed.
+- `strategyView.js:295` — **@intent:** always-on (rule 7): the empty state names the park control, which is
+- `strategyView.js:604` — **@intent:** the comparison is cycle-to-date CUMULATIVE, not the whole cycle at
+- `strategyView.js:759` — **@intent:** surfaces the parked queue at the moment it matters — cycle creation —
+- `strategyView.js:892` — **@intent:** branch on the RESOLVED VALUE, not on a rejection. hydrate() catches
+- `inboxView.js:21` — **@intent:** this is the concrete fix for
+- `inboxView.js:185` — **@intent:** .md files are parsed HERE, in the browser, by js/candidateParse.mjs
 - `calendarView.js:24` — **@intent:** the app's ONLY viewport listener. _viewMode used to be read once at
+- `calendarView.js:125` — **@intent:** render() is synchronous by contract (app.switchTab depends on it), so
+- `calendarView.js:437` — **@intent:** reads window.strategyWrites' own cache rather than app.data, because **@intent:** NO colour variation per cycle. DESIGN_SYSTEM rule 2 reserves colour
 - `dailyLogOverlay.js:66` — **@intent:** flush ONLY when the user actually edited something. The old
 - `todayView.js:125` — **@intent:** cached and invalidated only on locationPeriod / dayTypeOverride /
-- `todayView.js:347` — **@intent:** 'story' deliberately does NOT invalidate the agenda cache — the agenda
-- `dataPortability.js:30` — **@intent:** mergeImport / attachNewStoryToEpic resolve-or-create sub-focuses and **@see:** ADR-0007
-- `dataPortability.js:250` — **@intent:** bulk additive import — putAll (never clear); the sanctioned bulk path
-- `dataPortability.js:448` — **@intent:** bulk additive import — putAll, no clear; sanctioned bulk path.
-- `dataPortability.js:577` — **@intent:** expose the existing normalized-Levenshtein helper + its near-miss
+- `todayView.js:356` — **@intent:** 'story' deliberately does NOT invalidate the agenda cache — the agenda
+- `dataPortability.js:19` — **@intent:** mergeImport / attachNewStoryToEpic resolve-or-create sub-focuses and **@see:** ADR-0007
+- `dataPortability.js:72` — **@intent:** the strategic-layer stores live in strategyWrites' own cache, not
+- `dataPortability.js:238` — **@intent:** the strategic-layer stores were just overwritten in IndexedDB but
+- `dataPortability.js:261` — **@intent:** bulk additive import — putAll (never clear); the sanctioned bulk path
+- `dataPortability.js:561` — **@intent:** bulk additive import — putAll, no clear; sanctioned bulk path.
+- `dataPortability.js:690` — **@intent:** expose the existing normalized-Levenshtein helper + its near-miss
 - `triageQueue.js:141` — **@intent:** process in ascending inferred-date order — resolveOrCreateSprintForDate **@intent:** re-entrancy guard: start() drains immediately AND on a 5-min interval,
-- `migrationRunner.js:578` — **@intent:** one batched upsert, not N awaited puts. Nearly every story changes
-- `app.js:637` — **@intent:** the watchdog exists because DB.init() awaits initAuth(), whose
-- `app.js:711` — **@intent:** render BEFORE the optional maintenance work. Until 2026-07-27 a
+- `migrationRunner.js:581` — **@intent:** one batched upsert, not N awaited puts. Nearly every story changes
+- `migrationRunner.js:605` — **@intent:** seed from status rather than leaving every epic unclassified. The
+- `migrationRunner.js:634` — **@intent:** `vision` is left intact rather than rewritten. It is the human-readable **@intent:** the WSJF *score* in the text is ignored and only its inputs are kept —
+- `migrationRunner.js:659` — **@intent:** a bare composite is deliberately NOT stored. wsjfScore() derives the
+- `migrationRunner.js:685` — **@intent:** guard key is `-v2`. v1 shipped with a regex written against the
+- `migrationRunner.js:722` — **@intent:** a SAFETY NET, not the primary path. The primary path is importCycle /
+- `app.js:655` — **@intent:** the watchdog exists because DB.init() awaits initAuth(), whose
+- `app.js:729` — **@intent:** render BEFORE the optional maintenance work. Until 2026-07-27 a
+- `app.js:1183` — **@intent:** this delegating stub stays so switchTab's branch is untouched. The
 
 ## Migration ordering
 
@@ -132,18 +188,23 @@
 15. `migrateDedupeEpicsByName` — guard `migration:dedupe-subfocuses`
 16. `migrateDedupeSprintsByWindow` — guard `migration:dedupe-epics`
 17. `migrateStoriesToSizeWeight` — guard `migration:size-weight`
+18. `migrateEpicsToIncludeHorizon` — guard `migration:epic-horizon`
+19. `migrateEpicsToStructuredScoring` — guard `migration:epic-wsjf-v2`
+20. `migrateThemesFromCandidateText` — guard `migration:focus-themes`
 
 ## Notification emit / listen map
 
 | type | emitted by | listened by |
 |---|---|---|
+| `cycle` | `dataPortability.js`, `strategyWrites.js` | `backlogView.js`, `calendarView.js`, `strategyView.js` |
 | `dayTypeOverride` | `app.js`, `hierarchyCache.js` | `backlogView.js`, `calendarView.js`, `todayView.js` |
-| `epic` | `app.js`, `backlogDetailPanel.js`, `dataPortability.js` | `backlogView.js` |
+| `epic` | `app.js`, `dataPortability.js`, `epicWrites.js` | `backlogView.js`, `inboxView.js`, `strategyView.js` |
 | `focus` | `app.js`, `backlogDetailPanel.js`, `dataPortability.js` | — |
 | `locationPeriod` | `app.js`, `calendarView.js`, `hierarchyCache.js` | `backlogView.js`, `calendarView.js`, `todayView.js` |
-| `sprint` | `app.js`, `backlogDetailPanel.js`, `dataPortability.js`, `hierarchyCache.js` | `backlogView.js`, `calendarView.js`, `todayView.js` |
-| `story` | `app.js`, `dataPortability.js`, `storyWrites.js` | `backlogView.js`, `inboxView.js`, `todayView.js` |
-| `subFocus` | `app.js`, `backlogDetailPanel.js`, `dataPortability.js` | — |
+| `sprint` | `app.js`, `backlogDetailPanel.js`, `dataPortability.js`, `hierarchyCache.js` | `backlogView.js`, `calendarView.js`, `strategyView.js`, `todayView.js` |
+| `story` | `app.js`, `dataPortability.js`, `storyWrites.js` | `backlogView.js`, `inboxView.js`, `strategyView.js`, `todayView.js` |
+| `strategicSession` | `strategyWrites.js` | `strategyView.js` |
+| `subFocus` | `app.js`, `backlogDetailPanel.js`, `dataPortability.js` | `inboxView.js` |
 
 ## Topic notes (from `system.yaml`)
 

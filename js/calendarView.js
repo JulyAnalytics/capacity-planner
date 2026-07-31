@@ -4,7 +4,7 @@
  * Renders inside #calendar-root in the Calendar tab.
  */
 
-import { esc, sprintLabel } from './utils.js';
+import { esc, sprintLabel, cycleLabel } from './utils.js';
 import { debounce } from './performance.js';
 import { STORY_STATUS, FOCUS_STATUS } from './constants.js';
 import {
@@ -121,6 +121,15 @@ export function render(opts = {}) {
 
   containerEl.innerHTML = _renderCalendarHtml(periods, overrides, d.sprints || [], d.stories || [], loggedDates);
   _bindCalendarEvents();
+
+  // @intent render() is synchronous by contract (app.switchTab depends on it), so
+  // cycles cannot be awaited here. Draw without the band on a cold cache, then
+  // hydrate and repaint once. isHydrated() gates the retry so this is one fetch,
+  // not one per render — and a FAILED hydrate leaves the cache null, so it will
+  // retry on the next paint rather than caching a false empty. See ADR-0012.
+  if (!window.strategyWrites?.isHydrated?.()) {
+    window.strategyWrites?.hydrate?.().then(() => renderIfVisible()).catch(() => {});
+  }
 }
 
 // ── Calendar HTML ──────────────────────────────────────────────────────────────
@@ -239,7 +248,14 @@ function _renderWeekRow(week, currentMonth, dayMap, periodMap, sprintMeta, overr
     ? `<div class="cal-loc-row">${periodBandsHtml}</div>`
     : '<div class="cal-loc-spacer"></div>';
 
+  // Cycle band row — the strategic tier, above the sprint bars it contains.
+  const cycleBandsHtml = _renderCycleBands(week);
+  const cycleRow = cycleBandsHtml
+    ? `<div class="cal-cycle-row">${cycleBandsHtml}</div>`
+    : '<div class="cal-cycle-spacer"></div>';
+
   return `<div class="cv-week-row">
+    ${cycleRow}
     ${sprintRows}
     ${locRow}
     <div class="cv-week-cells">${cells}</div>
@@ -416,6 +432,53 @@ function _renderPeriodBands(week, periodMap, periods) {
       onclick="window.calendarView._openPeriodPanel('${esc(p.id)}')"
       title="${esc(titleText)}">${labelText}</div>`;
   }).join('');
+}
+
+// Cycle bands — the strategic tier. Modeled on _renderPeriodBands: same clamp to
+// the week, same grid-column span, same three round-classes for continuation.
+//
+// @intent reads window.strategyWrites' own cache rather than app.data, because
+// calendarView.render() is fully synchronous and cannot await a fetch. If the
+// cache is cold the band is simply absent this paint and render() kicks a
+// hydrate that re-renders — see ADR-0012.
+//
+// @intent NO colour variation per cycle. DESIGN_SYSTEM rule 2 reserves colour
+// for the user's focus assignment, so a cycle is identified by its label, not a
+// hue; the band reuses the sprint token family.
+function _renderCycleBands(week) {
+  const cycles = window.strategyWrites?.all?.() || [];
+  if (!cycles.length) return '';
+
+  return cycles
+    .filter(c => c.startDate && c.endDate && c.endDate >= week[0] && c.startDate <= week[6])
+    .sort((a, b) => (a.startDate < b.startDate ? -1 : 1))
+    .map(c => {
+      const barStart = c.startDate < week[0] ? week[0] : c.startDate;
+      const barEnd   = c.endDate   > week[6] ? week[6] : c.endDate;
+      const startIdx = week.indexOf(barStart);
+      const endIdx   = week.indexOf(barEnd);
+      if (startIdx < 0 || endIdx < 0) return '';
+
+      const noRoundLeft  = c.startDate < week[0];
+      const noRoundRight = c.endDate   > week[6];
+      let roundClass = '';
+      if (noRoundLeft && noRoundRight) roundClass = 'cal-cycle-band--no-round-both';
+      else if (noRoundLeft)            roundClass = 'cal-cycle-band--no-round-left';
+      else if (noRoundRight)           roundClass = 'cal-cycle-band--no-round-right';
+
+      const colSpan = endIdx - startIdx + 1;
+      // Label only on the opening week, then a countdown once there is room —
+      // the same disclosure rule the location bands use.
+      let labelText = '';
+      if (!noRoundLeft) labelText = esc(cycleLabel(c));
+      else if (colSpan > 2) labelText = `→ ${daysBetween(week[6], c.endDate)}d`;
+
+      const statusClass = c.status === 'closed' ? ' cal-cycle-band--closed' : '';
+      return `<div class="cal-cycle-band ${roundClass}${statusClass}"
+        style="grid-column: ${startIdx + 1} / span ${colSpan};"
+        onclick="window.backlogDetailPanel.openCycle('${esc(c.id)}')"
+        title="${esc(cycleLabel(c))} · ${esc(c.startDate)} → ${esc(c.endDate)}">${labelText}</div>`;
+    }).join('');
 }
 
 // ── Week grid ──────────────────────────────────────────────────────────────────
@@ -1320,3 +1383,4 @@ export function renderIfVisible() {
 NotificationRegistry.on('sprint',          () => renderIfVisible());
 NotificationRegistry.on('locationPeriod',  () => renderIfVisible());
 NotificationRegistry.on('dayTypeOverride', () => renderIfVisible());
+NotificationRegistry.on('cycle',           () => renderIfVisible());

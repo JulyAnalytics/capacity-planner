@@ -18,6 +18,8 @@ const _TABLE_MAP = {
   locationPeriods:  'location_periods',
   dayTypeOverrides: 'day_type_overrides',
   importQueue:      'import_queue',
+  cycles:           'cycles',
+  strategicSessions: 'strategic_sessions',
   metadata:        null  // stored in localStorage, not synced
 };
 
@@ -49,6 +51,8 @@ const DB = {
     LOCATION_PERIODS:   'locationPeriods',
     DAY_TYPE_OVERRIDES: 'dayTypeOverrides',
     IMPORT_QUEUE:       'importQueue',
+    CYCLES:              'cycles',
+    STRATEGIC_SESSIONS:  'strategicSessions',
   },
 
   _cache: {
@@ -65,6 +69,8 @@ const DB = {
     locationPeriods:  null,
     dayTypeOverrides: null,
     importQueue:      null,
+    cycles:            null,
+    strategicSessions: null,
   },
   _cacheReady: false,
 
@@ -92,6 +98,8 @@ const DB = {
       { store: 'locationPeriods',  table: 'location_periods'  },
       { store: 'dayTypeOverrides', table: 'day_type_overrides' },
       { store: 'importQueue',      table: 'import_queue'       },
+      { store: 'cycles',            table: 'cycles'             },
+      { store: 'strategicSessions', table: 'strategic_sessions' },
     ];
 
     const results = await Promise.all(

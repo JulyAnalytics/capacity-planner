@@ -6,7 +6,7 @@
 > This lists every store (coverage-complete) and renders the fields annotated
 > in `schema.yaml`. Add a field note in `schema.yaml` to make it appear here.
 
-- **Stores documented:** 14 (all of `DB.STORES`)
+- **Stores documented:** 16 (all of `DB.STORES`)
 
 ## CALENDAR → `calendar`
 
@@ -47,7 +47,18 @@ Supabase table: `epics`
 
 > Epics owned by a focus/sub-focus; parent of stories.
 
-_(no field annotations yet — add `store.field: note` in `schema.yaml`.)_
+| field | note |
+|---|---|
+| `attachments` | array (default []); same pointer shape as stories.attachments, written by window.attachmentPanel. Storage key stays `{uid}/{entityId}/{attId}/{filename}` — entity ids are globally unique, so no type segment was needed and every pre-existing story key still resolves. |
+| `businessCase` | object {problem, outcome, timeEstimate, goNoGo, measurement} — the MVP spec's 5-field Epic Business Case. Completeness is the promotion gate out of 'candidate' (canPromoteEpic); the whitelist alone cannot express it because canTransitionStatus takes no record. |
+| `generationSource` | enum GENERATION_SOURCE 'brainstorm'\|'backlog'\|'parked' — provenance of a candidate; 'parked' means carried forward from a previous cycle's below-the-line set. |
+| `horizon` | enum HORIZON 'now'\|'next'\|'later'\|'never' (constants.js); ABSENT = unclassified. Backlog + story-map filter dimension; 'next'/'later' double as the strategic parked queue (a parked candidate carries to the next cycle by horizon, not a separate flag). Seeded from status by migrateEpicsToIncludeHorizon (active→now, planning→next; completed/archived left unset). NEW epics default to 'later' at both creation sites (creationModal.getFormData, dataPortability.mergeImport) per the MVP spec's standing rule "New ideas enter Later or Never first. Nothing enters Now without deliberate promotion." Without that default they landed unset and were invisible to every horizon filter — which is what happened to the epics created after the one-time migration stamped its guard. |
+| `killReason` | rationale captured when a candidate is archived. The spec kills "with rationale, not deleted" so the next cycle's brainstorm can see why. Surfaced on the epic panel only while status is archived. |
+| `plannedSprintId` | sprint the roadmap sequenced this epic into, written by strategyWrites.approveRoadmap through the epic spine. Contract when it lands: the sprint the roadmap sequenced this epic into. Epic-level planning INTENT only — sprintId itself lives on stories, and a freshly promoted epic has none, so approving a roadmap writes here and story creation prefills from it. Never read by capacity math. |
+| `roughSize` | 'S'\|'M'\|'L'\|'XL' — the candidate-stage T-shirt estimate, distinct from story.weight (which is the capacity-bearing number). Directional only; nothing sums it. |
+| `status` | enum EPIC_STATUS — 'candidate' is the strategic pre-commitment state (the spec's EpicCandidate), deliberately a status and not a separate store (ADR-0011). Candidates are excluded from hierarchyCache.getEpicsForSubFocus + the story panel's epic picker, are invisible in the backlog until they have stories, and never auto-complete. All epic writes go through window.epicWrites. |
+| `themeId` | id of a theme in the epic's OWN focus (focus.themes[]) — the spec's candidate→theme traceability. Set from the epic panel's theme picker; the picker only offers themes belonging to epic.focusId, so an epic can never point at another focus's theme. |
+| `wsjf` | object {uv, tc, rr, duration} — the Ritual 3.1 inputs. LINEAGE: epics imported before 2026-07-28 have NO recoverable inputs — scripts/parseCandidates._wsjfFromTable kept only the composite total, so their vision reads "WSJF 25 · Size L · Rank 1" and the components are gone (infinitely many inputs give any total). migrateEpicsToStructuredScoring recovers problem/outcome/roughSize for those rows but deliberately leaves wsjf unset rather than storing an underived, hand-computed total; they re-score on the next import. The parser now emits components and the vision line shows the DERIVED score. The SCORE is never stored; wsjfScore() derives it, and priority rank is derived by sorting on that. A stored rank would be destroyed by the next cycle's re-scoring, and the imported text's stated score is unreliable (candidate_02 records 25 for (8+9+7)÷1 = 24). Absent/partial = unscored, rendered '—', not 0. |
 
 ## STORIES → `stories`
 
@@ -105,7 +116,10 @@ Supabase table: `focuses`
 
 > Top-level focus areas (Priority Level → Focus → …).
 
-_(no field annotations yet — add `store.field: note` in `schema.yaml`.)_
+| field | note |
+|---|---|
+| `_theme_priority` | theme.priorityWithinFocus (spec field) orders themes within a focus; set from the Strategy tab's theme portfolio via strategyView.themePriority → strategyWrites.commitTheme, unset sorts last. |
+| `attachments` | array (default []); same pointer shape as stories.attachments, written by window.attachmentPanel. This is where a cycle's per-focus brain dump lands. |
 
 ## SPRINTS → `sprints`
 
@@ -149,4 +163,31 @@ Supabase table: `import_queue`
 |---|---|
 | `contentHash` | sha256 of the source file's content; the dedup/idempotency key. |
 | `status` | enum 'pending'\|'processed'. Never deleted on processing — status flip only, so the unique (user_id, contentHash) index keeps guarding against re-queuing an already-seen file. |
+
+## CYCLES → `cycles`
+
+Supabase table: `cycles`
+
+> Strategic cycles (~12 weeks) — the tier above the sprint lattice. Membership is DERIVED from date overlap, never a foreign key: no sprint/epic/story carries a cycleId (ADR-0012). Written only by window.strategyWrites, which also owns the synchronous cache calendarView renders the cycle band from.
+
+| field | note |
+|---|---|
+| `attachments` | array (default []); the cycle free-write .md, via window.attachmentPanel. |
+| `closedSnapshot` | {sprintIds[], epicIds[], focusActualPct{}, closedAt} — written once at close. Derivation answers for open cycles; this answers for closed ones. See ADR-0012. |
+| `focuses` | embedded array of FocusThesis records {focusId, rank, targetPct, classification, strategicRole, thesis, endState, nonGoals, themeIds[], status}. classification is FOCUS_CLASSIFICATION (active-strategic\|active-maintenance\|dormant); the spec caps active-strategic at MAX_ACTIVE_STRATEGIC=5, enforced as a coherence flag not a hard gate. Editable in the cycle detail panel (classification select + target input) via saveFocusThesis. Embedded, not a store — the monthlyPlans[].epics[] precedent; a focus thesis has no lifecycle outside its cycle. |
+| `killCriterion` | the cycle-level go/no-go — dated, binary, observable. Surfaced on Today as its date approaches. |
+| `status` | 'planning'\|'active'\|'closed'. Closed is terminal and locks the dates — re-dating a closed cycle would retroactively rewrite which sprints belonged to it. |
+
+## STRATEGIC_SESSIONS → `strategicSessions`
+
+Supabase table: `strategic_sessions`
+
+> One record per planning run that produced a cycle. Written only by window.strategyWrites.
+
+| field | note |
+|---|---|
+| `kind` | 'full'\|'recut'\|'backfill'. 'recut' is a mid-cycle re-score carrying only the scoring/sequencing steps and referencing parentSessionId; 'backfill' is a session reconstructed from the Obsidian corpus by scripts/parseCycle.mjs, marked so the outcome funnel never claims in-app provenance for work predating the feature. |
+| `ledger` | frozen at commit — [{candidateId, epicId, focusId, wsjf, sprintSlot, targetPct}]. Makes 'what did I commit to' answerable after later re-scoring. |
+| `proposedRoadmap` | [{epicId, sprintId, order}] — sequencing output. NOT the live schedule: approval writes epic.plannedSprintId, and story.sprintId stays the only thing capacity math reads. See ADR-0013. |
+| `rankSnapshot` | on a kind:'recut' session — [{id,name,score}] candidate ranking captured at the moment of re-cut, so Session history shows how prioritisation moved over the cycle rather than an empty marker. Only re-cuts carry it. |
 

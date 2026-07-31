@@ -4,11 +4,13 @@
  */
 
 import DB from './db.js';
-import { esc, sprintLabel, sizeLabel } from './utils.js';
+import { esc, sprintLabel, sizeLabel, twoStepConfirm, cycleLabel } from './utils.js';
+import { cycleProgress, sprintsInCycle, CYCLE_STATUS } from './strategyModel.js';
+import { deriveFocusAllocation } from './sprintAllocation.js';
 import { daysBetween, buildDayMap, detectUncoveredDays, deriveSprintCapacityFromPeriods, isoAddDays } from './locationCapacity.js';
 import { invalidateCache } from './hierarchyCache.js';
 import { deriveSprintMeta } from './sprintCapacity.js';
-import { STORY_STATUS, EPIC_STATUS, FOCUS_STATUS, SPRINT_STATUS, PRIORITY_LEVELS, STORY_SIZES, STORY_SIZE_LABELS } from './constants.js';
+import { STORY_STATUS, EPIC_STATUS, FOCUS_STATUS, SPRINT_STATUS, PRIORITY_LEVELS, STORY_SIZES, STORY_SIZE_LABELS, HORIZON, HORIZON_LABELS, FOCUS_CLASSIFICATION, FOCUS_CLASSIFICATION_LABELS } from './constants.js';
 
 const container = () => document.getElementById('backlog-detail-panel');
 // root() removed 2026-07-27 (ADR-0010): it returned #backlog-root, so the dock
@@ -20,6 +22,7 @@ let _currentStoryId   = null;
 let _currentEpicId    = null;
 let _currentFocusId   = null;
 let _currentSubFocusId = null;
+let _currentCycleId    = null;
 let _touchStartY      = 0;
 
 // ── Sprint panel state ────────────────────────────────────────────────────────
@@ -34,24 +37,9 @@ const _pointerFineMql = typeof window !== 'undefined' && window.matchMedia
 
 // Two-step inline confirm (the location-period delete pattern, promoted to the
 // panel's standard — design-review pass 1 B7): first click arms for 4s.
-let _pendingConfirm = null; // { key, timer }
-function _twoStepConfirm(key, btnEl, action) {
-  if (_pendingConfirm?.key === key) {
-    clearTimeout(_pendingConfirm.timer);
-    _pendingConfirm = null;
-    action();
-    return;
-  }
-  if (_pendingConfirm) clearTimeout(_pendingConfirm.timer);
-  const original = btnEl.textContent;
-  btnEl.textContent = 'Confirm — click again';
-  btnEl.classList.add('bdp-danger-btn--armed');
-  _pendingConfirm = { key, timer: setTimeout(() => {
-    btnEl.textContent = original;
-    btnEl.classList.remove('bdp-danger-btn--armed');
-    _pendingConfirm = null;
-  }, 4000) };
-}
+// Moved to utils.twoStepConfirm so attachmentPanel can share it — the bundle's
+// duplicate-declaration gate forbids two copies, and one shared armed-state is
+// the better behaviour anyway (two buttons can never sit armed at once).
 
 // ── Story panel ───────────────────────────────────────────────────────────────
 
@@ -97,6 +85,18 @@ export async function openSubFocus(sfId) {
   _attachPanelSwipeToClose();
 }
 
+export async function openCycle(cycleId) {
+  _currentCycleId    = cycleId;
+  _currentStoryId    = null;
+  _currentEpicId     = null;
+  _currentFocusId    = null;
+  _currentSubFocusId = null;
+  await _renderCyclePanel(cycleId);
+  container().classList.add('bdp-open');
+  container().setAttribute('aria-hidden', 'false');
+  _attachPanelSwipeToClose();
+}
+
 export function close() {
   container().classList.remove('bdp-open');
   container().setAttribute('aria-hidden', 'true');
@@ -105,6 +105,7 @@ export function close() {
   _currentFocusId    = null;
   _currentSubFocusId = null;
   _currentSprintId   = null;
+  _currentCycleId    = null;
 }
 
 export function isOpen() {
@@ -162,7 +163,7 @@ async function _render(storyId) {
         ${_renderFieldRow('Size',     _renderSizePicker(story))}
         ${_renderFieldRow('Priority', _renderPriorityPicker(story))}
         ${_renderFieldRow('Actions', _renderActionItems(story))}
-        ${_renderFieldRow('Files', window.storyAttachmentPanel.renderSection(story))}
+        ${_renderFieldRow('Files', window.attachmentPanel.renderSection('story', story))}
       </div>
 
       <div class="bdp-actions-section">
@@ -201,7 +202,13 @@ function _renderSprintPicker(story, sprints) {
 }
 
 function _renderEpicPicker(story, epics) {
-  const active = epics.filter(e => e.status !== EPIC_STATUS.COMPLETED && e.status !== EPIC_STATUS.ARCHIVED);
+  // Candidates are excluded alongside completed/archived: an unpromoted candidate
+  // has not passed the business-case gate, so filing real work under it would
+  // route stories into an epic that may yet be parked or killed.
+  const active = epics.filter(e =>
+    e.status !== EPIC_STATUS.COMPLETED &&
+    e.status !== EPIC_STATUS.ARCHIVED &&
+    e.status !== EPIC_STATUS.CANDIDATE);
   const options = active.map(e => `<option value="${esc(e.id)}" ${story.epicId === e.id ? 'selected' : ''}>${esc(e.name)}</option>`);
   return `<select class="bdp-field-select"
     onchange="window.backlogDetailPanel.saveField('${esc(story.id)}', 'epicId', this.value || null)">
@@ -257,6 +264,240 @@ function _renderActionItems(story) {
 
 // ── Epic panel render ─────────────────────────────────────────────────────────
 
+// ── Cycle panel ───────────────────────────────────────────────────────────────
+
+export async function saveCycleField(cycleId, field, value) {
+  const ok = await window.strategyWrites.commitCycleField(cycleId, field, value);
+  // A rejected write (overlap, or a re-dated closed cycle) already toasted; the
+  // re-render drops the optimistic value the input is showing.
+  await _renderCyclePanel(cycleId);
+  return ok;
+}
+
+export async function saveFocusThesis(cycleId, focusId, field, value) {
+  await window.strategyWrites.commitFocusThesis(cycleId, focusId, { [field]: value });
+  await _renderCyclePanel(cycleId);
+}
+
+const _cyList = (items, empty) => (items?.length
+  ? `<ul class="cy-list">${items.map(i => `<li>${esc(i)}</li>`).join('')}</ul>`
+  : `<p class="cy-empty">${esc(empty)}</p>`);
+
+async function _renderCyclePanel(cycleId) {
+  const cycle = window.strategyWrites?.byId(cycleId);
+  if (!cycle) { close(); return; }
+
+  const today    = new Date().toISOString().slice(0, 10);
+  const progress = cycleProgress(cycle, today);
+  const sprints  = sprintsInCycle(cycle, window.app?.data?.sprints || []);
+  const stories  = (window.app?.data?.stories || []).filter(s => sprints.some(sp => sp.id === s.sprintId));
+  const focuses  = window.app?.data?.focuses || [];
+
+  // Cycle-to-date CUMULATIVE allocation, not per-sprint — a flat target read
+  // sprint-by-sprint reports under- then over-indexed on front-loaded work.
+  const allocation = deriveFocusAllocation(stories, focuses);
+  const actualByName = Object.fromEntries(allocation.map(a => [a.focusName, a.pct]));
+
+  const focusRows = (cycle.focuses || []).length
+    ? (cycle.focuses || [])
+        .slice()
+        .sort((a, b) => (a.rank ?? 99) - (b.rank ?? 99))
+        .map(ft => {
+          const f = focuses.find(x => x.id === ft.focusId);
+          const name = f?.name || ft.focusId;
+          const actual = actualByName[name] ?? 0;
+          const clsSel = frozen ? '' : `
+            <select class="cy-focus-class" ${frozen ? 'disabled' : ''}
+              onchange="window.backlogDetailPanel.saveFocusThesis('${esc(cycleId)}','${esc(ft.focusId)}','classification',this.value)">
+              ${Object.values(FOCUS_CLASSIFICATION).map(c =>
+                `<option value="${esc(c)}" ${ft.classification === c ? 'selected' : ''}>${esc(FOCUS_CLASSIFICATION_LABELS[c])}</option>`).join('')}
+            </select>`;
+          const targetInput = frozen
+            ? `<span class="cy-focus-target">target ${ft.targetPct ?? '—'}%</span>`
+            : `<input class="cy-focus-target-input" type="number" min="0" max="100" value="${ft.targetPct ?? ''}"
+                 aria-label="Capacity target % for ${esc(name)}"
+                 onchange="window.backlogDetailPanel.saveFocusThesis('${esc(cycleId)}','${esc(ft.focusId)}','targetPct',this.value === '' ? null : Number(this.value))">`;
+          return `<div class="cy-focus-row cy-focus-row--edit">
+            <span class="cy-focus-name">${esc(name)}${ft.rank ? ` <span class="cy-focus-target">#${ft.rank}</span>` : ''}</span>
+            ${clsSel}
+            ${targetInput}
+            <span title="cycle-to-date actual">${actual}%</span>
+          </div>`;
+        }).join('')
+    : `<p class="cy-empty">No focus theses yet — set capacity targets when you plan this cycle.</p>`;
+
+  const statusLabel = { planning: 'Planning', active: 'Active', closed: 'Closed' }[cycle.status] || cycle.status;
+  const frozen = cycle.status === CYCLE_STATUS.CLOSED;
+
+  container().innerHTML = `
+    <div class="bdp-container-inner">
+      <div class="bdp-header">
+        <div class="bdp-header-top">
+          <input class="ep-field-input ep-name-input" type="text" value="${esc(cycle.name || '')}"
+            aria-label="Cycle name"
+            onblur="window.backlogDetailPanel.saveCycleField('${esc(cycleId)}', 'name', this.value)" />
+          <button class="bdp-close" onclick="window.backlogView?.closePanel()" aria-label="Close panel">×</button>
+        </div>
+        <div class="cy-dates-row">
+          <input class="cy-date-input" type="date" value="${esc(cycle.startDate || '')}" ${frozen ? 'disabled' : ''}
+            aria-label="Start date"
+            onchange="window.backlogDetailPanel.saveCycleField('${esc(cycleId)}', 'startDate', this.value)">
+          <span class="cy-dates-sep">→</span>
+          <input class="cy-date-input" type="date" value="${esc(cycle.endDate || '')}" ${frozen ? 'disabled' : ''}
+            aria-label="End date"
+            onchange="window.backlogDetailPanel.saveCycleField('${esc(cycleId)}', 'endDate', this.value)">
+          <span class="bdp-sprint-meta">· ${esc(statusLabel)}</span>
+        </div>
+      </div>
+
+      <div class="bdp-body">
+        ${progress ? `
+          <div class="cy-progress-wrap">
+            <div class="cy-progress-bar" style="width:${progress.pct}%"></div>
+          </div>
+          <p class="cy-meta">Day ${progress.elapsedDays} of ${progress.totalDays} · ${progress.remainingDays} remaining · ${sprints.length} sprint${sprints.length === 1 ? '' : 's'}</p>
+        ` : ''}
+
+        ${frozen ? `<p class="cy-meta">Membership frozen at close — dates are locked.</p>` : ''}
+
+        <div class="bdp-sec-title">Thesis</div>
+        <textarea class="ep-field-input" rows="4" ${frozen ? 'disabled' : ''}
+          placeholder="What this cycle exists to produce. Outcome-focused, not activity."
+          onblur="window.backlogDetailPanel.saveCycleField('${esc(cycleId)}', 'thesis', this.value)">${esc(cycle.thesis || '')}</textarea>
+
+        <div class="bdp-sec-title">Desired end state</div>
+        ${_cyList(cycle.endState, 'Not set — what will be observably true at close?')}
+
+        <div class="bdp-sec-title">Constraints</div>
+        ${_cyList(cycle.constraints, 'None recorded.')}
+
+        <div class="bdp-sec-title">Explicitly excluded</div>
+        ${_cyList(cycle.nonGoals, 'Nothing excluded — the tempting work is worth naming.')}
+
+        <div class="bdp-sec-title">Kill criterion</div>
+        ${cycle.killCriterion
+          ? `<p class="cy-kill">${esc(cycle.killCriterion)}</p>`
+          : `<p class="cy-empty">Not set — what single observation, by what date, would make you abandon this thesis?</p>`}
+
+        <div class="bdp-sec-title">Focus allocation · target vs cycle-to-date</div>
+        ${focusRows}
+
+        <div class="bdp-sec-title">Files</div>
+        ${window.attachmentPanel.renderSection('cycle', cycle)}
+      </div>
+    </div>`;
+}
+
+// WSJF inputs + the five business-case fields + the promotion-gate readout.
+// @intent no colour scale on the score and no coloured band on the gate —
+// DESIGN_SYSTEM rule 2 reserves colour for the user's focus assignment, so state
+// is carried by glyph + label here, reusing the bdp-cmp-* icon vocabulary the
+// sprint panel's intent-vs-actual already established.
+const WSJF_INPUTS = [
+  { key: 'uv',       label: 'User value',      max: 10 },
+  { key: 'tc',       label: 'Time criticality', max: 10 },
+  { key: 'rr',       label: 'Risk reduction',  max: 10 },
+  { key: 'duration', label: 'Duration (wk)',   max: null },
+];
+
+const BUSINESS_CASE_LABELS = {
+  problem:      'Problem',
+  outcome:      'Expected outcome',
+  timeEstimate: 'Time estimate',
+  goNoGo:       'Go / no-go criterion',
+  measurement:  'Measurement plan',
+};
+
+const BUSINESS_CASE_HINTS = {
+  problem:      'What specific problem does this solve, and for whom?',
+  outcome:      '[metric] moves from [current] to [target] by [timeframe].',
+  timeEstimate: 'Rough total hours or sprint-weeks.',
+  goNoGo:       'One binary, observable condition. If not met by [date] — kill.',
+  measurement:  'Data source · cadence · threshold confirming the outcome.',
+};
+
+// Theme link + kill rationale.
+//
+// The spec asks for candidate→theme traceability twice ("Each candidate linked
+// to parent theme and focus — traceability for prioritisation"), and requires a
+// killed candidate be "archived with rationale, not deleted". Both were
+// documented in schema.yaml before this and neither had any code behind it.
+//
+// Themes hang off the FOCUS (ADR-0012), so the options come from the epic's own
+// focus — an epic cannot be filed under another focus's theme.
+function _renderThemeRow(epic, epicId) {
+  const focus  = (window.app?.data?.focuses || []).find(f => f.id === epic.focusId);
+  const themes = focus?.themes || [];
+  const killed = epic.status === EPIC_STATUS.ARCHIVED;
+
+  const themeBlock = themes.length
+    ? `<select class="ep-field-input" id="ep-theme-${esc(epicId)}"
+         onchange="window.backlogDetailPanel.saveEpicField('${esc(epicId)}', 'themeId', this.value || null)">
+         <option value="" ${!epic.themeId ? 'selected' : ''}>— no theme —</option>
+         ${themes.map(t => `<option value="${esc(t.id)}" ${epic.themeId === t.id ? 'selected' : ''}>${esc(t.name)}</option>`).join('')}
+       </select>`
+    : `<p class="bdp-empty-hint">${esc(focus?.name || 'This focus')} has no themes yet — they arrive with a cycle import, or from a brain dump.</p>`;
+
+  return `
+    <div class="bdp-sec-title">Strategic theme</div>
+    ${themeBlock}
+    ${killed ? `
+      <div class="bdp-sec-title">Kill rationale</div>
+      <textarea class="ep-field-input" rows="2"
+        placeholder="Why this was killed — the spec archives with a reason rather than deleting, so the next cycle's brainstorm can see it."
+        onblur="window.backlogDetailPanel.saveEpicField('${esc(epicId)}', 'killReason', this.value)">${esc(epic.killReason || '')}</textarea>` : ''}`;
+}
+
+function _renderScoringSection(epic, epicId) {
+  const score = wsjfScore(epic.wsjf);
+  const gate  = canPromoteEpic(epic);
+
+  const scoreCells = WSJF_INPUTS.map(f => `
+    <div class="ep-stat">
+      <label class="ep-stat-label" for="ep-wsjf-${esc(f.key)}-${esc(epicId)}">${esc(f.label)}</label>
+      <input class="ep-field-input" type="number" min="0" ${f.max ? `max="${f.max}"` : ''} step="any"
+        id="ep-wsjf-${esc(f.key)}-${esc(epicId)}"
+        value="${epic.wsjf?.[f.key] ?? ''}"
+        onchange="window.backlogDetailPanel.saveWsjfField('${esc(epicId)}', '${esc(f.key)}', this.value)">
+    </div>`).join('');
+
+  const bcRows = BUSINESS_CASE_FIELDS.map(f => `
+    <div>
+      <label class="ep-label" for="ep-bc-${esc(f)}-${esc(epicId)}">${esc(BUSINESS_CASE_LABELS[f])}</label>
+      <textarea class="ep-field-input" rows="2" id="ep-bc-${esc(f)}-${esc(epicId)}"
+        placeholder="${esc(BUSINESS_CASE_HINTS[f])}"
+        onblur="window.backlogDetailPanel.saveBusinessCaseField('${esc(epicId)}', '${esc(f)}', this.value)">${esc(epic.businessCase?.[f] || '')}</textarea>
+    </div>`).join('');
+
+  const gateLine = gate.allowed
+    ? `<span class="bdp-cmp-icon bdp-cmp-ok" title="Business case complete">✓</span> Ready to promote`
+    : `<span class="bdp-cmp-icon bdp-cmp-warn" title="Business case incomplete">○</span> Missing ${esc(
+        gate.missing.map(m => BUSINESS_CASE_LABELS[m]).join(', ').toLowerCase())}`;
+
+  return `
+    <div class="bdp-sec-title">WSJF score</div>
+    <div class="ep-stats-grid">
+      ${scoreCells}
+      <div class="ep-stat">
+        <span class="ep-stat-label">WSJF</span>
+        <span class="ep-stat-val">${score === null ? '—' : score}</span>
+      </div>
+      <div class="ep-stat">
+        <span class="ep-stat-label">Promotion gate</span>
+        <span class="ep-stat-label">${gateLine}</span>
+      </div>
+    </div>
+    <p class="bdp-form-hint">(user value + time criticality + risk reduction) ÷ duration. Rank is derived from this — it is never stored.</p>
+
+    ${_renderThemeRow(epic, epicId)}
+
+    <div class="bdp-sec-title">Business case</div>
+    ${bcRows}
+
+    <div class="bdp-sec-title">Files</div>
+    ${window.attachmentPanel.renderSection('epic', epic)}`;
+}
+
 async function _renderEpicPanel(epicId) {
   const epic = await DB.get(DB.STORES.EPICS, epicId);
   if (!epic) { close(); return; }
@@ -309,6 +550,7 @@ async function _renderEpicPanel(epicId) {
             onblur="window.backlogDetailPanel.saveEpicField('${esc(epicId)}', 'name', this.value)" />
           <select class="ep-status-select" data-status="${esc(epic.status)}"
             onchange="window.backlogDetailPanel.saveEpicField('${esc(epicId)}', 'status', this.value)">
+            <option value="${EPIC_STATUS.CANDIDATE}" ${epic.status === EPIC_STATUS.CANDIDATE ? 'selected' : ''}>Candidate</option>
             <option value="${EPIC_STATUS.PLANNING}"  ${epic.status === EPIC_STATUS.PLANNING  ? 'selected' : ''}>Planning</option>
             <option value="${EPIC_STATUS.ACTIVE}"    ${epic.status === EPIC_STATUS.ACTIVE    ? 'selected' : ''}>Active</option>
             <option value="${EPIC_STATUS.COMPLETED}" ${epic.status === EPIC_STATUS.COMPLETED ? 'selected' : ''}>Completed</option>
@@ -324,6 +566,19 @@ async function _renderEpicPanel(epicId) {
           <label class="ep-label">Vision</label>
           <textarea class="ep-field-input ep-vision-input"
             onblur="window.backlogDetailPanel.saveEpicField('${esc(epicId)}', 'vision', this.value)">${esc(epic.vision || '')}</textarea>
+        </div>
+
+        ${_renderScoringSection(epic, epicId)}
+
+        <div>
+          <label class="ep-label" for="ep-horizon-${esc(epicId)}">Horizon</label>
+          <select class="ep-field-input" id="ep-horizon-${esc(epicId)}"
+            onchange="window.backlogDetailPanel.saveEpicField('${esc(epicId)}', 'horizon', this.value)">
+            <option value="" ${!epic.horizon ? 'selected' : ''}>— unclassified —</option>
+            ${Object.values(HORIZON).map(h =>
+              `<option value="${esc(h)}" ${epic.horizon === h ? 'selected' : ''}>${esc(HORIZON_LABELS[h])}</option>`
+            ).join('')}
+          </select>
         </div>
 
         <div>
@@ -378,7 +633,7 @@ async function _renderEpicPanel(epicId) {
 // Two-step epic delete (cascades to its stories — the app.deleteEpic semantics,
 // with the confirm owned by the UI instead of a native dialog).
 async function _deleteEpic(epicId, btnEl) {
-  _twoStepConfirm(`epic:${epicId}`, btnEl, async () => {
+  twoStepConfirm(`epic:${epicId}`, btnEl, async () => {
     await window.app.deleteEpic(epicId);
     window.backlogView?.closePanel?.();
     window.backlogView?.render?.();
@@ -441,6 +696,20 @@ async function _renderFocusPanel(focusId) {
           <div class="ep-stat"><span class="ep-stat-label">Stories</span><span class="ep-stat-val">${storyList.length}</span></div>
           <div class="ep-stat"><span class="ep-stat-label">Active</span><span class="ep-stat-val">${activeCount}</span></div>
         </div>
+
+        <div class="bdp-sec-title">Strategic themes</div>
+        ${(focus.themes || []).length
+          ? `<div class="cy-focus-list">${focus.themes.map(t => `
+              <div class="cy-focus-row" title="${esc(t.hypothesis || '')}">
+                <span class="cy-focus-name">${esc(t.name)}</span>
+                <span class="cy-focus-target">${(t.memberIdeas || []).length} ideas</span>
+                <span class="cy-focus-target">${allEpics.filter(e => e.themeId === t.id).length} epics</span>
+              </div>`).join('')}</div>`
+          : `<p class="bdp-empty-hint">No themes yet — they arrive with a cycle import, or from this focus's brain dump.</p>`}
+
+        <div class="bdp-sec-title">Files</div>
+        <p class="bdp-empty-hint">Attach this focus's brain dump — it renders inline, versioned. The Obsidian file stays the editable original.</p>
+        ${window.attachmentPanel.renderSection('focus', focus)}
 
         ${focus.status === FOCUS_STATUS.ACTIVE ? `
         <div class="bdp-actions-section">
@@ -630,7 +899,7 @@ export async function saveField(storyId, field, value) {
 // can't be patched). Design-review pass 1, A5: there was NO way to delete a
 // story anywhere in the UI.
 async function _deleteStory(storyId, btnEl) {
-  _twoStepConfirm(`story:${storyId}`, btnEl, async () => {
+  twoStepConfirm(`story:${storyId}`, btnEl, async () => {
     const ok = await window.storyWrites.commitStoryDelete(storyId);
     if (ok) window.showToast?.('Story deleted', 'success');
   });
@@ -683,21 +952,25 @@ export async function removeActionItem(storyId, idx) {
 }
 
 export async function saveEpicField(epicId, field, value) {
-  const epic = window.app?.data?.epics?.find(e => e.id === epicId);
-  if (!epic) return;
-  const updated = { ...epic, [field]: value };
-  try {
-    await DB.put(DB.STORES.EPICS, updated);
-    window.app.data.epics = await DB.getAll(DB.STORES.EPICS);
-    await invalidateCache('epic');
-    NotificationRegistry.emit('epic');
-    if (field === 'name' || field === 'fg') {
-      window.backlogView?.patchEpicTag(epicId);
-    }
-  } catch (err) {
-    _renderEpicPanel(epicId);
-    window.showToastWithActions?.('Save failed', 'error', { duration: 3000 });
+  // Routed through the spine (ADR-0011) — it owns rollback, the transition
+  // whitelist and the business-case promotion gate. A rejected write returns
+  // false with its own toast, so the panel re-renders to drop the optimistic
+  // <select> value the browser has already painted.
+  const ok = await window.epicWrites.commitEpicUpdate(epicId, { [field]: value });
+  if (!ok) { _renderEpicPanel(epicId); return; }
+  if (field === 'name' || field === 'fg') {
+    window.backlogView?.patchEpicTag(epicId);
   }
+}
+
+export async function saveBusinessCaseField(epicId, field, value) {
+  const ok = await window.epicWrites.commitBusinessCaseField(epicId, field, value);
+  if (ok) _renderEpicPanel(epicId); // refresh the gate readout
+}
+
+export async function saveWsjfField(epicId, field, value) {
+  const ok = await window.epicWrites.commitEpicScore(epicId, { [field]: value });
+  if (ok) _renderEpicPanel(epicId); // refresh the computed score
 }
 
 // ── Epic filter toggle ────────────────────────────────────────────────────────
@@ -1210,7 +1483,7 @@ function _renderFieldRow(label, content) {
 }
 
 // ── Global export ─────────────────────────────────────────────────────────────
-// @owns backlogDetailPanel — detail panel for focus/epic/story/sprint; emits focus/subFocus/epic/sprint.
+// @owns backlogDetailPanel — detail panel for focus/subFocus/epic/story/sprint/cycle; emits focus/subFocus/epic/sprint/cycle.
 // @owns _bdpRankingCurrent — transient in-progress ranking snapshot (edit state).
 // @owns _bdpRankingEdit — transient edit-mode ranking draft (edit state).
 
@@ -1226,7 +1499,12 @@ window.backlogDetailPanel = {
   close,
   isOpen,
   saveField,
+  openCycle,
+  saveCycleField,
+  saveFocusThesis,
   saveEpicField,
+  saveBusinessCaseField,
+  saveWsjfField,
   saveFocusField,
   saveSubFocusField,
   refreshIfShowing,
@@ -1244,4 +1522,4 @@ window.backlogDetailPanel = {
   _editRanking,
 };
 
-export default { open, openStory: open, openEpic, openFocus, openSubFocus, openSprint, close, isOpen, saveField, saveEpicField, saveFocusField, saveSubFocusField, refreshIfShowing, addActionItem, toggleActionItem, removeActionItem };
+export default { open, openStory: open, openEpic, openFocus, openSubFocus, openSprint, openCycle, saveCycleField, close, isOpen, saveField, saveEpicField, saveBusinessCaseField, saveWsjfField, saveFocusField, saveSubFocusField, refreshIfShowing, addActionItem, toggleActionItem, removeActionItem };

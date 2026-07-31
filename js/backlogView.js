@@ -4,11 +4,12 @@
  */
 
 import DB from './db.js';
-import { esc, sizeLabel } from './utils.js';
+import { esc, sizeLabel, cycleLabel } from './utils.js';
 import { daysBetween, deriveSprintCapacityFromPeriods } from './locationCapacity.js';
 import { deriveSprintMeta } from './sprintCapacity.js';
 import { deriveFocusAllocation, deriveTierCheck } from './sprintAllocation.js';
-import { STORY_STATUS, EPIC_STATUS, FOCUS_STATUS, SPRINT_STATUS, PRIORITY_LEVELS, PRIORITY_LABELS } from './constants.js';
+import { STORY_STATUS, EPIC_STATUS, FOCUS_STATUS, SPRINT_STATUS, PRIORITY_LEVELS, PRIORITY_LABELS, HORIZON, HORIZON_LABELS } from './constants.js';
+import { cycleProgress } from './strategyModel.js';
 
 // ── State ─────────────────────────────────────────────────────────────────────
 
@@ -19,6 +20,7 @@ let openPanelType = null; // 'story' | 'epic' | 'focus' | 'subFocus' | null
 let openPanelId = null;
 let epicFilter = null; // epic.id | null
 let nameFilter = ''; // toolbar text filter — the search stopgap (pass 2 §II.8 B)
+let horizonFilter = null; // HORIZON value | null (null = All horizons)
 const collapseState = { sprints: {}, focuses: {}, subFocuses: {} };
 let _historyTriggered = false;
 
@@ -267,6 +269,44 @@ function _applyNameFilter(stories) {
   return stories.filter(s => (s.name || '').toLowerCase().includes(q));
 }
 
+// Horizon lives on the epic, not the story — a story's horizon is fully implied by
+// its parent, so filtering maps story → epic the way _applyFocusFilter does.
+function _applyHorizonFilter(stories, allEpics) {
+  if (!horizonFilter) return stories;
+  return stories.filter(s => {
+    const epic = allEpics.find(e => e.id === s.epicId);
+    return epic ? epic.horizon === horizonFilter : false;
+  });
+}
+
+// Cycle context rail — thesis, elapsed/remaining, and target vs cycle-to-date.
+// Returns '' when there is no covering cycle, which collapses the companion back
+// to a single column rather than showing an empty box (DESIGN_SYSTEM rule 7:
+// an empty state must advise a real action, and "create a cycle" has no control
+// on this surface yet).
+function _renderCycleRail() {
+  const sw = window.strategyWrites;
+  if (!sw?.isHydrated?.()) {
+    // Cold cache — kick one hydrate and repaint; do not render a placeholder.
+    sw?.hydrate?.().then(() => _requestBacklogRender()).catch(() => {});
+    return '';
+  }
+  const cycle = sw.current();
+  if (!cycle) return '';
+
+  const today = new Date().toISOString().slice(0, 10);
+  const p = cycleProgress(cycle, today);
+  return `<div class="cmp-cycle">
+    <button class="cmp-cycle-title" onclick="window.backlogDetailPanel.openCycle('${esc(cycle.id)}')">
+      ${esc(cycleLabel(cycle))}
+    </button>
+    ${p ? `<div class="cy-progress-wrap"><div class="cy-progress-bar" style="width:${p.pct}%"></div></div>
+      <p class="cy-meta">${p.remainingDays} days remaining · day ${p.elapsedDays} of ${p.totalDays}</p>` : ''}
+    ${cycle.thesis ? `<p class="cmp-cycle-thesis">${esc(cycle.thesis)}</p>` : ''}
+    ${cycle.killCriterion ? `<p class="cy-kill">${esc(cycle.killCriterion)}</p>` : ''}
+  </div>`;
+}
+
 // ── Toolbar ───────────────────────────────────────────────────────────────────
 
 // One toolbar row (design-review pass 1 B5 / pass 3 Wave 3): view control,
@@ -290,6 +330,18 @@ function _renderToolbar(focuses, allEpics) {
       <option value="">All focuses</option>
       ${focuses.map(f =>
         `<option value="${esc(f.id)}" ${activeFocus === f.id ? 'selected' : ''}>${esc(f.name)}</option>`
+      ).join('')}
+    </select>`;
+
+  // @intent a select, not a chip group — the row already carries six status chips,
+  // and horizon is a narrow-to-one filter like the focus dropdown beside it, not a
+  // multi-select. Reuses .bl-focus-select so no new token is introduced (css-check).
+  const horizonSelect = `
+    <select class="bl-focus-select" aria-label="Filter by horizon"
+      onchange="window.backlogView._setHorizon(this.value || null)">
+      <option value="">All horizons</option>
+      ${Object.values(HORIZON).map(h =>
+        `<option value="${esc(h)}" ${horizonFilter === h ? 'selected' : ''}>${esc(HORIZON_LABELS[h])}</option>`
       ).join('')}
     </select>`;
 
@@ -338,6 +390,7 @@ function _renderToolbar(focuses, allEpics) {
       ${groupBtns}
       <span class="bl-toolbar-sep">|</span>
       ${focusSelect}
+      ${horizonSelect}
       ${filterInput}
       <span class="bl-chip-group ${isStoryMap ? 'sm2-chips-inactive' : ''}">${chips.join('')}</span>
       ${epicChip}
@@ -719,6 +772,11 @@ function _setActiveFocus(focusId) {
   if (activeFocus) params.set('focus', activeFocus);
   else params.delete('focus');
   history.replaceState(null, '', `${window.location.pathname}${params.toString() ? '?' + params : ''}`);
+  _renderBacklogView();
+}
+
+function _setHorizon(value) {
+  horizonFilter = value || null;
   _renderBacklogView();
 }
 
@@ -1434,13 +1492,22 @@ async function _renderByStoryMapMode(
 
   const visibleEpics = allEpics
     .filter(e => e.status === EPIC_STATUS.ACTIVE || e.status === EPIC_STATUS.PLANNING)
-    .filter(e => !activeFocus || e.focusId === activeFocus);
+    .filter(e => !activeFocus || e.focusId === activeFocus)
+    .filter(e => !horizonFilter || e.horizon === horizonFilter);
 
   if (visibleEpics.length === 0) {
+    // DESIGN_SYSTEM rule 7 — an empty state must name a control that exists, so
+    // say which filter is doing the hiding rather than advising a generic reset.
+    const narrowed = [
+      activeFocus     ? 'focus'   : null,
+      horizonFilter   ? `horizon “${esc(HORIZON_LABELS[horizonFilter])}”` : null,
+    ].filter(Boolean);
     container.innerHTML = `
       <div class='sm2-empty'>
         <p>No active epics to display.</p>
-        <p>Create an epic or switch focus filter to see the story map.</p>
+        <p>${narrowed.length
+          ? `The ${narrowed.join(' and ')} filter${narrowed.length > 1 ? 's are' : ' is'} narrowing this view — clear ${narrowed.length > 1 ? 'them' : 'it'} in the toolbar above.`
+          : 'Create an epic to see the story map.'}</p>
       </div>`;
     return;
   }
@@ -1536,6 +1603,7 @@ export async function _renderBacklogView() {
   let filteredStories = _applyStatusFilter(allStories);
   if (epicFilter) filteredStories = _applyEpicFilter(filteredStories);
   filteredStories = _applyNameFilter(filteredStories);
+  filteredStories = _applyHorizonFilter(filteredStories, allEpics);
 
   // Build HTML
   const toolbarHtml = _renderToolbar(allFocuses.filter(f => f.status === FOCUS_STATUS.ACTIVE), allEpics);
@@ -1558,9 +1626,18 @@ export async function _renderBacklogView() {
     listHtml = _renderByFocusMode(allFocuses, allSubFocuses, allEpics, allStories, filteredStories);
   }
 
+  // Companion slot (ADR-0010 specified it for Backlog and left it unbuilt). The
+  // container query in companion.css reveals the aside only when the surface is
+  // wide enough AND the detail panel is not docked, so nothing here needs a
+  // viewport check. Everything in the rail is reachable elsewhere — it is
+  // context, never the only route to an action.
+  const railHtml = _renderCycleRail();
   root.innerHTML = `
     ${toolbarHtml}
-    <div id="bl-list">${listHtml}</div>
+    <div class="cmp-surface${railHtml ? ' cmp-surface--companion' : ''}">
+      <div id="bl-list">${listHtml}</div>
+      ${railHtml ? `<aside class="cmp-slot" aria-label="Current cycle">${railHtml}</aside>` : ''}
+    </div>
   `;
 
   _initSprintSortables(root);
@@ -1758,6 +1835,7 @@ window.backlogView = {
   _setActiveFocus,
   _setStatus,
   _setNameFilter,
+  _setHorizon,
   _clearEpicFilter,
   _setEpicFilter: (id) => {
     epicFilter = id;
@@ -1807,6 +1885,7 @@ NotificationRegistry.on('epic', () => {
   if (window.backlogView._currentGroupBy() === 'storymap') _requestBacklogRender();
 });
 NotificationRegistry.on('sprint',          () => _requestBacklogRender());
+NotificationRegistry.on('cycle',           () => _requestBacklogRender());
 NotificationRegistry.on('locationPeriod',  () => window.backlogView.renderSprintCapacityHeaders());
 NotificationRegistry.on('dayTypeOverride', () => window.backlogView.renderSprintCapacityHeaders());
 

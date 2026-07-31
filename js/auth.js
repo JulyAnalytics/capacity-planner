@@ -121,6 +121,8 @@ function _resetCache() {
     locationPeriods:  null,
     dayTypeOverrides: null,
     importQueue:      null,
+    cycles:            null,
+    strategicSessions: null,
   };
   window.DB._cacheReady = false;
 }

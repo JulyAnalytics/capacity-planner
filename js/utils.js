@@ -242,6 +242,49 @@ export function checkFileSizeLimit(file, maxSizeMB = 10) {
   return true;
 }
 
+/**
+ * One label per entity (DESIGN_SYSTEM rule 3) — the cycle's sibling of
+ * sprintLabel/sizeLabel. Raw ids never reach the DOM.
+ */
+export function cycleLabel(cycle) {
+  if (!cycle) return '';
+  return String(cycle.name || '').trim() || 'Untitled cycle';
+}
+
+/**
+ * Inline two-step confirm — DESIGN_SYSTEM rule 5. First click arms the button
+ * for 4s and relabels it; a second click within the window runs the action.
+ * No confirm()/alert()/prompt() anywhere in the app.
+ *
+ * @intent one module-level `_pendingConfirm`, deliberately shared. It lived in
+ * backlogDetailPanel until attachmentPanel needed the same behaviour and the
+ * build's duplicate-declaration gate rejected the copy. Sharing is also the
+ * better semantics: arming a delete in one surface disarms a half-armed one
+ * elsewhere, so two buttons can never sit armed at once.
+ *
+ * @param {string} key — identity of the pending action (e.g. `att:<id>`)
+ * @param {HTMLElement} btnEl — the button to relabel while armed
+ * @param {Function} action — run on the confirming click
+ */
+let _pendingConfirm = null;
+export function twoStepConfirm(key, btnEl, action) {
+  if (_pendingConfirm?.key === key) {
+    clearTimeout(_pendingConfirm.timer);
+    _pendingConfirm = null;
+    action();
+    return;
+  }
+  if (_pendingConfirm) clearTimeout(_pendingConfirm.timer);
+  const original = btnEl.textContent;
+  btnEl.textContent = 'Confirm — click again';
+  btnEl.classList.add('bdp-danger-btn--armed');
+  _pendingConfirm = { key, timer: setTimeout(() => {
+    btnEl.textContent = original;
+    btnEl.classList.remove('bdp-danger-btn--armed');
+    _pendingConfirm = null;
+  }, 4000) };
+}
+
 // Expose the canonical toast utility globally so cross-tab listeners
 // (hierarchyCache.js) and recovery flows (errorHandler.js) can call it without
 // importing. Authoritative source — do not re-assign window.showToast elsewhere.

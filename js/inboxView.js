@@ -4,6 +4,7 @@
 // All writes funnel through storyWrites (spine). See candidate-import-index.md.
 
 import { esc } from './utils.js';
+import { parseCandidate, fallbackStories } from './candidateParse.mjs';
 import { REVIEW_STATE } from './constants.js';
 
 let _lastImportRun = null; // per-session mergeImport result → 'new' epic tags
@@ -110,9 +111,9 @@ const renderInbox = () => {
       <div class="inbox-header">
         <h2 style="border:none;margin:0;padding:0">📥 Inbox <span class="inbox-count">${items.length}</span></h2>
         <div class="inbox-actions">
-          <button class="btn-secondary btn-sm" onclick="window.inboxView.pickCandidatesFile()">Import candidates…</button>
+          <button class="btn-secondary btn-sm" onclick="window.inboxView.pickCandidatesFile()">Import candidates (.md) or cycle (.json)…</button>
           <button class="btn-secondary btn-sm" onclick="window.inboxView.pickHistoryFile()">Import history…</button>
-          <input type="file" id="inbox-candidates-file" accept=".json" style="display:none">
+          <input type="file" id="inbox-candidates-file" accept=".json,.md,text/markdown" multiple style="display:none">
           <input type="file" id="inbox-history-file" accept=".json" style="display:none">
         </div>
       </div>
@@ -177,12 +178,58 @@ const _wireCandidatesInput = () => {
   root.addEventListener('change', async (e) => {
     const input = e.target.closest('#inbox-candidates-file');
     if (!input) return;
-    const file = input.files[0];
-    if (!file) return;
+    const files = [...input.files];
+    if (!files.length) return;
     input.value = '';
+
+    // @intent .md files are parsed HERE, in the browser, by js/candidateParse.mjs
+    // — the same module scripts/parseCandidates.mjs uses, so there is one
+    // template parser, not two. The original import plan routed everything
+    // through an offline script on the assumption the parse needed an API key.
+    // It does not: only Notes->stories was ever LLM-assisted, and fallbackStories
+    // is a deterministic bullet split. The terminal is out of the common loop.
+    const mdFiles = files.filter(f => /\.md$/i.test(f.name));
+    if (mdFiles.length) {
+      const byFocus = new Map();
+      let skipped = 0;
+      for (const f of mdFiles) {
+        const parsed = parseCandidate(await f.text(), f.name);
+        if (parsed.skipped) { skipped++; continue; }
+        const focus = parsed.focus || '';
+        if (!byFocus.has(focus)) byFocus.set(focus, []);
+        byFocus.get(focus).push({
+          subFocus: parsed.subFocus,
+          epic: parsed.epic,
+          stories: fallbackStories(parsed.notesRaw),
+        });
+      }
+      if (!byFocus.size) {
+        window.showToast?.(`No candidates found — ${skipped} blank template(s) skipped.`, 'warning');
+        return;
+      }
+      // mergeImport takes ONE focus per payload, so a mixed selection runs once
+      // per focus rather than silently importing only the first one's.
+      let epics = 0;
+      for (const [focus, candidates] of byFocus) {
+        const res = await window.dataPortability.mergeImport({ version: 'candidates-1', focus, candidates });
+        if (res.ok) epics += res.created?.epics || 0;
+      }
+      window.showToast?.(`${mdFiles.length - skipped} candidate(s) across ${byFocus.size} focus(es) → ${epics} new epic(s)${skipped ? `, ${skipped} blank skipped` : ''}.`, 'success');
+      renderInbox();
+      return;
+    }
+
+    const file = files[0];
     let data;
     try { data = JSON.parse(await file.text()); }
     catch { window.showToast?.('Not valid JSON.', 'error'); return; }
+    // Dispatch on the contract version — the same picker now takes both the
+    // candidate batch and a parsed cycle folder, so seeding needs no console.
+    if (data?.version === 'cycle-1') {
+      await window.dataPortability.importCycle(data);
+      renderInbox();
+      return;
+    }
     const res = await window.dataPortability.mergeImport(data);
     if (res.ok) {
       _lastImportRun = { createdEpicIds: res.createdEpicIds || [] }; // tags are best-effort, per-session

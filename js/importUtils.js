@@ -23,7 +23,9 @@
 
 import DB from './db.js';
 
-/** The twelve stores covered by import. Metadata is excluded — it is never cleared on import. */
+/** The stores covered by import. Metadata is excluded — it is never cleared on import.
+ *  The strategic-layer stores (cycles, strategicSessions) are included so a full
+ *  backup/restore round-trips the whole strategic layer, not just the work tier. */
 const IMPORT_STORES = [
   DB.STORES.FOCUSES,
   DB.STORES.CALENDAR,
@@ -37,6 +39,8 @@ const IMPORT_STORES = [
   DB.STORES.TRAVEL_SEGMENTS,
   DB.STORES.LOCATION_PERIODS,
   DB.STORES.DAY_TYPE_OVERRIDES,
+  DB.STORES.CYCLES,
+  DB.STORES.STRATEGIC_SESSIONS,
 ];
 
 /**
@@ -52,7 +56,7 @@ export async function snapshotAllStores() {
 }
 
 /**
- * Restores all twelve stores from a snapshot produced by snapshotAllStores().
+ * Restores all stores in a snapshot produced by snapshotAllStores().
  * Clears then rewrites each store sequentially so failures identify the exact store.
  * Never throws — always returns a structured result.
  *

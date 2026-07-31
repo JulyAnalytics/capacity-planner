@@ -7,6 +7,7 @@
 
 import { readFileSync, writeFileSync, readdirSync } from 'fs';
 import { resolve, join, dirname } from 'path';
+import { parseCandidate, fallbackStories } from '../js/candidateParse.mjs';
 import { fileURLToPath } from 'url';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -52,89 +53,9 @@ const LLM = {
 //   ## Priority rank (within focus): [2]
 //   ## Notes:  →  bulleted list until next ## heading
 //   ## Status: [ ] captured  [x] scored  [ ] promoted  [ ] parked  [ ] killed
-const _bracket = (md, heading) => {
-  const m = md.match(new RegExp(`^##\\s*${heading}:\\s*\\[([^\\]]*)\\]`, 'mi'));
-  return m ? m[1].trim() : '';
-};
-const _headingValue = (md, heading) => {
-  // Value that may be bracketed or unbracketed (problem/outcome are often multi-line unbracketed).
-  const re = new RegExp(`^##\\s*${heading}:\\s*\\[?([^\\]\\n]*)\\]?`, 'mi');
-  const m = md.match(re);
-  return m ? m[1].trim() : '';
-};
-const _sizeFromCheckbox = (md) => {
-  const m = md.match(/^##\s*Rough size:\s*(.*)$/mi);
-  if (!m) return '';
-  const row = m[1];
-  const sizes = ['S', 'M', 'L', 'XL'];
-  for (const s of sizes) {
-    // [x] S  — match the checked box immediately before the size letter
-    if (new RegExp(`\\[x\\]\\s*${s}`, 'i').test(row)) return s;
-  }
-  return '';
-};
-const _wsjfFromTable = (md) => {
-  // WSJF is the last numeric cell of the last data row in the WSJF Scoring table.
-  const section = md.split(/^##\s*WSJF Scoring/im)[1];
-  if (!section) return '';
-  const rows = section.split('\n').filter(l => /^\s*\|/.test(l));
-  // Skip the header + separator rows; take the first data row, last numeric cell.
-  const dataRow = rows.find(r => !/^\s*\|[\s-]*-/.test(r) && !/UV/i.test(r));
-  if (!dataRow) return '';
-  const cells = dataRow.split('|').map(c => c.trim()).filter(Boolean);
-  const numeric = cells.map(c => c.match(/^\d+(\.\d+)?$/)?.[0]).filter(Boolean);
-  return numeric[numeric.length - 1] || '';
-};
-
-const parseCandidate = (md, filename) => {
-  const title    = _bracket(md, 'Working title');
-  const focus    = _headingValue(md, 'Focus') || _bracket(md, 'Focus');
-  const subFocus = _bracket(md, 'Sub-focus');
-  const problem  = _headingValue(md, 'One-line problem');
-  const outcome  = _headingValue(md, 'Rough outcome');
-  const size     = _sizeFromCheckbox(md);
-  const wsjf     = _wsjfFromTable(md);
-  const rank     = _bracket(md, 'Priority rank \\(within focus\\)');
-
-  // Blank template detection: the template's placeholders are bracketed lowercase
-  // tokens like [name], [sub-focus], [What problem does this solve?]. A candidate
-  // is blank if its title or sub-focus is a bracketed placeholder (still wrapped
-  // in []) or a known placeholder word, or both are empty.
-  const _isPlaceholder = (v) => !v || /^\[.*\]$/.test(v) || /^(name|sub-?focus|title|\[.*\])$/i.test(v);
-  const isBlank = _isPlaceholder(title) && _isPlaceholder(subFocus);
-  if (isBlank) return { skipped: true, filename };
-
-  // Notes section: everything under the Notes heading until the next ## heading
-  // or end-of-string. No `m` flag — `$` must mean true EOS, not end-of-line;
-  // `^` is replaced with `(?:^|\n)` so Notes: can appear mid-string.
-  const notesMatch = md.match(/(?:^|\n)##\s*Notes:\s*\n([\s\S]*?)(?=\n##\s|$)/i);
-  const notesRaw = (notesMatch?.[1] ?? '').trim();
-
-  // epic.vision is built deterministically — no LLM (strategic plan §Component 3.3).
-  const visionParts = [];
-  if (problem) visionParts.push(`Problem: ${problem}`);
-  if (outcome) visionParts.push(`Outcome: ${outcome}`);
-  const scoring = [wsjf && `WSJF ${wsjf}`, size && `Size ${size}`, rank && `Rank ${rank}`].filter(Boolean).join(' · ');
-  if (scoring) visionParts.push(scoring);
-
-  return {
-    skipped: false, filename, focus,
-    subFocus,
-    epic: { title, vision: visionParts.join('\n') },
-    notesRaw,
-  };
-};
-
-// ── Notes → stories: deterministic fallback (no key needed) ─────────────────
-const fallbackStories = (notesRaw) => {
-  if (!notesRaw) return [];
-  return notesRaw.split('\n')
-    .filter(l => !/^\s*(?:-{3,}|\*{3,}|_{3,})\s*$/.test(l))       // drop horizontal-rule separators first
-    .map(l => l.replace(/^\s*(?:[-*+•]|\d+[.)])\s*/, '').trim())  // strip bullet markers
-    .map(l => l.replace(/\*\*/g, ''))                              // strip bold
-    .filter(l => l && !/^\[.*\]$/.test(l))                         // drop empties + placeholders
-    .map(name => ({ name }));
-};
+// Deterministic template parse now lives in js/candidateParse.mjs so the
+// browser can run the identical logic on picked .md files (Inbox). This script
+// keeps only the optional LLM enrichment of Notes→stories on top of it.
 
 // ── Notes → stories: Anthropic Messages API (tool-use for structured output) ──
 const _anthropicStories = async (notesRaw, epicTitle) => {

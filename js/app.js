@@ -3,7 +3,6 @@
 import DB from './db.js';
 import { validateExternalInput } from './barricade.js';
 import { STORY_STATUS, EPIC_STATUS, FOCUS_STATUS, REVIEW_STATE, SPRINT_STATUS, STORY_SIZES, STORY_SIZE_LABELS, CHANNEL_CAPACITY_PLANNER } from './constants.js';
-import { deriveCapacityForDateRange } from './locationCapacity.js';
 import { deriveSprintMeta } from './sprintCapacity.js';
 
 // ── localStorage/sessionStorage fallback defaults ────────────────────────────
@@ -136,6 +135,18 @@ class ModalManager {
       if (item.reviewState === REVIEW_STATE.PROPOSED) updates.reviewState = REVIEW_STATE.APPROVED;
       const ok = await window.storyWrites.commitStoryUpdate(id, updates);
       if (ok) this.close();                       // on failure keep modal open (toast already shown)
+      return;
+    }
+
+    // Stage 2: epic edits funnel through the epic write spine (structured 'epic'
+    // emit + rollback + transition whitelist + promotion gate). app.saveEpic was
+    // the last unguarded path — ADR-0011's spine applies to every caller now.
+    if (type === 'epic') {
+      const updated = this._collectFormValues('epic', item);
+      if (!updated) return;                       // validation failed (blank name)
+      const { id, ...updates } = updated;
+      const ok = await window.epicWrites.commitEpicUpdate(id, updates);
+      if (ok) this.close();
       return;
     }
 
@@ -907,12 +918,22 @@ class CapacityManager {
 
   // ── F-0 Dynamic dropdown population ──────────────────────────────────────
 
+  // @deprecated route through window.epicWrites.commitEpicUpdate instead — the
+  // epic write spine (ADR-0011) enforces the transition whitelist and the
+  // business-case promotion gate on every caller. Retained as a thin delegating
+  // stub so any remaining direct caller (e.g. import paths that hand a full
+  // record) still go through the gate rather than re-inlining DB.put. Accepts a
+  // FULL record (legacy shape) and forwards only the changed fields.
   async saveEpic(epicData) {
-    await DB.put(DB.STORES.EPICS, epicData);
-    this.data.epics = await DB.getAll(DB.STORES.EPICS);
-    await window.invalidateCache('epics');
-    this.updateLastSaved();
-    NotificationRegistry.emit('epic');
+    if (!epicData?.id) return false;
+    const prev = this.data.epics.find(e => e.id === epicData.id);
+    const updates = {};
+    for (const [k, v] of Object.entries(epicData)) {
+      if (k === 'id') continue;
+      if (!prev || JSON.stringify(prev[k]) !== JSON.stringify(v)) updates[k] = v;
+    }
+    if (Object.keys(updates).length === 0) return true; // no-op
+    return window.epicWrites.commitEpicUpdate(epicData.id, updates);
   }
 
   // Cascading epic delete. The two-step confirm lives in the caller's UI
@@ -925,7 +946,7 @@ class CapacityManager {
       await DB.delete(DB.STORES.STORIES, story.id);
     }
     this.data.stories = this.data.stories.filter(s => s.epicId !== id);
-    await window.invalidateCache('epics');
+    await window.invalidateCache('epic');
     this.updateLastSaved();
     NotificationRegistry.emit('epic');
     this.showNotification('Epic deleted', 'success');
@@ -1018,6 +1039,12 @@ class CapacityManager {
     if (tabName === 'inbox') {
       activate('inbox');
       window.inboxView?.render();
+      return;
+    }
+
+    if (tabName === 'strategy') {
+      activate('strategy');
+      window.strategyView?.render();
       return;
     }
 
@@ -1153,97 +1180,13 @@ class CapacityManager {
   // side-effects fire for every caller. app.saveStory retired with them
   // (STATE.md 2026-07-07 deferral resolved).
 
-  // Analytics
+  // Analytics — extracted to js/analyticsView.js (strangler-fig cut #4).
+  // @intent this delegating stub stays so switchTab's branch is untouched. The
+  // extraction was the prerequisite for the Strategy tab, which needs its own
+  // switchTab branch; removing the call site as well would have made the
+  // extraction and the feature one change instead of two.
   generateAnalytics() {
-    const month = document.getElementById('analyticsMonth').value;
-    const week = document.getElementById('analyticsWeek').value;
-    const container = document.getElementById('analyticsReport');
-
-    let calendarData = this.data.calendar.filter(c => c.month === month);
-    if (week) calendarData = calendarData.filter(c => String(c.week) === week);
-
-    const year = new Date().getFullYear();
-    const startDate = new Date(year, parseInt(month) - 1, week ? (parseInt(week) - 1) * 7 + 1 : 1);
-    const endDate = week
-      ? new Date(year, parseInt(month) - 1, parseInt(week) * 7)
-      : new Date(year, parseInt(month), 0);
-
-    const periodStartIso = startDate.toISOString().slice(0, 10);
-    const periodEndIso   = endDate.toISOString().slice(0, 10);
-
-    const allLocPeriods  = this.data.locationPeriods || [];
-    const allOverrides   = this.data.dayTypeOverrides || [];
-
-    const periodsInRange = allLocPeriods.filter(p =>
-      p.startDate <= periodEndIso && p.endDate >= periodStartIso
-    );
-
-    if (calendarData.length === 0 && periodsInRange.length === 0) {
-      container.innerHTML = '<div class="alert alert-info">No data for this period.</div>';
-      return;
-    }
-
-    let planned, plannedPriority;
-    if (periodsInRange.length > 0) {
-      const derived = deriveCapacityForDateRange(
-        periodStartIso, periodEndIso, allLocPeriods, allOverrides
-      );
-      planned         = derived.total;
-      plannedPriority = derived.priority;
-    } else {
-      planned         = calendarData.reduce((s, w) => s + w.capacities.total, 0);
-      plannedPriority = calendarData.reduce((s, w) => s + w.capacities.priority, 0);
-    }
-
-    const stories = this.data.stories.filter(s => s.month === month);
-    const storyCapacity = stories.reduce((s, st) => s + (st.weight || 0), 0);
-
-    const logs = this.data.dailyLogs.filter(l => {
-      const d = new Date(l.date);
-      return d >= startDate && d <= endDate;
-    });
-
-    const actual = logs.reduce((s, l) => s + (l.actualCapacity || l.plannedCapacity || 0), 0);
-    const utilized = logs.reduce((s, l) => {
-      const logStories = l.stories || l.storyEfforts || [];
-      return s + logStories.reduce((sum, e) => sum + (e.timeSpent || e.effort || 0), 0);
-    }, 0);
-
-    const efficiency = actual > 0 ? (utilized / actual * 100) : 0;
-    const adherence = planned > 0 ? (actual / planned * 100) : 0;
-
-    container.innerHTML = `
-      <div class="analytics-section">
-        <h3>Capacity</h3>
-        <div class="metrics-grid">
-          <div class="metric-card"><div class="metric-label">Planned</div><div class="metric-value">${planned}</div><div class="metric-sublabel">blocks</div></div>
-          <div class="metric-card"><div class="metric-label">Actual</div><div class="metric-value">${actual}</div><div class="metric-sublabel">${(actual - planned) >= 0 ? '+' : ''}${(actual - planned).toFixed(1)} variance</div></div>
-          <div class="metric-card"><div class="metric-label">Utilized</div><div class="metric-value">${utilized}</div><div class="metric-sublabel">${efficiency.toFixed(0)}% efficiency</div></div>
-          <div class="metric-card"><div class="metric-label">Adherence</div><div class="metric-value">${adherence.toFixed(0)}%</div><div class="metric-sublabel">plan accuracy</div></div>
-        </div>
-      </div>
-      <div class="analytics-section">
-        <h3>Priority Breakdown</h3>
-        <div class="metrics-grid">
-          <div class="metric-card"><div class="metric-label">Priority Cap</div><div class="metric-value">${plannedPriority}</div><div class="metric-sublabel">blocks</div></div>
-          <div class="metric-card"><div class="metric-label">Stories Planned</div><div class="metric-value">${storyCapacity}</div><div class="metric-sublabel">${stories.length} stories</div></div>
-        </div>
-      </div>
-      ${logs.length > 0 ? `
-      <div class="analytics-section">
-        <h3>Daily Summary</h3>
-        <table><thead><tr><th>Date</th><th>Type</th><th>Cap</th><th>Used</th><th>Eff</th></tr></thead>
-        <tbody>${logs.sort((a, b) => a.date.localeCompare(b.date)).map(l => {
-          const cap = l.actualCapacity || l.plannedCapacity || 0;
-          const logStories = l.stories || l.storyEfforts || [];
-          const used = logStories.reduce((s, e) => s + (e.timeSpent || e.effort || 0), 0);
-          return `<tr>
-            <td>${new Date(l.date + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</td>
-            <td>${l.dayType}</td><td>${cap}</td><td>${used}</td>
-            <td>${cap > 0 ? Math.round(used / cap * 100) : 0}%</td>
-          </tr>`;
-        }).join('')}</tbody></table>
-      </div>` : '<p class="empty-state">No daily logs for this period</p>'}`;
+    return window.analyticsView.generateAnalytics();
   }
 
   // (Sidebar deleted — Inbox is a nav tab with its badge in the tab itself;

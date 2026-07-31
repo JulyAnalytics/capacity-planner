@@ -43,7 +43,13 @@ const NotificationRegistry = {
 
   emit(type, payload) {
     if (payload !== undefined) { this._dispatch(type, payload); return; }
-    this._pending?.add(type);
+    // @intent schedule BEFORE adding — _scheduleFlush is what allocates _pending.
+    // Reversed, the optional chain no-ops on the first payload-less emit of every
+    // synchronous turn and the microtask flushes an empty Set, silently dropping it.
+    // This ordering also makes the flush re-entrant: _scheduleFlush nulls _pending
+    // before dispatching, so a handler that emits during the flush allocates a fresh
+    // Set and schedules the next microtask instead of writing into the draining one.
     this._scheduleFlush();
+    this._pending.add(type);
   }
 };

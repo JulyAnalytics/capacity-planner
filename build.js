@@ -18,6 +18,7 @@ const JS_FILES = [
   'js/storyWrites.js',
   'js/storyLifecycle.js',
   'js/businessRules.js',
+  'js/epicWrites.js',
   'js/hierarchyCache.js',
   'js/contextDetection.js',
   'js/locationCapacity.js',
@@ -31,9 +32,15 @@ const JS_FILES = [
   'js/sprintManager.js',
   'js/sprintCapacity.js',
   'js/sprintAllocation.js',
+  'js/strategyModel.js',
+  'js/strategyTemplates.mjs',
+  'js/strategyWrites.js',
+  'js/strategyExport.js',
   'js/backlogView.js',
-  'js/storyAttachmentPanel.js',
+  'js/attachmentPanel.js',
   'js/backlogDetailPanel.js',
+  'js/strategyView.js',
+  'js/candidateParse.mjs',
   'js/inboxView.js',
   'js/barricade.js',
   'js/calendarView.js',
@@ -42,6 +49,7 @@ const JS_FILES = [
   'js/importUtils.js',
   'js/dataPortability.js',
   'js/triageQueue.js',
+  'js/analyticsView.js',
   'js/migrationRunner.js',
   'js/app.js',
 ];
@@ -55,6 +63,7 @@ const CSS_FILES = [
   'css/storyMapV2.css',
   'css/todayView.css',
   'css/companion.css',
+  'css/strategy.css',
 ];
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────

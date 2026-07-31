@@ -287,9 +287,14 @@ function getEpicsForSubFocus(subFocusId) {
   // Completed/archived epics are excluded: stories created into them are
   // invisible in the story map (design-review pass 2, N9). Reactivate the epic
   // first (detail panel) to file new work under it.
+  // Candidates are excluded for the same reason from the other direction — a
+  // candidate has not passed the business-case gate, so it must not appear as a
+  // filing destination in the creation modal (ADR-0011).
   return hierarchyCache.data.epics.filter(e =>
     e.subFocusId === subFocusId &&
-    e.status !== EPIC_STATUS.COMPLETED && e.status !== EPIC_STATUS.ARCHIVED);
+    e.status !== EPIC_STATUS.COMPLETED &&
+    e.status !== EPIC_STATUS.ARCHIVED &&
+    e.status !== EPIC_STATUS.CANDIDATE);
 }
 
 function getFocusById(focusId) {

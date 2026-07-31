@@ -29,13 +29,43 @@ export function normalizedEquals(a, b) {
   return normalize(a) === normalize(b);
 }
 
+// ── Fuzzy name similarity (Levenshtein) ──────────────────────────────────────
+// Single pure source for the "is this a near-duplicate of that?" question. The
+// same edit-distance metric dataPortability uses for sub-focus/epic resolve-or-
+// create (NEAR_MISS_THRESHOLD = 0.8, "Travel" vs "Travel Planning") and that the
+// Plan (line 55) asks coherence to use for cross-focus theme collisions. Pure so
+// strategyModel can import it without breaking its no-window/node-testable contract.
+
+/**
+ * Normalized Levenshtein similarity in [0,1]. 1 = identical, 0 = unrelated.
+ * Normalized (trim + lowercase) before comparing, matching normalize().
+ * @param {string} a
+ * @param {string} b
+ * @returns {number}
+ */
+export function nameSimilarity(a, b) {
+  a = normalize(a); b = normalize(b);
+  if (!a.length && !b.length) return 1;
+  if (!a.length || !b.length) return 0;
+  const m = Array.from({ length: a.length + 1 }, (_, i) => [i, ...Array(b.length).fill(0)]);
+  for (let j = 1; j <= b.length; j++) m[0][j] = j;
+  for (let i = 1; i <= a.length; i++)
+    for (let j = 1; j <= b.length; j++)
+      m[i][j] = Math.min(m[i-1][j] + 1, m[i][j-1] + 1, m[i-1][j-1] + (a[i-1] === b[j-1] ? 0 : 1));
+  return 1 - m[a.length][b.length] / Math.max(a.length, b.length);
+}
+
+/** Two names are a near-duplicate at ≥ this similarity. The sub-focus/epic
+ *  resolve-or-create precedent (dataPortability NEAR_MISS_THRESHOLD). */
+export const NEAR_MISS_THRESHOLD = 0.8;
+
 // ============================================================================
 // VALID VALUES (ENUMS)
 // ============================================================================
 
 export const VALID_STATUSES = {
   story:  ['backlog', 'active', 'completed', 'abandoned', 'blocked'],
-  epic:   ['planning', 'active', 'completed', 'archived'],
+  epic:   ['candidate', 'planning', 'active', 'completed', 'archived'],
   focus:  ['active', 'archived'],
   sprint: ['planning', 'active', 'completed'],
 };
@@ -79,12 +109,20 @@ const STORY_TRANSITIONS = {
 };
 
 const EPIC_TRANSITIONS = {
-  planning:  ['active', 'completed', 'archived'],
+  // candidate→planning IS the promotion gate (Ritual 3.4); it additionally
+  // requires a complete business case, which the whitelist cannot express —
+  // canPromoteEpic below carries that half. candidate→active is deliberately
+  // absent: promotion must pass through planning so the gate cannot be skipped.
+  candidate: ['planning', 'archived'],
+  planning:  ['candidate', 'active', 'completed', 'archived'],
   active:    ['planning', 'completed', 'archived'],
   completed: ['active', 'archived'],
   // ^ completed→planning blocked: cannot reopen a completed epic as planning.
   //   Use "active" or archiving workflows instead.
-  archived:  ['planning', 'active', 'completed'],
+  archived:  ['candidate', 'planning', 'active', 'completed'],
+  // ^ archived→candidate is the un-kill path: the spec archives killed
+  //   candidates with a rationale rather than deleting them, so they must be
+  //   revivable into the next cycle's pool.
   // REVIEW: archived→planning — resurrecting archived epics may need intent
   //   flagging (e.g., a "reactivated" marker). Currently allowed.
 };
@@ -133,6 +171,73 @@ export function canTransitionStatus(fromStatus, toStatus, entityType = 'story') 
     return { allowed: false, reason: `Transition ${fromStatus} → ${toStatus} not allowed` };
   }
 
+  return { allowed: true };
+}
+
+// ============================================================================
+// STRATEGIC SCORING + THE PROMOTION GATE (ADR-0011)
+// ============================================================================
+
+/**
+ * WSJF = (user value + time criticality + risk reduction) ÷ duration.
+ * The spec's Ritual 3.1 formula, computed rather than typed.
+ *
+ * @intent returns null, not 0, when the inputs are incomplete. A candidate with
+ * no duration yet is UNSCORED; scoring it 0 would sort it to the bottom of the
+ * ranking as though it had been judged worthless. Callers render null as "—".
+ * Division by zero is the same case: duration 0 is missing data, not infinity.
+ *
+ * @param {{uv:number, tc:number, rr:number, duration:number}} wsjf
+ * @returns {number|null} score rounded to 2dp, or null if unscored
+ */
+export function wsjfScore(wsjf) {
+  if (!wsjf) return null;
+  const { uv, tc, rr, duration } = wsjf;
+  const nums = [uv, tc, rr, duration].map(Number);
+  if (nums.some(n => !Number.isFinite(n))) return null;
+  const [u, t, r, d] = nums;
+  if (d <= 0) return null;
+  return Math.round(((u + t + r) / d) * 100) / 100;
+}
+
+// The five fields of the MVP spec's Epic Business Case. Order is the order the
+// spec asks them in, and the order the panel renders them.
+export const BUSINESS_CASE_FIELDS = ['problem', 'outcome', 'timeEstimate', 'goNoGo', 'measurement'];
+
+/**
+ * Which business-case fields are still blank. Empty array = complete.
+ * @returns {string[]} missing field names
+ */
+export function businessCaseMissing(epic) {
+  const bc = epic?.businessCase || {};
+  return BUSINESS_CASE_FIELDS.filter(f => !String(bc[f] ?? '').trim());
+}
+
+export function businessCaseComplete(epic) {
+  return businessCaseMissing(epic).length === 0;
+}
+
+/**
+ * The promotion gate: candidate → planning requires a complete business case.
+ *
+ * @intent this exists because canTransitionStatus takes no record — its
+ * signature is (from, to, entityType), so a whitelist physically cannot express
+ * "and the business case is filled in". The gate is therefore a second,
+ * record-aware predicate rather than an extra row in TRANSITION_MAP.
+ * @see ADR-0011
+ *
+ * @returns {{allowed:boolean, reason?:string, missing?:string[]}}
+ */
+export function canPromoteEpic(epic) {
+  if (!epic) return { allowed: false, reason: 'Epic not found' };
+  const missing = businessCaseMissing(epic);
+  if (missing.length) {
+    return {
+      allowed: false,
+      missing,
+      reason: `Business case incomplete — missing ${missing.join(', ')}`,
+    };
+  }
   return { allowed: true };
 }
 

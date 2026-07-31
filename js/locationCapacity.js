@@ -262,5 +262,8 @@ export function getSprintCoveringDate(dateStr, sprints) {
 }
 
 // @owns _locationCapacityUtils — date helpers (isoAddDays) shared with sprint capacity math.
+// Guarded so the pure modules that import this (strategyModel, businessRules via
+// their own tests) remain node-importable — the ADR-0012 "node-testable" contract
+// depends on this load path not touching window. No-op in the browser.
 
-window._locationCapacityUtils = { addDays: isoAddDays };
+if (typeof window !== 'undefined') window._locationCapacityUtils = { addDays: isoAddDays };

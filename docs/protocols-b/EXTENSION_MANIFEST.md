@@ -20,7 +20,7 @@ This is the friction heatmap. Before scoping a feature, scan this table. If the 
 | New view | MEDIUM | `build.js`, `js/app.js` (switchTab + NotificationRegistry listeners), new view module | ~200 | **Semi-automated** — 3 edit sites + new file |
 | New modal | MEDIUM | `build.js`, `js/app.js` (ModalManager), new modal module | ~100 | **Semi-automated** — 3 edit sites + new file |
 | New migration | LOW | `js/migrationRunner.js` (function + register in run()) | ~50 | **Single-file** — migrationRunner.js only |
-| New DB store | LOW | `js/db.js` (_TABLE_MAP + STORES + _cache + preloadAll), `js/auth.js` (_resetCache) | ~30 | **Mechanical** — exactly 5 edit sites, always the same |
+| New DB store | LOW | `js/db.js` (_TABLE_MAP + STORES + _cache + preloadAll), `js/auth.js` (_resetCache), `js/constants.js` (ENTITY_TO_STORE), `knowledge/annotations/schema.yaml` (`<store>._store:`) | ~30 | **Mechanical** — exactly 7 edit sites, always the same. The schema.yaml line is NOT optional: `doc-checks.mjs` fails the build without it. Add export/import parity too (`importUtils.IMPORT_STORES`, `dataPortability` export payload + KNOWN_STORE_KEYS + putAll, `barricade` `store:<name>`) or every export silently drops the store. |
 | New BroadcastChannel | LOW | `js/constants.js`, broadcaster module, listener module(s) | ~40 | **Semi-automated** — 1 constant + N subscribers |
 | Add field to existing entity | LOW | `js/dbValidator.js`, `js/creationModal.js`, `js/backlogDetailPanel.js`, `js/barricade.js` | ~40 | **Semi-automated** — 4 files, predictable |
 | Add validation rule | LOW | `js/dbValidator.js` (field check), `js/businessRules.js` (transition rule if status-related) | ~20 | **Single-file** (or 2 if business rules) |
@@ -39,7 +39,7 @@ The extraction itself gets its own task spec and is completed first.
 
 ## Current Friction Hotspots
 
-### app.js (~1961 lines)
+### app.js (1312 lines, verified 2026-07-28)
 - Tab switching switch/case (grows with every new tab)
 - ModalManager (grows with every new modal)
 - In-memory mutators for locationPeriod/dayTypeOverride/dailyLog
@@ -63,3 +63,4 @@ The extraction itself gets its own task spec and is completed first.
 |------|--------|----------------|
 | 2026-05-14 | Initial manifest | — |
 | 2026-07-19 | New DB store row corrected against the `import_queue` addition (14th store, ADR-0007): 5 mechanical edit sites, not 3 — the STORES enum and `_cache` seed in `js/db.js` were missing from the list | none (still LOW) |
+| 2026-07-28 | New DB store row corrected again against the strategic layer (`cycles` + `strategicSessions`, ADR-0012): **7** sites, not 5 — `ENTITY_TO_STORE` and the `schema.yaml` annotation were missing, and the latter is build-gated. app.js line count refreshed 1961→1312 after four strangler-fig extractions. Write-spine pattern (`storyWrites`/`epicWrites`/`strategyWrites`) now established for three stores — a fourth application should be cheaper than the "New entity type" HIGH rating suggests | none (store still LOW; entity type still HIGH) |

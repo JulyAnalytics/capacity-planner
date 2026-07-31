@@ -20,7 +20,7 @@ import {
   addToCache,
   invalidateCache
 } from './hierarchyCache.js';
-import { STORY_STATUS, EPIC_STATUS, FOCUS_STATUS, SPRINT_STATUS, STORY_SIZES, STORY_SIZE_LABELS } from './constants.js';
+import { STORY_STATUS, EPIC_STATUS, FOCUS_STATUS, SPRINT_STATUS, STORY_SIZES, STORY_SIZE_LABELS, HORIZON } from './constants.js';
 import { sprintLabel } from './utils.js';
 import { getMergedDefaults, saveCreationDefaults } from './contextDetection.js';
 import { validateEntity } from './dbValidator.js';
@@ -671,14 +671,21 @@ function getFormData() {
       const status   = document.getElementById('cm-story-status')?.value || STORY_STATUS.ACTIVE;
       const priority = document.getElementById('cm-story-priority')?.value || null;
       const epicId   = document.getElementById('story-epic')?.value || null;
-      const sprintId = document.getElementById('story-sprint')?.value || null;
-
-      // Derive focus name from epic.focusId via app helper
+      // @intent when no sprint is chosen, prefill from the parent epic's
+      // plannedSprintId — the roadmap sequenced the epic into that sprint
+      // (ADR-0013), and a story created under a promoted epic should inherit
+      // that intent rather than landing sprintless. An explicit picker choice
+      // always wins.
       let focusStr = '';
+      let plannedSprintId = null;
       if (epicId) {
         const epic = getEpicById(epicId);
-        if (epic) focusStr = window.app?.getFocusName(epic.focusId) || '';
+        if (epic) {
+          focusStr = window.app?.getFocusName(epic.focusId) || '';
+          plannedSprintId = epic.plannedSprintId || null;
+        }
       }
+      const sprintId = document.getElementById('story-sprint')?.value || plannedSprintId || null;
 
       const _peers = (window.app?.data?.stories || []).filter(s => (s.sprintId || null) === (sprintId || null));
       const _maxOrder = _peers.reduce((m, s) => Math.max(m, s.sortOrder ?? -1), -1);
@@ -724,6 +731,12 @@ function getFormData() {
         ...base,
         vision:     document.getElementById('cm-epic-vision')?.value || '',
         status:     document.getElementById('cm-epic-status')?.value || EPIC_STATUS.PLANNING,
+        // @intent new epics enter LATER, per the MVP spec's standing rule:
+        // "New ideas enter Later or Never first. Nothing enters Now without
+        // deliberate promotion." Without a default they land unset and are
+        // invisible to every horizon filter — which is what happened to the
+        // epics created after migrateEpicsToIncludeHorizon stamped its guard.
+        horizon:    HORIZON.LATER,
         focusId,
         subFocusId
       };

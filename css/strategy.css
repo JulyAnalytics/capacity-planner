@@ -1,0 +1,318 @@
+/* ── Strategic layer surfaces ────────────────────────────────────────────────
+   One stylesheet per surface (the todayView.css / storyMapV2.css / companion.css
+   convention). backlog.css is already 90 KB and styles.css 78 KB — neither is
+   extended here.
+
+   Every value below comes from an existing :root token. DESIGN_SYSTEM rule 1
+   (new CSS uses tokens) and the css-check gate both require it; no token is
+   born in this file. Colour is deliberately absent as an encoding channel —
+   rule 2 reserves it for the user's focus assignment, so cycle state is carried
+   by label, opacity and a dashed border instead of a hue.
+   @see ADR-0012, ADR-0013
+   ------------------------------------------------------------------------- */
+
+/* ── Calendar cycle band ─────────────────────────────────────────────────────
+   Sits above the sprint bars, mirroring .cal-loc-band's geometry exactly so the
+   three rows (cycle / sprint / location) read as one stack. Reuses the
+   --sprint-* family rather than introducing a cycle palette. */
+
+.cal-cycle-row {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  padding-block: var(--space-xs) 0;
+  padding-inline: 0;
+}
+
+.cal-cycle-spacer { height: 4px; }
+
+.cal-cycle-band {
+  margin-inline: 2px;
+  height: 14px;
+  border-radius: 3px;
+  display: flex;
+  align-items: center;
+  padding: 0 var(--space-sm);
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  cursor: pointer;
+  background: var(--sprint-bg, var(--bg-subtle));
+  border-left: 2px solid var(--sprint-border, var(--border));
+  color: var(--sprint-text, var(--text-secondary));
+}
+
+.cal-cycle-band:hover { opacity: 0.82; }
+
+/* A closed cycle is history, not a live container — dashed, dimmed, still
+   clickable so its frozen snapshot stays reachable. */
+.cal-cycle-band--closed {
+  border-left-style: dashed;
+  opacity: 0.6;
+}
+
+.cal-cycle-band--no-round-left  { border-start-start-radius: 0; border-end-start-radius: 0; border-left-width: 0; }
+.cal-cycle-band--no-round-right { border-start-end-radius: 0; border-end-end-radius: 0; }
+.cal-cycle-band--no-round-both  {
+  border-radius: 0;
+  border-left-width: 0;
+}
+
+/* ── Cycle detail panel ──────────────────────────────────────────────────── */
+
+.cy-progress-wrap {
+  height: 6px;
+  border-radius: 3px;
+  background: var(--bg-subtle);
+  overflow: hidden;
+  margin-block: var(--space-xs);
+}
+
+.cy-progress-bar {
+  height: 100%;
+  background: var(--primary);
+  transition: width 0.2s ease;
+}
+
+.cy-meta {
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+}
+
+.cy-list {
+  margin: 0;
+  padding-inline-start: var(--space-lg);
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+}
+
+.cy-list li { margin-block: 2px; }
+
+.cy-empty {
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+  font-style: italic;
+}
+
+/* Kill criterion — a standing decision, not a warning. Bordered, not filled:
+   a coloured block here would spend the colour budget rule 2 reserves. */
+.cy-kill {
+  border: 1px dashed var(--border);
+  border-radius: 4px;
+  padding: var(--space-sm);
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+}
+
+/* Focus thesis rows — target % against cycle-to-date actual. */
+.cy-focus-row {
+  display: grid;
+  grid-template-columns: 1fr auto auto;
+  gap: var(--space-sm);
+  align-items: center;
+  padding-block: var(--space-xs);
+  border-bottom: 1px solid var(--border);
+  font-size: var(--text-sm);
+}
+
+.cy-focus-row:last-child { border-bottom: 0; }
+.cy-focus-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cy-focus-target { color: var(--text-muted); font-size: var(--text-xs); }
+
+/* ── Backlog companion rail ──────────────────────────────────────────────────
+   Fills the Backlog's companion slot, which ADR-0010 specified and left unbuilt.
+   Prefix is cmp-* per DESIGN_SYSTEM rule 9; the slot's width and the container
+   query that reveals it both live in companion.css — nothing here overrides
+   them, so the "same slot" width invariant is untouched. */
+
+.cmp-cycle {
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: var(--space-md);
+  background: var(--bg-card);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+}
+
+.cmp-cycle-title {
+  font-size: var(--text-sm);
+  font-weight: 600;
+  color: var(--text-primary);
+  cursor: pointer;
+  text-align: start;
+  background: none;
+  border: 0;
+  padding: 0;
+}
+
+.cmp-cycle-title:hover { text-decoration: underline; }
+
+.cmp-cycle-thesis {
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+  display: -webkit-box;
+  -webkit-line-clamp: 4;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+/* ── Strategy tab ────────────────────────────────────────────────────────────
+   Tables here are grids, not <table>, matching the story-map/backlog idiom.
+   No colour encoding: above-the-line is a left border + weight, the cut line is
+   a rule with a label, and the business-case gate is a glyph (rule 2). */
+
+.sv-section { margin-block-end: var(--space-2xl); }
+.sv-h { font-size: var(--text-base); margin: 0 0 var(--space-xs); color: var(--text-primary); }
+.sv-h4 { font-size: var(--text-sm); margin: var(--space-md) 0 var(--space-xs); color: var(--text-primary); }
+.sv-hint { font-size: var(--text-xs); color: var(--text-muted); margin: 0 0 var(--space-sm); }
+.sv-hint-inline { font-weight: 400; color: var(--text-muted); font-size: var(--text-xs); }
+.sv-empty { font-size: var(--text-sm); color: var(--text-muted); margin: 0 0 var(--space-sm); }
+.sv-thesis { font-size: var(--text-sm); color: var(--text-secondary); max-inline-size: var(--measure-form); }
+
+.sv-cycle-link {
+  background: none; border: 0; padding: 0;
+  font: inherit; color: inherit; cursor: pointer; text-align: start;
+}
+.sv-cycle-link:hover { text-decoration: underline; }
+
+.sv-table { border: 1px solid var(--border); border-radius: 6px; overflow: hidden; }
+.sv-tr {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 4rem 4rem 6rem 5rem 5rem;
+  gap: var(--space-sm);
+  align-items: center;
+  padding: var(--space-xs) var(--space-sm);
+  border-bottom: 1px solid var(--border);
+  font-size: var(--text-sm);
+  min-block-size: var(--row-h);
+}
+.sv-tr:last-child { border-bottom: 0; }
+.sv-tr--head {
+  background: var(--bg-subtle);
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.sv-focus-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sv-rank { color: var(--text-muted); font-size: var(--text-xs); }
+
+/* Candidate rows use a 6-column track (rank/name/score/size/case/park-action);
+   the parked-queue rows drop the rank column. The pool tables set their own. */
+.sv-cand { grid-template-columns: 2.5rem minmax(0, 1fr) 4rem 3rem 2rem 4.5rem; }
+.sv-cand--above { border-inline-start: 2px solid var(--primary); font-weight: 600; }
+.sv-cand-name {
+  background: none; border: 0; padding: 0;
+  font: inherit; color: inherit; cursor: pointer; text-align: start;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.sv-cand-name:hover { text-decoration: underline; }
+.sv-rankcol, .sv-score, .sv-size, .sv-gate { color: var(--text-secondary); font-size: var(--text-xs); }
+
+/* Inline glyph+label action (park / promote). DESIGN_SYSTEM rule 2: no colour —
+   glyph + label only, matching the bdp-cmp-* vocabulary. Subtle until hovered. */
+.sv-icon-btn {
+  background: none; border: 1px solid transparent; border-radius: 4px;
+  padding: 1px var(--space-xs);
+  font-size: var(--text-xs); color: var(--text-secondary); cursor: pointer;
+}
+.sv-icon-btn:hover { border-color: var(--border); color: var(--text-primary); }
+
+.sv-cutline {
+  display: flex; align-items: center;
+  padding: var(--space-xs) var(--space-sm);
+  border-block: 1px dashed var(--border);
+  background: var(--bg-subtle);
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.sv-metrics { display: grid; grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr)); gap: 1px; background: var(--border); border: 1px solid var(--border); border-radius: 6px; overflow: hidden; }
+.sv-metric { background: var(--bg-card); padding: var(--space-sm) var(--space-md); display: flex; flex-direction: column; gap: 2px; }
+.sv-metric-label { font-size: var(--text-xs); color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.04em; }
+.sv-metric-val { font-size: var(--text-xl); font-weight: 600; color: var(--text-primary); }
+.sv-metric-sub { font-size: var(--text-xs); color: var(--text-muted); }
+
+.sv-create { display: flex; flex-wrap: wrap; gap: var(--space-sm); align-items: center; max-inline-size: var(--measure-form); }
+.sv-input { padding: var(--space-xs) var(--space-sm); border: 1px solid var(--border); border-radius: 4px; font-size: var(--text-sm); background: var(--bg-surface); color: var(--text-primary); }
+.sv-pool-focus { margin-block-end: var(--space-lg); }
+
+/* Theme + distribution rows carry their own tracks — the base .sv-tr grid is
+   sized for the six-column focus portfolio. */
+.sv-theme { grid-template-columns: 3rem minmax(0, 1fr) 8rem 5rem 5rem; }
+.sv-theme-prio { inline-size: 2.5rem; font-size: var(--text-sm); padding: 2px 4px; }
+.sv-dist  { grid-template-columns: minmax(0, 1fr) 4rem 4rem 4rem minmax(0, 1fr); }
+
+/* Ritual sequence strip — the six steps, horizontally, wrapping on narrow. */
+.sv-ritual-strip { display: flex; flex-wrap: wrap; gap: var(--space-sm); margin-block: var(--space-sm); }
+.sv-ritual {
+  display: flex; align-items: center; gap: var(--space-xs);
+  padding: var(--space-xs) var(--space-sm);
+  border: 1px solid var(--border); border-radius: 6px;
+  background: var(--bg-card); font-size: var(--text-xs);
+}
+.sv-ritual-n {
+  display: inline-flex; align-items: center; justify-content: center;
+  inline-size: 1.25rem; block-size: 1.25rem; border-radius: 50%;
+  background: var(--bg-subtle); color: var(--text-muted); font-weight: 600;
+}
+.sv-ritual-name { color: var(--text-primary); }
+.sv-ritual-kind { color: var(--text-muted); font-size: var(--text-xs); }
+/* One dashed underline distinguishes "done elsewhere" from "computed here" —
+   glyph/weight, never colour (rule 2). */
+.sv-ritual-kind--prose { text-decoration: underline dashed; text-underline-offset: 2px; }
+.sv-ritual-kind--computed { font-weight: 600; color: var(--text-secondary); }
+
+/* Cycle-head row: title + re-cut button on one line. */
+.sv-cycle-head-row { display: flex; align-items: center; justify-content: space-between; gap: var(--space-sm); }
+.sv-recut-btn { font-size: var(--text-xs); }
+
+/* Outcome funnel — horizontal bars, no colour encoding (rule 2): length is the
+   signal, the count is the label. */
+.sv-funnel { display: flex; flex-direction: column; gap: var(--space-xs); max-inline-size: var(--measure-form); }
+.sv-funnel-row { display: grid; grid-template-columns: 6rem 1fr 2.5rem; gap: var(--space-sm); align-items: center; }
+.sv-funnel-label { font-size: var(--text-xs); color: var(--text-muted); }
+.sv-funnel-track { block-size: 10px; border-radius: 5px; background: var(--bg-subtle); overflow: hidden; }
+.sv-funnel-fill { block-size: 100%; background: var(--primary); }
+.sv-funnel-n { font-size: var(--text-sm); font-weight: 600; color: var(--text-primary); text-align: end; }
+
+.sv-outcome  { grid-template-columns: minmax(0, 1fr) 4rem 4rem 4rem 4rem minmax(0, 1fr); }
+.sv-session  { grid-template-columns: minmax(0, 1fr) 6rem minmax(0, 1.5fr); }
+
+/* Sequencing + activation rows. */
+.sv-seq { grid-template-columns: minmax(0, 1fr) minmax(10rem, 14rem) 8rem; }
+.sv-seq-select { min-inline-size: 10rem; }
+.sv-activation { display: flex; flex-direction: column; gap: var(--space-xs); }
+.sv-activation-row { display: grid; grid-template-columns: 1.5rem minmax(0, 1fr) auto; gap: var(--space-sm); align-items: center; font-size: var(--text-sm); }
+
+/* Editable focus-thesis rows in the cycle panel. */
+.cy-focus-row--edit { grid-template-columns: minmax(0, 1fr) auto 5rem 3rem; }
+.cy-focus-class { font-size: var(--text-xs); }
+.cy-focus-target-input { inline-size: 4rem; font-size: var(--text-sm); padding: 2px 4px; }
+
+/* Cycle switcher — the hub's spine. Chips scroll horizontally; New cycle is
+   pinned to the right. No colour encoding (rule 2): the active chip is bordered. */
+.sv-switcher-row { display: flex; align-items: center; gap: var(--space-md); }
+.sv-chip-scroll { display: flex; gap: var(--space-xs); overflow-x: auto; flex: 1; min-inline-size: 0; padding-block: 2px; }
+.sv-cycle-chip {
+  display: inline-flex; flex-direction: column; align-items: flex-start;
+  gap: 1px; white-space: nowrap; cursor: pointer;
+  padding: var(--space-xs) var(--space-sm); border-radius: 6px;
+  border: 1px solid var(--border); background: var(--bg-surface);
+  font-size: var(--text-sm); color: var(--text-secondary);
+}
+.sv-cycle-chip:hover { border-color: var(--text-muted); }
+.sv-cycle-chip--on { border-color: var(--primary); border-width: 2px; color: var(--text-primary); font-weight: 600; }
+.sv-chip-dates { font-size: var(--text-xs); color: var(--text-muted); font-weight: 400; }
+.sv-new-btn { flex: none; }
+
+/* Editable cycle name/dates in the detail panel header. */
+.cy-dates-row { display: flex; align-items: center; gap: var(--space-xs); margin-block-start: var(--space-xs); flex-wrap: wrap; }
+.cy-date-input { font-size: var(--text-xs); padding: 2px 4px; border: 1px solid var(--border); border-radius: 4px; background: var(--bg-surface); color: var(--text-primary); }
+.cy-dates-sep { color: var(--text-muted); }

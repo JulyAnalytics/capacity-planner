@@ -26,17 +26,70 @@ export const REVIEW_STATE = {
   DISCARDED: 'discarded',
 };
 
+// 'candidate' is the strategic pre-commitment state (the spec's EpicCandidate):
+// captured/scored but not yet through the business-case gate. Deliberately a
+// STATUS, not a separate store — a candidate and its promoted epic being two
+// records is a drift bug waiting to happen. A candidate is invisible in the
+// backlog until it has stories (backlogView skips zero-story epics) and no
+// capacity read looks at epic status, so it costs nothing downstream.
+// @see ADR-0011
 export const EPIC_STATUS = {
+  CANDIDATE: 'candidate',
   PLANNING:  'planning',
   ACTIVE:    'active',
   COMPLETED: 'completed',
   ARCHIVED:  'archived',
 };
 
+// Where a candidate came from — the spec's generation_source. 'parked' is a
+// candidate carried forward from a previous cycle's below-the-line set.
+export const GENERATION_SOURCE = {
+  BRAINSTORM: 'brainstorm',
+  BACKLOG:    'backlog',
+  PARKED:     'parked',
+};
+
+// ── Epic horizon (Kanban horizon model, MVP spec) ─────────────────────────────
+// Keeps a three-year idea from competing for attention with a next-sprint story.
+// ABSENT = unclassified; seeded from status by migrateEpicsToIncludeHorizon.
+// 'next'/'later' are also where a parked strategic candidate carries to the next
+// cycle — there is no separate parked flag.
+export const HORIZON = {
+  NOW:   'now',
+  NEXT:  'next',
+  LATER: 'later',
+  NEVER: 'never',
+};
+
+export const HORIZON_LABELS = {
+  now:   'Now',
+  next:  'Next',
+  later: 'Later',
+  never: 'Never',
+};
+
 export const FOCUS_STATUS = {
   ACTIVE:   'active',
   ARCHIVED: 'archived',
 };
+
+// A focus's role WITHIN a cycle (the spec's Ritual 1.2 classification), stored on
+// cycle.focuses[].classification — distinct from FOCUS_STATUS, which is the
+// focus's own lifecycle. The spec constrains at most 5 'active-strategic' per
+// cycle; strategyModel.classificationCheck derives the violation.
+export const FOCUS_CLASSIFICATION = {
+  ACTIVE_STRATEGIC:   'active-strategic',
+  ACTIVE_MAINTENANCE: 'active-maintenance',
+  DORMANT:            'dormant',
+};
+
+export const FOCUS_CLASSIFICATION_LABELS = {
+  'active-strategic':   'Active · strategic',
+  'active-maintenance': 'Active · maintenance',
+  'dormant':            'Dormant',
+};
+
+export const MAX_ACTIVE_STRATEGIC = 5;
 
 export const SPRINT_STATUS = {
   PLANNING:   'planning',
@@ -94,6 +147,8 @@ export const ENTITY_TO_STORE = {
   priority:        'priorities',
   dailyLog:        'dailyLogs',
   monthlyPlan:     'monthlyPlans',
+  cycle:           'cycles',
+  strategicSession: 'strategicSessions',
 };
 
 // ── BroadcastChannel names (R03) ───────────────────────────────────────────
@@ -107,11 +162,41 @@ export const CHANNEL_HIERARCHY_SYNC   = 'hierarchy-cache-sync';
 export const CHANNEL_CAPACITY_PLANNER = 'capacity_planner';
 
 /**
+ * Post an entity change on the capacity_planner channel.
+ *
+ * The counterpart to listenCapacityPlannerChannel — constants.js's own rule is
+ * "define the channel here first, then add its listener and broadcaster", so
+ * both halves belong in this file. Consolidated from locationManager's private
+ * copy when strategyWrites needed the same thing and the build's duplicate-decl
+ * gate (correctly) refused a second definition.
+ *
+ * Opens, posts and closes: a BroadcastChannel never delivers to the object that
+ * posted, but two objects in the SAME tab do hear each other, so a long-lived
+ * handle would need every listener to filter the writer's own messages. Callers
+ * that still need that (strategyWrites, whose listener is a different object)
+ * put a `sourceTab` in `data` and check it.
+ *
+ * @param {string} entity — must match a branch in listenCapacityPlannerChannel
+ * @param {string} action — 'created' | 'updated' | 'deleted' | 'upserted'
+ * @param {object} data
+ */
+export function postCapacityPlannerChange(entity, action, data) {
+  if (typeof BroadcastChannel === 'undefined') return;
+  try {
+    const ch = new BroadcastChannel(CHANNEL_CAPACITY_PLANNER);
+    ch.postMessage({ entity, action, data });
+    ch.close();
+  } catch (err) {
+    console.error('Failed to post on capacity_planner channel:', err);
+  }
+}
+
+/**
  * Listen on the capacity_planner BroadcastChannel for cross-tab sync.
  * Callers provide handler callbacks for each entity type so the same
  * channel-initialization logic isn't duplicated.
  *
- * @param {{ onSprint, onLocationPeriod, onDayTypeOverride }} handlers
+ * @param {{ onSprint, onLocationPeriod, onDayTypeOverride, onCycle }} handlers
  */
 export function listenCapacityPlannerChannel(handlers) {
   if (typeof BroadcastChannel === 'undefined') return;
@@ -124,6 +209,7 @@ export function listenCapacityPlannerChannel(handlers) {
       const h = entity === 'sprint' ? handlers.onSprint
               : entity === 'locationPeriod' ? handlers.onLocationPeriod
               : entity === 'dayTypeOverride' ? handlers.onDayTypeOverride
+              : entity === 'cycle' ? handlers.onCycle
               : null;
       if (h) h(action, data);
     };

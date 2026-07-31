@@ -7,7 +7,9 @@
     "parse:candidates": "node scripts/parseCandidates.mjs",
     "docs:generate": "node scripts/docgen.mjs",
     "docs:check": "node scripts/doc-checks.mjs && node scripts/css-check.mjs",
-    "css:check": "node scripts/css-check.mjs"
+    "css:check": "node scripts/css-check.mjs",
+    "parse:cycle": "node scripts/parseCycle.mjs",
+    "test": "node tests/t-phase2.mjs && node tests/t-phase4.mjs && node tests/t-funnel.mjs && node tests/t-final.mjs"
   },
   "dependencies": {
     "cssnano": "^7",

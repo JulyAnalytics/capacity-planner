@@ -100,8 +100,9 @@ async function activateStory(storyId) {
   if (story.epicId) {
     const epic = (window.app?.data?.epics || []).find(e => e.id === story.epicId);
     if (epic && epic.status === EPIC_STATUS.PLANNING) {
-      epic.status = EPIC_STATUS.ACTIVE;
-      await window.app.saveEpic(epic);
+      // silent: an auto-transition the user did not request must not toast at them.
+      await window.epicWrites.commitEpicUpdate(
+        epic.id, { status: EPIC_STATUS.ACTIVE }, { silent: true });
     }
   }
   return true;
@@ -138,6 +139,13 @@ async function _unblockDependents(storyId) {
 async function checkEpicCompletion(epicId) {
   const epic = (window.app?.data?.epics || []).find(e => e.id === epicId);
   if (!epic || epic.status === EPIC_STATUS.ARCHIVED) return;
+  // @intent a candidate never auto-completes. Without this, finishing the stories
+  // under an unpromoted candidate would flip it straight to `completed` and it
+  // would exit the strategic pool having never passed the business-case gate —
+  // silently, since the transition candidate→completed is not even whitelisted,
+  // so the spine would reject the write and the epic would sit in a state the UI
+  // claims is done. Promote it first (ADR-0011).
+  if (epic.status === EPIC_STATUS.CANDIDATE) return;
 
   const epicStories = _stories().filter(s => s.epicId === epicId);
   if (epicStories.length === 0) return;
@@ -146,9 +154,10 @@ async function checkEpicCompletion(epicId) {
     s.status === STORY_STATUS.COMPLETED || s.status === STORY_STATUS.ABANDONED);
 
   if (allDone && epic.status !== EPIC_STATUS.COMPLETED) {
-    epic.status = EPIC_STATUS.COMPLETED;
-    epic.completedAt = new Date().toISOString();
-    await window.app.saveEpic(epic);
+    await window.epicWrites.commitEpicUpdate(epic.id, {
+      status: EPIC_STATUS.COMPLETED,
+      completedAt: new Date().toISOString(),
+    }, { silent: true });
     window.showToast?.(`Epic "${epic.name}" auto-completed!`, 'success');
   }
 }

@@ -4,11 +4,11 @@
 
 > Pure structure derived from source. Counts are read from live code.
 
-- **DB.STORES count:** 14
-- **Supabase tables:** 13 (+ 1 localStorage-only `metadata`)
-- **ENTITY_TO_STORE count:** 11
-- **JS_FILES (build order) count:** 36
-- **MIGRATIONS count:** 17
+- **DB.STORES count:** 16
+- **Supabase tables:** 15 (+ 1 localStorage-only `metadata`)
+- **ENTITY_TO_STORE count:** 13
+- **JS_FILES (build order) count:** 44
+- **MIGRATIONS count:** 20
 
 ## Stores ↔ entities ↔ tables
 
@@ -28,12 +28,14 @@
 | LOCATION_PERIODS | `locationPeriods` | `location_periods` | `locationPeriod` |
 | DAY_TYPE_OVERRIDES | `dayTypeOverrides` | `day_type_overrides` | `dayTypeOverride` |
 | IMPORT_QUEUE | `importQueue` | `import_queue` | — |
+| CYCLES | `cycles` | `cycles` | `cycle` |
+| STRATEGIC_SESSIONS | `strategicSessions` | `strategic_sessions` | `strategicSession` |
 
 ## Enums + values
 
 **STORY_STATUS** (5): `backlog` · `active` · `completed` · `abandoned` · `blocked`
 
-**EPIC_STATUS** (4): `planning` · `active` · `completed` · `archived`
+**EPIC_STATUS** (5): `candidate` · `planning` · `active` · `completed` · `archived`
 
 **FOCUS_STATUS** (2): `active` · `archived`
 
@@ -53,20 +55,23 @@
 | stem | sites |
 |---|---|
 | `${prefix}-{…}` | `utils.js:215` |
-| `${type}-{…}` | `creationModal.js:665`, `dataPortability.js:291`, `dataPortability.js:54` |
-| `ai-{…}` | `app.js:1096`, `app.js:426`, `backlogDetailPanel.js:656`, `dataPortability.js:71` |
-| `att-{…}` | `storyAttachmentPanel.js:90`, `triageQueue.js:69` |
-| `bdp-ai-input-{…}` | `backlogDetailPanel.js:651` |
-| `capacity-data-{…}` | `dataPortability.js:103` |
-| `crypto.randomUUID(){…}` | `locationManager.js:24`, `sprintManager.js:45`, `utils.js:30` |
-| `cv-dt-val-{…}` | `calendarView.js:1175` |
-| `focus-{…}` | `app.js:822`, `migrationRunner.js:186` |
+| `${type}-{…}` | `creationModal.js:665`, `dataPortability.js:397`, `dataPortability.js:43` |
+| `ai-{…}` | `app.js:1157`, `app.js:437`, `backlogDetailPanel.js:931`, `dataPortability.js:60` |
+| `att-{…}` | `attachmentPanel.js:130`, `triageQueue.js:69` |
+| `bdp-ai-input-{…}` | `backlogDetailPanel.js:926` |
+| `capacity-data-{…}` | `dataPortability.js:101` |
+| `crypto.randomUUID(){…}` | `dataPortability.js:322`, `locationManager.js:24`, `sprintManager.js:45`, `strategyView.js:737`, `strategyWrites.js:217`, `strategyWrites.js:243`, `utils.js:30` |
+| `cv-dt-val-{…}` | `calendarView.js:1238` |
+| `cycle-{…}` | `dataPortability.js:322`, `strategyView.js:737` |
+| `focus-{…}` | `app.js:860`, `migrationRunner.js:186` |
 | `loc-{…}` | `locationManager.js:24` |
 | `log-{…}` | `dailyLogOverlay.js:161`, `dailyLogOverlay.js:186`, `dailyLogOverlay.js:309`, `dailyLogOverlay.js:425`, `todayView.js:35` |
-| `plan-{…}` | `db.js:429`, `db.js:438`, `db.js:453`, `db.js:485`, `db.js:497`, `db.js:512` |
+| `plan-{…}` | `db.js:437`, `db.js:446`, `db.js:461`, `db.js:493`, `db.js:505`, `db.js:520` |
+| `session-{…}` | `strategyWrites.js:217`, `strategyWrites.js:243` |
 | `sf-{…}` | `migrationRunner.js:16`, `migrationRunner.js:30` |
 | `snapshot-{…}` | `errorHandler.js:136` |
-| `tab-{…}` | `hierarchyCache.js:39` |
+| `tab-{…}` | `hierarchyCache.js:39`, `strategyWrites.js:32` |
+| `theme-{…}` | `dataPortability.js:347`, `migrationRunner.js:787` |
 
 ## Build order (JS_FILES)
 
@@ -80,32 +85,40 @@
 8. `js/storyWrites.js`
 9. `js/storyLifecycle.js`
 10. `js/businessRules.js`
-11. `js/hierarchyCache.js`
-12. `js/contextDetection.js`
-13. `js/locationCapacity.js`
-14. `js/locationManager.js`
-15. `js/errorHandler.js`
-16. `js/dbValidator.js`
-17. `js/accessibility.js`
-18. `js/performance.js`
-19. `js/mobileOptimizations.js`
-20. `js/creationModal.js`
-21. `js/sprintManager.js`
-22. `js/sprintCapacity.js`
-23. `js/sprintAllocation.js`
-24. `js/backlogView.js`
-25. `js/storyAttachmentPanel.js`
-26. `js/backlogDetailPanel.js`
-27. `js/inboxView.js`
-28. `js/barricade.js`
-29. `js/calendarView.js`
-30. `js/dailyLogOverlay.js`
-31. `js/todayView.js`
-32. `js/importUtils.js`
-33. `js/dataPortability.js`
-34. `js/triageQueue.js`
-35. `js/migrationRunner.js`
-36. `js/app.js`
+11. `js/epicWrites.js`
+12. `js/hierarchyCache.js`
+13. `js/contextDetection.js`
+14. `js/locationCapacity.js`
+15. `js/locationManager.js`
+16. `js/errorHandler.js`
+17. `js/dbValidator.js`
+18. `js/accessibility.js`
+19. `js/performance.js`
+20. `js/mobileOptimizations.js`
+21. `js/creationModal.js`
+22. `js/sprintManager.js`
+23. `js/sprintCapacity.js`
+24. `js/sprintAllocation.js`
+25. `js/strategyModel.js`
+26. `js/strategyTemplates.mjs`
+27. `js/strategyWrites.js`
+28. `js/strategyExport.js`
+29. `js/backlogView.js`
+30. `js/attachmentPanel.js`
+31. `js/backlogDetailPanel.js`
+32. `js/strategyView.js`
+33. `js/candidateParse.mjs`
+34. `js/inboxView.js`
+35. `js/barricade.js`
+36. `js/calendarView.js`
+37. `js/dailyLogOverlay.js`
+38. `js/todayView.js`
+39. `js/importUtils.js`
+40. `js/dataPortability.js`
+41. `js/triageQueue.js`
+42. `js/analyticsView.js`
+43. `js/migrationRunner.js`
+44. `js/app.js`
 
 ## Migration list (ordered, with guard keys)
 
@@ -126,4 +139,7 @@
 15. `migrateDedupeEpicsByName` — guard: `migration:dedupe-subfocuses`
 16. `migrateDedupeSprintsByWindow` — guard: `migration:dedupe-epics`
 17. `migrateStoriesToSizeWeight` — guard: `migration:size-weight`
+18. `migrateEpicsToIncludeHorizon` — guard: `migration:epic-horizon`
+19. `migrateEpicsToStructuredScoring` — guard: `migration:epic-wsjf-v2`
+20. `migrateThemesFromCandidateText` — guard: `migration:focus-themes`
 

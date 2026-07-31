@@ -3,7 +3,7 @@
 
 import DB from './db.js';
 import { validateLocationPeriod, addDays } from './locationCapacity.js';
-import { CHANNEL_CAPACITY_PLANNER } from './constants.js';
+import { postCapacityPlannerChange } from './constants.js';
 
 class ValidationError extends Error {
   constructor(message, field) {
@@ -26,7 +26,7 @@ export async function createLocationPeriod(periodData) {
     ...periodData,
   };
   await DB.put(DB.STORES.LOCATION_PERIODS, period);
-  _broadcast('locationPeriod', 'created', period);
+  postCapacityPlannerChange('locationPeriod', 'created', period);
 
   const sprints = await DB.getAll(DB.STORES.SPRINTS);
   return {
@@ -43,7 +43,7 @@ export async function updateLocationPeriod(id, fields) {
   const errors     = validateLocationPeriod(updated, allPeriods);
   if (errors.length) throw new ValidationError(errors[0].message, errors[0].field);
   await DB.put(DB.STORES.LOCATION_PERIODS, updated);
-  _broadcast('locationPeriod', 'updated', updated);
+  postCapacityPlannerChange('locationPeriod', 'updated', updated);
 
   const sprints    = await DB.getAll(DB.STORES.SPRINTS);
   const oldAffected = _sprintsOverlapping(sprints, existing.startDate, existing.endDate);
@@ -64,7 +64,7 @@ export async function deleteLocationPeriod(id) {
     .map(s => s.id);
 
   await DB.delete(DB.STORES.LOCATION_PERIODS, id);
-  _broadcast('locationPeriod', 'deleted', period);
+  postCapacityPlannerChange('locationPeriod', 'deleted', period);
   return { affectedSprintIds };
 }
 
@@ -89,7 +89,7 @@ export async function setDayTypeOverride(date, dayType, note = null) {
     updatedAt: new Date().toISOString(),
   };
   await DB.put(DB.STORES.DAY_TYPE_OVERRIDES, override);
-  _broadcast('dayTypeOverride', 'upserted', override);
+  postCapacityPlannerChange('dayTypeOverride', 'upserted', override);
   return override;
 }
 
@@ -97,16 +97,12 @@ export async function clearDayTypeOverride(date) {
   const existing = await DB.get(DB.STORES.DAY_TYPE_OVERRIDES, date); // O(1)
   if (!existing) return;
   await DB.delete(DB.STORES.DAY_TYPE_OVERRIDES, date);
-  _broadcast('dayTypeOverride', 'deleted', existing);
+  postCapacityPlannerChange('dayTypeOverride', 'deleted', existing);
 }
 
-// ── Broadcast helper ───────────────────────────────────────────────────────────
-
-function _broadcast(entity, action, data) {
-  const ch = new BroadcastChannel(CHANNEL_CAPACITY_PLANNER);
-  ch.postMessage({ entity, action, data });
-  ch.close();
-}
+// Broadcast helper moved to constants.postCapacityPlannerChange — it sits beside
+// listenCapacityPlannerChannel, which is where constants.js says the channel's
+// broadcaster belongs, and strategyWrites needs the same behaviour.
 
 // ── Global export ──────────────────────────────────────────────────────────────
 // @owns locationManager — location-period CRUD (id `loc-<uuid>`); emits locationPeriod.

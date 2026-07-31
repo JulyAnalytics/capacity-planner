@@ -6,26 +6,15 @@
 
 import DB from './db.js';
 import { validateExternalInput } from './barricade.js';
-import { validateStory, normalize } from './businessRules.js';
-import { REVIEW_STATE, STORY_STATUS, EPIC_STATUS } from './constants.js';
+import { validateStory, normalize, nameSimilarity as _nameSimilarity, NEAR_MISS_THRESHOLD } from './businessRules.js';
+import { REVIEW_STATE, STORY_STATUS, EPIC_STATUS, HORIZON } from './constants.js';
 import { snapshotAllStores, restoreFromSnapshot } from './importUtils.js';
 
-// Name-similarity for sub-focus near-miss detection (normalized Levenshtein ratio).
-// Arrow consts on purpose — build.js's duplicate-decl guard only scans column-0
-// `function`/`const X = function`/`class` declarations.
+// Name-similarity + threshold now live in businessRules.js as the single pure
+// source (nameSimilarity / NEAR_MISS_THRESHOLD), imported above. Re-exported on
+// window.dataPortability below for js/triageQueue.js, which resolves at call time
+// rather than load time — kept that way to avoid a load-order dependency.
 const _norm = (s) => normalize(s);
-const _nameSimilarity = (a, b) => {
-  a = _norm(a); b = _norm(b);
-  if (!a.length && !b.length) return 1;
-  if (!a.length || !b.length) return 0;
-  const m = Array.from({ length: a.length + 1 }, (_, i) => [i, ...Array(b.length).fill(0)]);
-  for (let j = 1; j <= b.length; j++) m[0][j] = j;
-  for (let i = 1; i <= a.length; i++)
-    for (let j = 1; j <= b.length; j++)
-      m[i][j] = Math.min(m[i-1][j] + 1, m[i][j-1] + 1, m[i-1][j-1] + (a[i-1] === b[j-1] ? 0 : 1));
-  return 1 - m[a.length][b.length] / Math.max(a.length, b.length);
-};
-const NEAR_MISS_THRESHOLD = 0.8; // "Travel" vs "Travel Planning" flags; unrelated names don't
 
 // ── Import serialization ──────────────────────────────────────────────────────
 // @intent mergeImport / attachNewStoryToEpic resolve-or-create sub-focuses and
@@ -80,6 +69,13 @@ const dataPortability = {
   // MOVED VERBATIM from CapacityManager.exportData (this.data→app.data, this.showNotification→app.showNotification).
   async exportData() {
     const app = window.app;
+    // @intent the strategic-layer stores live in strategyWrites' own cache, not
+    // app.data (ADR-0012 — the feature's app.js diff is zero). A whole-data export
+    // must read them from there or the backup silently drops the entire strategic
+    // layer (the report's D1). Hydrate is idempotent; if it hasn't run the cache
+    // is [] and the export still round-trips, just without cycles until re-import.
+    const sw = window.strategyWrites;
+    if (sw && !sw.isHydrated()) await sw.hydrate().catch(() => {});
     const data = {
       focuses: app.data.focuses,
       calendar: app.data.calendar,
@@ -93,8 +89,10 @@ const dataPortability = {
       travelSegments: app.data.travelSegments,
       locationPeriods: app.data.locationPeriods,
       dayTypeOverrides: app.data.dayTypeOverrides,
+      cycles: sw?.all?.() || [],
+      strategicSessions: sw?.allSessions?.() || [],
       exportedAt: new Date().toISOString(),
-      version: 5
+      version: 6
     };
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
@@ -114,7 +112,8 @@ const dataPortability = {
     const app = window.app;
     const KNOWN_STORE_KEYS = ['focuses', 'calendar', 'priorities', 'subFocuses',
                               'epics', 'stories', 'dailyLogs', 'monthlyPlans',
-                              'sprints', 'travelSegments', 'locationPeriods', 'dayTypeOverrides'];
+                              'sprints', 'travelSegments', 'locationPeriods', 'dayTypeOverrides',
+                              'cycles', 'strategicSessions'];
     const reader = new FileReader();
     reader.onload = async (e) => {
       let data;
@@ -157,6 +156,8 @@ const dataPortability = {
       const validTravelSegments   = _gateStore(data.travelSegments,   'store:travelSegments');
       const validLocationPeriods  = _gateStore(data.locationPeriods,  'store:locationPeriods');
       const validDayTypeOverrides = _gateStore(data.dayTypeOverrides, 'store:dayTypeOverrides');
+      const validCycles           = _gateStore(data.cycles,           'store:cycles');
+      const validSessions         = _gateStore(data.strategicSessions, 'store:strategicSessions');
 
       const domainRejections = [];
       const barricadePassedStories = _gateStore(data.stories ?? [], 'store:stories');
@@ -201,6 +202,7 @@ const dataPortability = {
         await DB.clear(DB.STORES.SUB_FOCUSES); await DB.clear(DB.STORES.EPICS); await DB.clear(DB.STORES.STORIES);
         await DB.clear(DB.STORES.DAILY_LOGS); await DB.clear(DB.STORES.MONTHLY_PLANS); await DB.clear(DB.STORES.SPRINTS);
         await DB.clear(DB.STORES.TRAVEL_SEGMENTS); await DB.clear(DB.STORES.LOCATION_PERIODS); await DB.clear(DB.STORES.DAY_TYPE_OVERRIDES);
+        await DB.clear(DB.STORES.CYCLES); await DB.clear(DB.STORES.STRATEGIC_SESSIONS);
 
         if (validFocuses.length > 0)    await DB.putAll(DB.STORES.FOCUSES,     validFocuses);
         if (validCalendar.length > 0)   await DB.putAll(DB.STORES.CALENDAR,    validCalendar);
@@ -214,6 +216,8 @@ const dataPortability = {
         if (validTravelSegments.length > 0)   await DB.putAll(DB.STORES.TRAVEL_SEGMENTS,    validTravelSegments);
         if (validLocationPeriods.length > 0)  await DB.putAll(DB.STORES.LOCATION_PERIODS,   validLocationPeriods);
         if (validDayTypeOverrides.length > 0) await DB.putAll(DB.STORES.DAY_TYPE_OVERRIDES, validDayTypeOverrides);
+        if (validCycles.length > 0)           await DB.putAll(DB.STORES.CYCLES,              validCycles);
+        if (validSessions.length > 0)         await DB.putAll(DB.STORES.STRATEGIC_SESSIONS,  validSessions);
       } catch (writeErr) {
         console.error('Import write error:', writeErr);
         const restore = await restoreFromSnapshot(snapshot);
@@ -231,6 +235,13 @@ const dataPortability = {
       // change (design-review pass 2, N7). Rebuild the hierarchy index, then
       // re-render whatever view is open.
       await window.invalidateCache('focuses');
+      // @intent the strategic-layer stores were just overwritten in IndexedDB but
+      // strategyWrites holds its own in-memory cache (ADR-0012); force a re-fetch
+      // so the Calendar band and Strategy tab reflect the restored cycles, then
+      // emit so any open strategy surface re-renders off the fresh cache.
+      const sw = window.strategyWrites;
+      if (sw) await sw.hydrate(true).catch(() => {});
+      NotificationRegistry.emit('cycle');
       app.switchTab(app.currentTab);
 
       if (totalRejected > 0) {
@@ -259,6 +270,101 @@ const dataPortability = {
   mergeImport(data) {
     // Serialized against every other import-create path — see _withImportLock.
     return _withImportLock(() => this._mergeImportImpl(data));
+  },
+
+  // ── Cycle seeding (contract: cycle-import.json, version 'cycle-1') ──────────
+  // Ingests scripts/parseCycle.mjs output: the cycle record, its focus theses,
+  // and each focus's themes. Replaces the console paste that seeding needed
+  // before this existed.
+  //
+  // Candidates are NOT imported here — they already have a path through
+  // mergeImport('candidates-1'), and duplicating it would give two writers for
+  // the same records.
+  //
+  // Idempotent by (name, startDate): re-running does not create a second cycle.
+  // Themes dedup by normalized name within their focus, the same rule
+  // GEOMETRY's "one record per name within a focus" states for triage.
+  async importCycle(data) {
+    const app = window.app;
+    const result = { ok: false, created: { cycles: 0, themes: 0 }, reused: { cycles: 0, themes: 0 }, unmatchedFocuses: [], errors: [] };
+
+    if (!data || data.version !== 'cycle-1') {
+      app.showNotification(`Cycle import rejected: expected version "cycle-1", got "${data?.version}".`, 'error');
+      return result;
+    }
+    const c = data.cycle || {};
+    if (!c.name || !c.startDate || !c.endDate) {
+      app.showNotification('Cycle import rejected: parsed cycle is missing name or dates.', 'error');
+      return result;
+    }
+
+    return _withImportLock(async () => {
+      await window.strategyWrites.hydrate(true);
+      const byName = (n) => (app.data.focuses || []).find(f => _norm(f.name) === _norm(n));
+
+      // Focus theses from the weighting table, matched to real focus records.
+      const focuses = [];
+      for (const w of (data.weighting || [])) {
+        const f = byName(w.focusName);
+        if (!f) { result.unmatchedFocuses.push(w.focusName); continue; }
+        focuses.push({
+          focusId: f.id, rank: w.rank, targetPct: w.targetPct,
+          strategicRole: w.strategicRole || '', status: 'committed',
+        });
+      }
+
+      const existing = window.strategyWrites.all()
+        .find(x => _norm(x.name) === _norm(c.name) && x.startDate === c.startDate);
+      if (existing) {
+        result.reused.cycles = 1;
+      } else {
+        const ok = await window.strategyWrites.commitCycle({
+          id: `cycle-${crypto.randomUUID()}`,
+          name: c.name, startDate: c.startDate, endDate: c.endDate,
+          status: c.status || 'active',
+          thesis: c.thesis || '',
+          endState: c.endState || [], constraints: c.constraints || [],
+          nonGoals: c.nonGoals || [], killCriterion: c.killCriterion || '',
+          focuses, createdAt: new Date().toISOString(),
+        }, { sessionKind: 'backfill' });   // ADR-0013: seeded cycle → backfill session, not full
+        // commitCycle toasts its own reason (overlap, bad dates) — surface it.
+        if (!ok) { result.errors.push('Cycle rejected by validateCycle — see the toast.'); return result; }
+        result.created.cycles = 1;
+      }
+
+      // Themes hang off the FOCUS, not the cycle, so they carry forward (ADR-0012).
+      for (const fx of (data.focuses || [])) {
+        const focus = byName(fx.focusName);
+        if (!focus || !fx.themes?.length) continue;
+        const themes = [...(focus.themes || [])];
+        let dirty = false;
+        for (const t of fx.themes) {
+          if (!t.name) continue;
+          if (themes.some(x => _norm(x.name) === _norm(t.name))) { result.reused.themes++; continue; }
+          const sf = (app.data.subFocuses || [])
+            .find(x => x.focusId === focus.id && _norm(x.name) === _norm(t.subFocusName || ''));
+          themes.push({
+            id: `theme-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+            name: t.name, hypothesis: t.hypothesis || '',
+            memberIdeas: t.memberIdeas || [],
+            subFocusId: sf?.id || null,
+            status: 'committed',
+          });
+          dirty = true; result.created.themes++;
+        }
+        if (dirty) await app.saveFocus({ ...focus, themes });
+      }
+
+      result.ok = true;
+      const bits = [
+        result.created.cycles ? `cycle "${c.name}" created` : `cycle "${c.name}" already present`,
+        `${result.created.themes} theme(s) added`,
+        result.reused.themes ? `${result.reused.themes} already there` : null,
+        result.unmatchedFocuses.length ? `no focus match for: ${result.unmatchedFocuses.join(', ')}` : null,
+      ].filter(Boolean);
+      app.showNotification(bits.join(' · '), 'success');
+      return result;
+    });
   },
 
   async _mergeImportImpl(data) {
@@ -329,8 +435,15 @@ const dataPortability = {
               || liveEpics.find(e => e.focusId === focus.id && _norm(e.name) === _norm(cand.epic.title));
       if (epic) { result.reused.epics++; }
       else {
+        // Structured scoring rides alongside vision when the parser supplies it
+        // (ADR-0011). Spread conditionally so an older `candidates-1` payload
+        // without these keys still creates a clean record.
         epic = { id: newId('epic'), name: cand.epic.title, vision: cand.epic.vision || '',
-                 status: EPIC_STATUS.PLANNING, focusId: focus.id, subFocusId: sf.id,
+                 status: EPIC_STATUS.PLANNING, horizon: HORIZON.LATER, focusId: focus.id, subFocusId: sf.id,
+                 ...(cand.epic.wsjf         ? { wsjf: cand.epic.wsjf } : {}),
+                 ...(cand.epic.roughSize    ? { roughSize: cand.epic.roughSize } : {}),
+                 ...(cand.epic.generationSource ? { generationSource: cand.epic.generationSource } : {}),
+                 ...(cand.epic.businessCase ? { businessCase: cand.epic.businessCase } : {}),
                  createdAt: now(), updatedAt: now() };
         const gate = validateExternalInput('store:epics', epic);
         if (!gate.valid) { result.rejected.push({ type: 'epic', name: epic.name, errors: gate.errors }); continue; }
@@ -581,5 +694,5 @@ const dataPortability = {
 dataPortability._nameSimilarity = _nameSimilarity;
 dataPortability.NEAR_MISS_THRESHOLD = NEAR_MISS_THRESHOLD;
 
-// @owns dataPortability — whole-store export (version 5) + destructive full-replace import; every data-in/out path lives here. attachNewStoryToEpic adds a single-story additive path for an already-matched epic (spec-triage queue); _nameSimilarity exposed for js/triageQueue.js reuse.
+// @owns dataPortability — whole-store export (version 6, includes the strategic-layer stores cycles + strategicSessions) + destructive full-replace import; every data-in/out path lives here. attachNewStoryToEpic adds a single-story additive path for an already-matched epic (spec-triage queue); _nameSimilarity exposed for js/triageQueue.js reuse (now defined in businessRules as the single source).
 window.dataPortability = dataPortability;

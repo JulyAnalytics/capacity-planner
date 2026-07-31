@@ -18,6 +18,53 @@ caller — badge, panel, modal, drag, future assistant — inherits both rules.
 Status changes from the UI route through `window.storyLifecycle` so completion
 side-effects (timeSpent, dependent unblocking, epic auto-completion) fire.
 
+## Epic write spine
+
+All writes to the `epics` store funnel through `window.epicWrites`
+(`commitEpicUpdate` / `commitEpicScore` / `commitBusinessCaseField`). See ADR-0011.
+`commitEpicUpdate` is the enforcement seam: it rejects status changes outside
+`businessRules.canTransitionStatus`'s epic whitelist (previously dead code — the
+function had one caller, hardcoded to `'story'`) and empty names, and it enforces
+the promotion gate out of `candidate` via `canPromoteEpic`, which the whitelist
+cannot express because `canTransitionStatus` never sees the record.
+`js/app.js saveEpic` survives as a legacy path; nothing new may use it.
+
+## Rank is derived, never stored
+
+Strategic ordering is `wsjfScore(epic.wsjf)` descending, computed at render. A
+persisted `priorityRank` would be cycle-scoped data on a cycle-less record, so the
+next cycle's re-scoring would silently destroy the last cycle's ranking. For the
+same reason `wsjfScore` returns `null`, not `0`, for incomplete inputs — unscored
+and worthless must not sort alike.
+
+## Cycles never overlap; gaps are legitimate
+
+At most one cycle may cover a given date. `strategyModel.validateCycle` enforces
+it on every write, reusing `validateLocationPeriod`'s overlap loop including its
+shared-boundary tolerance (a cycle ending the day the next begins is a handover).
+Two cycles covering one day is the stacked-bands defect the "One sprint per
+window" invariant exists to prevent, one tier up. A date covered by NO cycle is
+normal — the spec puts a planning window between cycles — so `cycleForSprint`
+returns `null` rather than erroring. See ADR-0012.
+
+## Cycle membership is derived, then frozen
+
+A sprint belongs to the cycle its window most **overlaps**; no `cycleId` foreign
+key exists on sprints, epics or stories. Overlap, not containment: sprints snap
+to Monday while cycles start on any weekday, so containment drops the first and
+last sprint of every cycle. On close, membership is snapshotted onto
+`cycle.closedSnapshot` and the dates lock — re-deriving a closed cycle, or
+re-dating one, is a defect, because it retroactively rewrites which sprints it
+contained and every metric computed from them. `sprintsInCycle` is the seam that
+picks derivation vs snapshot; new call sites must go through it.
+
+## Sequencing proposes; only approval writes the schedule
+
+Roadmap sequencing writes `session.proposedRoadmap`. Approval writes
+`epic.plannedSprintId` — planning intent at epic level. `story.sprintId` remains
+the only field capacity math reads, and is written only through
+`storyWrites.commitStoryUpdate`. See ADR-0013.
+
 ## Cache topology
 
 `DB._cache` is the authoritative read cache (shallow-copied to callers).

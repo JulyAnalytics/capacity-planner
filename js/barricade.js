@@ -261,6 +261,26 @@ const SCHEMAS = {
     return errors;
   },
 
+  // Strategic layer (ADR-0012/0013) — JSONB blobs like the other stores, so the
+  // schema only pins the identity fields; the data column holds the full record.
+  'store:cycles': (data) => {
+    const errors = [];
+    if (!_requireObject(data, errors)) return errors;
+    _requireString(data, 'id', errors);
+    _requireString(data, 'name', errors);
+    _requireString(data, 'startDate', errors);
+    _requireString(data, 'endDate', errors);
+    return errors;
+  },
+
+  'store:strategicSessions': (data) => {
+    const errors = [];
+    if (!_requireObject(data, errors)) return errors;
+    _requireString(data, 'id', errors);
+    _requireString(data, 'cycleId', errors);
+    return errors;
+  },
+
   // --------------------------------------------------------------------------
   // local: schemas — localStorage and sessionStorage values
   // --------------------------------------------------------------------------

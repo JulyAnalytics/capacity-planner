@@ -6,7 +6,7 @@
     <title>Capacity Planner</title>
     <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
     <link rel="dns-prefetch" href="https://cdn.jsdelivr.net">
-    <link rel="stylesheet" href="dist/styles.5dd59a58.min.css">
+    <link rel="stylesheet" href="dist/styles.0961dcbd.min.css">
   </head>
 <body>
     <!-- Auth Overlay — shown when no session exists -->
@@ -42,6 +42,7 @@
             <button class="nav-tab" data-tab="backlog">Backlog</button>
             <button class="nav-tab" data-tab="storymap">Story Map</button>
             <button class="nav-tab" data-tab="inbox">Inbox <span id="tab-inbox-badge" class="tab-badge" style="display:none"></span></button>
+            <button class="nav-tab" data-tab="strategy">Strategy</button>
             <button class="nav-tab" data-tab="analytics">Analytics</button>
         </nav>
 
@@ -99,6 +100,9 @@
         <!-- Inbox — review queue for proposed stories; rendered by inboxView.js -->
         <div id="inbox" class="tab-content panel-expanded"></div>
 
+        <!-- Strategy — the cockpit for the computed rituals (ADR-0013). -->
+        <div id="strategy" class="tab-content panel-expanded"></div>
+
     </main>
 
     <!-- Backlog detail panel -->
@@ -130,6 +134,6 @@
     </div>
 
     <script defer src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-    <script defer src="dist/app.930160a8.min.js"></script>
+    <script defer src="dist/app.50fc99d8.min.js"></script>
   </body>
 </html>

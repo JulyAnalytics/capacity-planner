@@ -561,6 +561,9 @@ const MIGRATIONS = [
   migrateDedupeEpicsByName,
   migrateDedupeSprintsByWindow,
   migrateStoriesToSizeWeight,
+  migrateEpicsToIncludeHorizon,
+  migrateEpicsToStructuredScoring,
+  migrateThemesFromCandidateText,
 ];
 
 // ── ADR-0009: collapse three effort fields into one ──────────────────────────
@@ -597,6 +600,218 @@ async function migrateStoriesToSizeWeight(DB) {
     key: 'migration:size-weight', value: true, timestamp: new Date().toISOString(),
   });
   console.log(`migrateStoriesToSizeWeight: ${changed} of ${stories.length} stories re-weighted onto the S/M/L/XL scale`);
+}
+
+// ── Horizon seeding (Now / Next / Later / Never) ─────────────────────────────
+// @intent seed from status rather than leaving every epic unclassified. The
+// horizon filter's whole value is separating a three-year idea from next
+// sprint's work; shipping it against 100% unclassified data would show an empty
+// result for every choice and read as broken. active→now / planning→next is the
+// weakest defensible mapping; completed and archived stay unset because a
+// horizon on finished work is noise, not signal.
+async function migrateEpicsToIncludeHorizon(DB) {
+  const metadata = await DB.get(DB.STORES.METADATA, 'migration:epic-horizon');
+  if (metadata?.value) return;
+
+  const SEED = { [EPIC_STATUS.ACTIVE]: HORIZON.NOW, [EPIC_STATUS.PLANNING]: HORIZON.NEXT };
+  const epics = await DB.getAll(DB.STORES.EPICS);
+  const dirty = [];
+  for (const epic of epics) {
+    if (epic.horizon) continue;            // never overwrite a deliberate choice
+    const seeded = SEED[epic.status];
+    if (!seeded) continue;
+    epic.horizon = seeded;
+    dirty.push(epic);
+  }
+  if (dirty.length) await DB.putAll(DB.STORES.EPICS, dirty);
+
+  await DB.put(DB.STORES.METADATA, {
+    key: 'migration:epic-horizon', value: true, timestamp: new Date().toISOString(),
+  });
+  console.log(`migrateEpicsToIncludeHorizon: ${dirty.length} of ${epics.length} epics seeded a horizon from status`);
+}
+
+// ── Un-flatten the imported strategic scoring (ADR-0011) ─────────────────────
+// The candidate importer deliberately folded WSJF, size, rank, problem and
+// outcome into `epic.vision` as prose to avoid a schema change
+// (architecture-proposals/strategic-import-plan.md). That made the scoring
+// unsortable, uncomputable and undisplayable. This reads it back out into
+// structured fields.
+//
+// @intent `vision` is left intact rather than rewritten. It is the human-readable
+// record and the only copy of any text this parser does not recognise; a lossy
+// rewrite driven by a best-effort regex is not a trade worth making.
+//
+// @intent the WSJF *score* in the text is ignored and only its inputs are kept —
+// the score is derived by wsjfScore(). The real corpus proves why: candidate_02
+// records "WSJF 25" for (8+9+7)÷1, which is 24. Importing the stated score would
+// import the arithmetic error with it.
+function _parseVisionScoring(vision) {
+  const text = String(vision || '');
+  if (!text) return null;
+  const out = {};
+
+  const problem = text.match(/^\s*Problem:\s*(.+)$/mi);
+  const outcome = text.match(/^\s*Outcome:\s*(.+)$/mi);
+  if (problem) out.problem = problem[1].trim();
+  if (outcome) out.outcome = outcome[1].trim();
+
+  // "WSJF 18 (UV6/TC6/RR6, 1wk)" — the parenthesised inputs are only present on
+  // rows imported AFTER scripts/parseCandidates.mjs was fixed to carry them.
+  // Rows imported before that carry a bare "WSJF 25", whose inputs are
+  // unrecoverable: infinitely many (uv,tc,rr,duration) produce any given total.
+  // @intent a bare composite is deliberately NOT stored. wsjfScore() derives the
+  // score from inputs, so persisting a second, underived number would create a
+  // rival score path — and an unreliable one, since the stated totals in the
+  // corpus are hand-computed and wrong (candidate_02: 25 for (8+9+7)/1 = 24).
+  // Those epics keep their vision text and are re-scored on the next import.
+  const parts = text.match(/UV\s*([\d.]+)\s*\/\s*TC\s*([\d.]+)\s*\/\s*RR\s*([\d.]+)/i);
+  const dur   = text.match(/,\s*([\d.]+)\s*wk/i);
+  if (parts && dur) {
+    out.wsjf = {
+      uv: Number(parts[1]),
+      tc: Number(parts[2]),
+      rr: Number(parts[3]),
+      duration: Number(dur[1]),
+    };
+  }
+
+  const size = text.match(/Size\s+(XL|S|M|L)\b/i);
+  if (size) out.roughSize = size[1].toUpperCase();
+
+  return Object.keys(out).length ? out : null;
+}
+
+// @intent guard key is `-v2`. v1 shipped with a regex written against the
+// strategic-import plan's ILLUSTRATIVE vision string rather than against what
+// scripts/parseCandidates.mjs actually emitted, so it required "UV8/TC9/RR7"
+// where prod only ever held "WSJF 25 · Size L · Rank 1". It matched nothing,
+// migrated zero epics, and set its guard — so a fix under the old key would
+// never run. Bumping the key is the whole repair.
+async function migrateEpicsToStructuredScoring(DB) {
+  const metadata = await DB.get(DB.STORES.METADATA, 'migration:epic-wsjf-v2');
+  if (metadata?.value) return;
+
+  const epics = await DB.getAll(DB.STORES.EPICS);
+  const dirty = [];
+  for (const epic of epics) {
+    if (epic.wsjf || epic.businessCase) continue;   // already structured
+    const parsed = _parseVisionScoring(epic.vision);
+    if (!parsed) continue;
+
+    if (parsed.wsjf) epic.wsjf = parsed.wsjf;
+    if (parsed.roughSize) epic.roughSize = parsed.roughSize;
+    if (parsed.problem || parsed.outcome) {
+      epic.businessCase = {
+        ...(epic.businessCase || {}),
+        ...(parsed.problem ? { problem: parsed.problem } : {}),
+        ...(parsed.outcome ? { outcome: parsed.outcome } : {}),
+      };
+    }
+    dirty.push(epic);
+  }
+  if (dirty.length) await DB.putAll(DB.STORES.EPICS, dirty);
+
+  await DB.put(DB.STORES.METADATA, {
+    key: 'migration:epic-wsjf-v2', value: true, timestamp: new Date().toISOString(),
+  });
+  const scored = dirty.filter(e => e.wsjf).length;
+  console.log(`migrateEpicsToStructuredScoring: ${dirty.length} of ${epics.length} epics un-flattened from vision text (${scored} with recoverable WSJF inputs; the rest keep vision text and re-score on next import)`);
+}
+
+// ── Harvest parent-theme strings into focus.themes (the brief's third migration) ──
+// The candidate importer (parseCandidates/candidateParse) folded a candidate's
+// "## Parent theme:" into the epic's notes/vision text rather than a structured
+// field, so themes that arrived via that path were never turned into
+// focus.themes[] records — they existed only as prose on the epic. This reads
+// them back out into the structured theme array on the epic's focus, minting a
+// theme id each new name needs, and links the epic via themeId.
+//
+// @intent a SAFETY NET, not the primary path. The primary path is importCycle /
+// parseCycle, which emits structured themes directly. STATE.md records that the
+// candidate import was never run against prod, so on most installs this migration
+// is a no-op that merely sets its guard. It exists so that any install that DID
+// import candidates before structured themes shipped ends up with the same
+// focus.themes[] a fresh importCycle would produce — no re-import required.
+//
+// Idempotent: a name that already exists on its focus (normalized match, the
+// importCycle rule) is reused, not re-created. An epic that already has a
+// themeId is left alone.
+async function migrateThemesFromCandidateText(DB) {
+  const metadata = await DB.get(DB.STORES.METADATA, 'migration:focus-themes');
+  if (metadata?.value) return;
+
+  const epics = await DB.getAll(DB.STORES.EPICS);
+  const focuses = await DB.getAll(DB.STORES.FOCUSES);
+
+  // Pull a parent-theme name out of an epic's free text. The candidate template
+  // wrote "## Parent theme: [Name]"; candidateParse also carried a bare themeName
+  // on parsed candidates that may have been written through. Bracketed or bare.
+  const themeNameFrom = (epic) => {
+    if (epic.themeName && String(epic.themeName).trim()) return String(epic.themeName).trim();
+    const text = [epic.vision, epic.notes, epic.description].filter(Boolean).join('\n');
+    const m = text.match(/##\s*Parent theme:\s*\[?([^\]\n]*)\]?/i);
+    return m ? m[1].trim() : '';
+  };
+  const isPlaceholder = (v) => !v || /^(name|theme name|\[.*\])$/i.test(v);
+
+  // Group candidate-imported epics by focus → theme name.
+  const byFocus = new Map(); // focusId -> Map(normName -> {name, epicIds:[]})
+  for (const epic of epics) {
+    if (epic.themeId) continue;                       // already linked
+    const name = themeNameFrom(epic);
+    if (isPlaceholder(name) || !epic.focusId) continue;
+    if (!byFocus.has(epic.focusId)) byFocus.set(epic.focusId, new Map());
+    const focusThemes = byFocus.get(epic.focusId);
+    const key = name.trim().toLowerCase();
+    if (!focusThemes.has(key)) focusThemes.set(key, { name, epicIds: [] });
+    focusThemes.get(key).epicIds.push(epic.id);
+  }
+
+  const focusWrites = [];
+  const epicWrites = [];
+  const focusById = new Map(focuses.map(f => [f.id, f]));
+  let themesCreated = 0;
+
+  for (const [focusId, themeMap] of byFocus) {
+    const focus = focusById.get(focusId);
+    if (!focus) continue;                             // orphan epic, no focus to hang on
+    const themes = [...(focus.themes || [])];
+    const existing = new Map(themes.map(t => [t.name.trim().toLowerCase(), t]));
+    let dirty = false;
+    for (const { name, epicIds } of themeMap.values()) {
+      const key = name.trim().toLowerCase();
+      let theme = existing.get(key);
+      if (!theme) {
+        theme = {
+          id: `theme-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`,
+          name, hypothesis: '', memberIdeas: [], subFocusId: null, status: 'committed',
+        };
+        themes.push(theme); existing.set(key, theme); themesCreated++; dirty = true;
+      }
+      for (const epicId of epicIds) {
+        epicWrites.push({ id: epicId, themeId: theme.id });
+      }
+    }
+    if (dirty) focusWrites.push({ ...focus, themes });
+  }
+
+  // Apply: focus writes (with new theme arrays), then stamp themeId on each epic.
+  if (focusWrites.length) await DB.putAll(DB.STORES.FOCUSES, focusWrites);
+  if (epicWrites.length) {
+    const epicById = new Map(epics.map(e => [e.id, e]));
+    for (const { id, themeId } of epicWrites) {
+      const epic = epicById.get(id);
+      if (epic && !epic.themeId) { epic.themeId = themeId; }
+    }
+    await DB.putAll(DB.STORES.EPICS, [...new Set(epicWrites.map(w => w.id))]
+      .map(id => epicById.get(id)).filter(Boolean));
+  }
+
+  await DB.put(DB.STORES.METADATA, {
+    key: 'migration:focus-themes', value: true, timestamp: new Date().toISOString(),
+  });
+  console.log(`migrateThemesFromCandidateText: ${themesCreated} theme(s) created across ${focusWrites.length} focus(es); ${epicWrites.length} epic(s) linked to a theme`);
 }
 
 const MigrationRunner = {
