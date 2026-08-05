@@ -76,3 +76,55 @@
     makes the element a containing block for `position: fixed` descendants, and
     an inactive (`display: none`) container makes every `@container` query read
     false — so the un-queried default must be the narrow state.
+13. **A shared header rule + `flex-direction: column` is a trap.** `align-items`
+    governs the *cross* axis, so a rule written for row headers silently
+    shrink-wraps and centres a column one. `.bl-sprint-hdr` inherited
+    `align-items: center` this way and rendered at **420px of 1856px (23%)**,
+    with its `flex: 1` spacer unable to push anything. Any header that opts into
+    `column` must restate `align-items: stretch` and say why.
+14. **A collapsed drop zone stays a drop zone.** Empty priority bands collapse to
+    their label row, but `.bl-band-body` — the element SortableJS is bound to —
+    must survive as the inline remainder of that row, never be removed or
+    replaced. Two consequences to preserve when touching this: the collapse is
+    driven by `:has()` **in CSS on purpose**, because the cross-drop success path
+    does not re-render (verified: inserting a row flips the band to `column` and
+    removing it flips back, with no render pass); and the collapsed height is
+    `var(--row-h)`, which the `(pointer: coarse)` block already raises to 44px —
+    so never hard-code it. Equally, an empty *section* must keep its bands rather
+    than swap them for a message, or stories can no longer be dragged **into** a
+    sprint whose own stories are filtered out.
+15. **Collapsed by-sprint sections ship empty and bind no drag machinery.**
+    Bodies render with `data-bl-filled="0"` and are built by `_fillSectionBody`
+    on first expand (~19ms; `DB.getAll` serves from cache); Sortable binds only
+    outside `.bl-hidden`, and collapsing destroys that section's instances.
+    Measured: 2305 → 386 DOM nodes and 65 → 5 Sortable instances. Two invariants
+    for anyone touching this: **unhide before binding** (`_initSprintSortables`
+    skips `.bl-hidden`, so the class must come off first), and any code that
+    reads a section's rows must tolerate their absence — `_refreshRowContent`
+    already no-ops on a missing row, and a section is rebuilt from current data
+    on expand, so a patch missed while hidden cannot leave it stale.
+16. **Indicators live in shared columns, sized by content.** Every sprint header
+    draws from one set of columns declared on `#bl-list`, reached by **three
+    nested levels of `subgrid`** (list → section → header → tier) because each
+    sprint is its own subtree. `auto` tracks size to the widest instance, so
+    each indicator type aligns down the page with no JS measuring and nothing
+    hard-coded. Three ways to break it, all silent: omitting a cell (the next
+    one slides into its column — always emit, even empty); letting a subgrid
+    declare its own `column-gap` (it then stops inheriting the parent's and its
+    interior tracks shift — every level restates it); and giving one header a
+    different border/padding from another (subgrid tracks are offset by the
+    container's own box, which is why `.bl-backlog-hdr` is structurally
+    identical to a sprint header rather than merely similar).
+17. **A sprint's number is DERIVED, never read from the record.** Stored
+    `sprintNumber` is not unique — `_incrementSprintCounter` is `max + 1` over a
+    *cached* store, so concurrent tabs mint duplicates (real data has three
+    sprints numbered 1, on different windows, which the dedupe migration
+    correctly leaves alone). `sprintLabel` / `sprintShortLabel` in `utils.js`
+    derive position from start date and are **the only** way a sprint is named.
+    Never interpolate `sprint.sprintNumber` into UI text.
+18. **A default that depends on a record must be passed that record everywhere.**
+    `_getSectionExpanded(type, id, sprint)` defaults an untoggled sprint to
+    `status === ACTIVE`. The render passed `sprint`; `_toggleSection` did not, so
+    the two disagreed for exactly one section and the **active sprint took two
+    clicks to collapse** — the first wrote "expanded" onto an already-open
+    section. If a default reads from an argument, every caller must supply it.

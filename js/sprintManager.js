@@ -155,7 +155,30 @@ async function _resolveOrCreateImpl(dateStr) {
 
 // ── Counter management ────────────────────────────────────────────────────────
 
+/**
+ * Next sprint number: max + 1 over a FRESH read.
+ *
+ * @intent the fresh read is the whole point. DB.getAll serves from cache, and a
+ * tab that had been open while another tab created a sprint computed max() over
+ * a list missing it — minting a duplicate. Real data carries three sprints
+ * numbered 1 this way. The cross-tab handler in hierarchyCache now invalidates
+ * on the broadcast, so the cache should already be correct; this second
+ * invalidation is deliberate belt-and-braces, because this is the one caller
+ * where staleness silently corrupts stored data rather than just showing
+ * something out of date. A cached read costs nothing to redo; a duplicate
+ * number is permanent.
+ *
+ * RESIDUAL RISK, stated honestly: this narrows the window but cannot close it.
+ * Two tabs that both fetch before either writes still compute the same number —
+ * the read-then-write is not atomic and cannot be made so from the client. The
+ * only full closure is a uniqueness constraint server-side (a unique index on
+ * (user_id, (data->>'sprintNumber')) in Postgres) plus a retry on conflict.
+ * Nothing in the UI reads this field any more — labels are derived from
+ * chronology (utils.js sprintLabel) — so a collision is now cosmetic in the
+ * stored record rather than visible.
+ */
 async function _incrementSprintCounter() {
+  DB.invalidateStore(DB.STORES.SPRINTS);
   const all = await DB.getAll(DB.STORES.SPRINTS);
   const maxNum = all.reduce((max, s) => Math.max(max, s.sprintNumber || 0), 0);
   return maxNum + 1;

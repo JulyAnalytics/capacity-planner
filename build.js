@@ -317,7 +317,14 @@ function updateIndexHtml(jsFile, cssFile) {
   //    and doesn't block first paint. Order is preserved relative to the deferred
   //    Supabase CDN tag (both deferred, CDN appears first in source), so
   //    window.supabase is set before the app bundle's DOMContentLoaded boot runs.
-  html = html.replace(/<\/body>/, `    <script defer src="${jsBare}"></script>\n  </body>`);
+  //    onerror turns the worst failure mode into an actionable message. Bundles
+  //    are content-hashed and this build DELETES the previous ones, so a browser
+  //    holding a cached index.html requests files that no longer exist: the CSS
+  //    and JS both 404 and the page renders as bare static chrome — no console
+  //    error the user will see, no boot state, just blank. #boot-failed lives in
+  //    index.html and is inline-styled because the stylesheet is gone too.
+  html = html.replace(/<\/body>/,
+    `    <script defer src="${jsBare}" onerror="document.getElementById('boot-failed').hidden=false"></script>\n  </body>`);
 
   // dist/index.html: bare paths (Netlify serves dist/ as root)
   fs.writeFileSync('dist/index.html', html, 'utf8');

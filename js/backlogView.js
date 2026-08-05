@@ -4,7 +4,7 @@
  */
 
 import DB from './db.js';
-import { esc, sizeLabel, cycleLabel } from './utils.js';
+import { esc, sizeLabel, cycleLabel, sprintShortLabel } from './utils.js';
 import { daysBetween, deriveSprintCapacityFromPeriods } from './locationCapacity.js';
 import { deriveSprintMeta } from './sprintCapacity.js';
 import { deriveFocusAllocation, deriveTierCheck } from './sprintAllocation.js';
@@ -114,13 +114,18 @@ function _loadSprintCapacityHeaders() {
       p.endDate >= sprint.startDate && p.startDate <= endDate
     );
     if (periods.length === 0) {
+      // Four cells, always — the columns are shared across every sprint, so an
+      // omitted element would slide the next one into the wrong column.
       tier2El.innerHTML = `
-        <div class="bl-cov-track-wrap">
-          <div class="bl-cov-rail">
-            <div class="bl-cov-seg bl-cov-seg--uncov" style="width:100%"></div>
-          </div>
+        <span class="bl-cov-track-wrap">
+          <span class="bl-cov-rail">
+            <span class="bl-cov-seg bl-cov-seg--uncov" style="width:100%"></span>
+          </span>
           <span class="bl-cov-warn">${sprintDays} day${sprintDays !== 1 ? 's' : ''} uncovered</span>
-        </div>
+        </span>
+        <span class="bl-sprint-cap-total"></span>
+        <span class="bl-sprint-cap-priority"></span>
+        <span class="bl-sprint-alloc"></span>
       `;
       continue;
     }
@@ -146,19 +151,21 @@ function _loadSprintCapacityHeaders() {
     const allocHtml  = _renderAllocDots(allocation) + _renderTierStatus(tierCheck) + _renderThroughputNote(sprint, sprintStories);
     _fillBandCapacities(hdrEl.closest('[data-section-id]'), tierCheck);
 
+    // Exactly four cells — one per shared column. The old `·` separators are
+    // gone: they were their own elements and would each have claimed a column,
+    // and the grid's gap now does that job.
     tier2El.innerHTML = `
-      <div class="bl-cov-track-wrap">
-        <div class="bl-cov-rail">
-          ${domPct  > 0 ? `<div class="bl-cov-seg bl-cov-seg--dom"  style="width:${domPct}%"></div>`  : ''}
-          ${intlPct > 0 ? `<div class="bl-cov-seg bl-cov-seg--intl" style="width:${intlPct}%"></div>` : ''}
-          ${uncPct  > 0 ? `<div class="bl-cov-seg bl-cov-seg--uncov" style="width:${uncPct}%"></div>` : ''}
-        </div>
+      <span class="bl-cov-track-wrap">
+        <span class="bl-cov-rail">
+          ${domPct  > 0 ? `<span class="bl-cov-seg bl-cov-seg--dom"  style="width:${domPct}%"></span>`  : ''}
+          ${intlPct > 0 ? `<span class="bl-cov-seg bl-cov-seg--intl" style="width:${intlPct}%"></span>` : ''}
+          ${uncPct  > 0 ? `<span class="bl-cov-seg bl-cov-seg--uncov" style="width:${uncPct}%"></span>` : ''}
+        </span>
         ${uncovDays > 0 ? `<span class="bl-cov-warn">${uncovDays} day${uncovDays !== 1 ? 's' : ''} uncovered</span>` : ''}
-      </div>
-      <span class="bl-cap-sep">·</span>
+      </span>
       <span class="bl-sprint-cap-total">${cap.total.toFixed(1)} total</span>
-      <span class="bl-sprint-cap-priority">· ${cap.priority.toFixed(1)} priority</span>
-      ${allocHtml ? `<span class="bl-cap-sep">·</span><span class="bl-sprint-alloc">${allocHtml}</span>` : ''}
+      <span class="bl-sprint-cap-priority">${cap.priority.toFixed(1)} priority</span>
+      <span class="bl-sprint-alloc">${allocHtml}</span>
     `;
   }
 }
@@ -209,7 +216,7 @@ function _renderTierStatus(tierCheck) {
 
 function _sprintDisplayName(sprintId) {
   const sprint = (window.app?.data?.sprints || []).find(s => s.id === sprintId);
-  return sprint ? `S${sprint.sprintNumber || '?'}` : sprintId;
+  return sprint ? sprintShortLabel(sprint) : sprintId;
 }
 
 function _getStoryFromData(storyId) {
@@ -513,37 +520,63 @@ function _renderSprintHeader(sprint, allStoriesInSprint, isExpanded) {
   const doneChip = doneCount > 0
     ? `<span class="bl-sprint-chip bl-sprint-chip--done">${doneCount} done</span>` : '';
 
+  // @intent every indicator is its OWN cell, and the identity cluster is wrapped.
+  // The header participates in a subgrid whose columns are shared by every
+  // sprint section, so each column sizes to the widest instance of that one
+  // indicator and they line up down the page. Consequences to preserve:
+  //   · the ident wrapper is one cell — do not unwrap it or the columns shift;
+  //   · .bl-hdr-spacer is gone, the grid supplies the gap;
+  //   · tier-2 must ALWAYS emit its four cells (see _loadSprintCapacityHeaders),
+  //     because an omitted element makes the next one take its column.
   return `<div class="bl-sprint-hdr" data-sprint-id="${esc(sprint.id)}" onclick="window.backlogView._toggleSection('sprint', '${esc(sprint.id)}')">
     <div class="bl-sprint-tier-1">
-      <span class="bl-section-chevron${isExpanded ? '' : ' bl-collapsed'}">${isExpanded ? '▼' : '▶'}</span>
-      <button type="button" class="bl-sprint-name bl-name-link"
-        onclick="event.stopPropagation(); window.backlogDetailPanel?.openSprint?.('${esc(sprint.id)}')"
-        title="View sprint details">S${sprint.sprintNumber || '?'}</button>
-      <span class="bl-sprint-dates">${startFmt}–${endFmt}</span>
-      <span class="bl-sprint-status-badge" data-sprint-status="${esc(sprint.status)}">${esc(sprint.status)}</span>
-      ${todoChip}${activeChip}${doneChip}
-      <span class="bl-hdr-spacer"></span>
+      <span class="bl-hdr-ident">
+        <span class="bl-section-chevron${isExpanded ? '' : ' bl-collapsed'}">${isExpanded ? '▼' : '▶'}</span>
+        <button type="button" class="bl-sprint-name bl-name-link"
+          onclick="event.stopPropagation(); window.backlogDetailPanel?.openSprint?.('${esc(sprint.id)}')"
+          title="View sprint details">${sprintShortLabel(sprint)}</button>
+        <span class="bl-sprint-dates">${startFmt}–${endFmt}</span>
+        <span class="bl-sprint-status-badge" data-sprint-status="${esc(sprint.status)}">${esc(sprint.status)}</span>
+        ${todoChip}${activeChip}${doneChip}
+      </span>
       <button type="button" class="bl-add-btn"
         onclick="event.stopPropagation(); window.openCreationModal?.({type:'story', sprintId:'${esc(sprint.id)}'})">+ Story</button>
     </div>
     <div class="bl-sprint-tier-2" data-sprint-id="${esc(sprint.id)}">
-      <span class="bl-sprint-alloc" data-sprint-id="${esc(sprint.id)}">
-        <span class="bl-alloc-loading"></span>
-      </span>
-      <span class="bl-cap-loading">···</span>
+      <span class="bl-cov-track-wrap"><span class="bl-cap-loading">···</span></span>
+      <span class="bl-sprint-cap-total"></span>
+      <span class="bl-sprint-cap-priority"></span>
+      <span class="bl-sprint-alloc" data-sprint-id="${esc(sprint.id)}"></span>
     </div>
   </div>`;
 }
 
 function _renderBacklogHeader(allBacklogStories, isExpanded) {
   const total = allBacklogStories.length;
+  // @intent structurally IDENTICAL to _renderSprintHeader — same two tiers, same
+  // cells, same order. The Backlog bucket is not a sprint and has no capacity,
+  // so its tier-2 cells are empty, but they are still emitted: the two headers
+  // share one set of subgrid rules, and the moment their shapes diverge so do
+  // their columns (that is exactly how the bucket's button ended up 8px off).
+  // Its story count stays in the ident cluster rather than the `total` column —
+  // "90 total" counts stories, "49.0 total" counts capacity blocks, and lining
+  // up two different units under one lane would read as a comparison.
   return `<div class="bl-backlog-hdr" onclick="window.backlogView._toggleSection('sprint', 'backlog-bucket')">
-    <span class="bl-section-chevron${isExpanded ? '' : ' bl-collapsed'}">${isExpanded ? '▼' : '▶'}</span>
-    <span class="bl-sprint-name">Backlog</span>
-    <span class="bl-section-count"><span class="bl-count-num">${total}</span> <span class="bl-count-label">total</span></span>
-    <span class="bl-hdr-spacer"></span>
-    <button type="button" class="bl-add-btn"
-      onclick="event.stopPropagation(); window.openCreationModal?.({type:'story'})">+ Story</button>
+    <div class="bl-sprint-tier-1">
+      <span class="bl-hdr-ident">
+        <span class="bl-section-chevron${isExpanded ? '' : ' bl-collapsed'}">${isExpanded ? '▼' : '▶'}</span>
+        <span class="bl-sprint-name">Backlog</span>
+        <span class="bl-section-count"><span class="bl-count-num">${total}</span> <span class="bl-count-label">total</span></span>
+      </span>
+      <button type="button" class="bl-add-btn"
+        onclick="event.stopPropagation(); window.openCreationModal?.({type:'story'})">+ Story</button>
+    </div>
+    <div class="bl-sprint-tier-2">
+      <span class="bl-cov-track-wrap"></span>
+      <span class="bl-sprint-cap-total"></span>
+      <span class="bl-sprint-cap-priority"></span>
+      <span class="bl-sprint-alloc"></span>
+    </div>
   </div>`;
 }
 
@@ -598,7 +631,15 @@ function _getSectionExpanded(type, id, sprint) {
 
 export function _toggleSection(type, id) {
   const storeKey = type === 'sprint' ? 'sprints' : type === 'focus' ? 'focuses' : 'subFocuses';
-  const current = _getSectionExpanded(type, id);
+  // @intent the sprint MUST be passed, or this disagrees with the render.
+  // _getSectionExpanded defaults an untoggled sprint to `sprint.status === ACTIVE`;
+  // called without it the active sprint read as collapsed, so the first click
+  // wrote "expanded" onto an already-expanded section and did nothing — the
+  // active sprint took two clicks to close.
+  const sprint = type === 'sprint'
+    ? (window.app?.data?.sprints || []).find(s => s.id === id)
+    : undefined;
+  const current = _getSectionExpanded(type, id, sprint);
   collapseState[storeKey][id] = !current;
   _saveCollapseState();
 
@@ -625,13 +666,25 @@ export function _toggleSection(type, id) {
   const body = section.querySelector('.bl-section-body');
   const chevron = section.querySelector('.bl-section-chevron');
   if (!current) {
-    // now expanding
+    // now expanding — unhide FIRST so _initSprintSortables (which skips
+    // .bl-hidden) binds this section's bands, then fill if it shipped empty.
     body?.classList.remove('bl-hidden');
     if (chevron) { chevron.classList.remove('bl-collapsed'); chevron.textContent = '▼'; }
+    // Only by-sprint sections ship empty; focus/sub-focus bodies are always
+    // rendered inline, so they must not take the lazy-fill path.
+    if (type === 'sprint' && body && body.dataset.blFilled !== '1') {
+      _fillSectionBody(id);          // async; cached reads
+    } else {
+      _initSprintSortables(section); // already populated — just rebind its bands
+    }
   } else {
-    // now collapsing
+    // now collapsing — release the drag machinery for bands nobody can reach.
     body?.classList.add('bl-hidden');
     if (chevron) { chevron.classList.add('bl-collapsed'); chevron.textContent = '▶'; }
+    body?.querySelectorAll('.bl-band-body').forEach(el => {
+      el._sortable?.destroy();
+      delete el._sortable;
+    });
   }
 }
 
@@ -644,6 +697,10 @@ function _expandSection(sectionId) {
   const chevron = section.querySelector('.bl-section-chevron');
   body?.classList.remove('bl-hidden');
   if (chevron) { chevron.classList.remove('bl-collapsed'); chevron.textContent = '▼'; }
+  // Same lazy-fill contract as _toggleSection — this path is reached when the
+  // view jumps to a sprint, and its body may never have been built.
+  if (body && body.dataset.blFilled !== '1') _fillSectionBody(sectionId);
+  else _initSprintSortables(section);
 }
 
 // ── Panel management ──────────────────────────────────────────────────────────
@@ -852,7 +909,7 @@ function _onSprintTagClick(sprintId) {
 // `stories` is pre-sorted by _storyOrderCmp; partition by story.priority, preserving order.
 // withCapacity → emit a per-band capacity placeholder (sprint sections; filled async by
 // _loadSprintCapacityHeaders). The backlog bucket passes withCapacity:false.
-function _renderPriorityBands(stories, allData, { withCapacity }) {
+function _renderPriorityBands(stories, allData, { withCapacity, hiddenCount = 0 }) {
   const zones  = [...PRIORITY_LEVELS, ''];           // '' = unassigned, rendered last
   const byBand = new Map(zones.map(z => [z, []]));
   for (const s of stories) {
@@ -860,7 +917,21 @@ function _renderPriorityBands(stories, allData, { withCapacity }) {
     byBand.get(zone).push(s);
   }
 
-  return zones.map(zone => {
+  // Every band empty ONLY because the filters excluded everything. Without this
+  // the section reads as an empty sprint, which is what made five identical
+  // "Drop here" boxes so misleading. @intent the bands are still rendered below
+  // rather than replaced: each one is a SortableJS drop zone, so swallowing them
+  // would make it impossible to drag a story INTO a sprint whose own stories are
+  // currently filtered out.
+  const filteredNote = (stories.length === 0 && hiddenCount > 0)
+    ? `<div class="bl-filtered-note">
+         <span>${hiddenCount} ${hiddenCount === 1 ? 'story' : 'stories'} hidden by filters</span>
+         <button type="button" class="bl-filtered-clear"
+           onclick="event.stopPropagation(); window.backlogView._setStatus('all')">Show all</button>
+       </div>`
+    : '';
+
+  return filteredNote + zones.map(zone => {
     const label = zone ? PRIORITY_LABELS[zone] : 'Unassigned';
     const rows  = byBand.get(zone).map(s => _renderStoryRow(s, 'sprint', allData)).join('');
     const cap   = (withCapacity && zone)
@@ -877,6 +948,72 @@ function _renderPriorityBands(stories, allData, { withCapacity }) {
   }).join('');
 }
 
+// The toolbar filter chain, in one place. Extracted so the lazy section fill
+// (_fillSectionBody) applies EXACTLY the filters the full render applied —
+// duplicating the chain would let an expanded section disagree with its
+// siblings the moment a filter changed.
+function _applyAllFilters(allStories, allEpics) {
+  let out = _applyStatusFilter(allStories);
+  if (epicFilter) out = _applyEpicFilter(out);
+  out = _applyNameFilter(out);
+  return _applyHorizonFilter(out, allEpics);
+}
+
+// One sprint's priority bands. Shared by the initial render and by the lazy
+// fill on expand, so the two paths cannot drift.
+function _renderSprintBands(sprint, allStories, filteredStories, allData) {
+  const { allEpics, allFocuses } = allData;
+  const allInSprint = allStories.filter(s => s.sprintId === sprint.id).sort(_storyOrderCmp);
+  let displayStories = filteredStories.filter(s => s.sprintId === sprint.id).sort(_storyOrderCmp);
+  if (activeFocus) {
+    displayStories = _applyFocusFilter(displayStories, allEpics, allFocuses, activeFocus);
+  }
+  return _renderPriorityBands(displayStories, allData, {
+    withCapacity: true,
+    hiddenCount: allInSprint.length - displayStories.length,
+  });
+}
+
+// Build a collapsed section's body the first time it is opened.
+// @intent collapsed sections ship EMPTY: measured 1829 of 2305 nodes (79%) sat
+// inside sections the user could not see, and none of it is reachable until the
+// section opens. Filling on expand is ~1ms because DB.getAll serves from cache.
+// A bonus correctness property: the body is built from current data at open
+// time, so it cannot show a stale row that a patch missed while it was hidden.
+async function _fillSectionBody(sectionId) {
+  const section = document.querySelector(`[data-section-id="${sectionId}"]`);
+  const body = section?.querySelector('.bl-section-body');
+  if (!body || body.dataset.blFilled === '1') return;
+
+  const [allSprints, allStories, allEpics, allFocuses, allSubFocuses] = await Promise.all([
+    DB.getAll(DB.STORES.SPRINTS),
+    DB.getAll(DB.STORES.STORIES),
+    DB.getAll(DB.STORES.EPICS),
+    DB.getAll(DB.STORES.FOCUSES),
+    DB.getAll(DB.STORES.SUB_FOCUSES),
+  ]);
+  const filteredStories = _applyAllFilters(allStories, allEpics);
+  const allData = { allEpics, allFocuses, allSubFocuses };
+
+  if (sectionId === 'backlog-bucket') {
+    const allBacklog = allStories.filter(s => !s.sprintId).sort(_storyOrderCmp);
+    let visible = filteredStories.filter(s => !s.sprintId).sort(_storyOrderCmp);
+    if (activeFocus) visible = _applyFocusFilter(visible, allEpics, allFocuses, activeFocus);
+    body.innerHTML = _renderPriorityBands(visible, allData, {
+      withCapacity: false,
+      hiddenCount: allBacklog.length - visible.length,
+    });
+  } else {
+    const sprint = allSprints.find(s => s.id === sectionId);
+    if (!sprint) return;
+    body.innerHTML = _renderSprintBands(sprint, allStories, filteredStories, allData);
+  }
+
+  body.dataset.blFilled = '1';
+  _initSprintSortables(section);
+  renderSprintCapacityHeaders();   // fills the newly-present .bl-band-capacity spans
+}
+
 async function _renderBySprintMode(allSprints, allStories, filteredStories, allEpics, allFocuses, allSubFocuses) {
   const allData = { allEpics, allFocuses, allSubFocuses };
 
@@ -889,21 +1026,17 @@ async function _renderBySprintMode(allSprints, allStories, filteredStories, allE
   const renderSprint = (sprint) => {
     const isExpanded = _getSectionExpanded('sprint', sprint.id, sprint);
     const allInSprint = allStories.filter(s => s.sprintId === sprint.id).sort(_storyOrderCmp);
-    const visibleInSprint = filteredStories.filter(s => s.sprintId === sprint.id).sort(_storyOrderCmp);
 
-    // Apply activeFocus filter within sprint view
-    let displayStories = visibleInSprint;
-    if (activeFocus) {
-      displayStories = _applyFocusFilter(displayStories, allEpics, allFocuses, activeFocus);
-    }
-
-    // Partition into priority bands (each band is its own SortableJS drop zone).
-    const storyHtml = _renderPriorityBands(displayStories, allData, { withCapacity: true });
+    // Collapsed sections ship empty and are filled on expand by _fillSectionBody.
+    // The header still needs allInSprint — its counts are unfiltered.
+    const storyHtml = isExpanded
+      ? _renderSprintBands(sprint, allStories, filteredStories, allData)
+      : '';
 
     const doneClass = sprint.status === SPRINT_STATUS.COMPLETED ? ' bl-section-sprint--completed' : '';
     return `<div class="bl-section-sprint${doneClass}" data-section-id="${esc(sprint.id)}" data-sprint-id="${esc(sprint.id)}">
       ${_renderSprintHeader(sprint, allInSprint, isExpanded)}
-      <div class="bl-section-body${isExpanded ? '' : ' bl-hidden'}">
+      <div class="bl-section-body${isExpanded ? '' : ' bl-hidden'}" data-bl-filled="${isExpanded ? '1' : '0'}">
         ${storyHtml}
       </div>
     </div>`;
@@ -920,11 +1053,16 @@ async function _renderBySprintMode(allSprints, allStories, filteredStories, allE
     visibleBacklog = _applyFocusFilter(visibleBacklog, allEpics, allFocuses, activeFocus);
   }
   const backlogExpanded = _getSectionExpanded('sprint', 'backlog-bucket');
-  const backlogStoryHtml = _renderPriorityBands(visibleBacklog, allData, { withCapacity: false });
+  const backlogStoryHtml = backlogExpanded
+    ? _renderPriorityBands(visibleBacklog, allData, {
+        withCapacity: false,
+        hiddenCount: allBacklog.length - visibleBacklog.length,
+      })
+    : '';
 
   parts.push(`<div class="bl-section-backlog" data-section-id="backlog-bucket">
     ${_renderBacklogHeader(allBacklog, backlogExpanded)}
-    <div class="bl-section-body${backlogExpanded ? '' : ' bl-hidden'}">
+    <div class="bl-section-body${backlogExpanded ? '' : ' bl-hidden'}" data-bl-filled="${backlogExpanded ? '1' : '0'}">
       ${backlogStoryHtml}
     </div>
   </div>`);
@@ -1073,7 +1211,7 @@ function _renderSprintSidebarCell(sprint, allStories) {
       aria-controls='sm2-row-${esc(sprint.id)}'>
       <div class='sm2-sprint-name'>
         <span class='sm2-sprint-chevron${chevCls}'>${chevron}</span>
-        S${sprint.sprintNumber || '?'}
+        ${sprintShortLabel(sprint)}
       </div>
       <div class='sm2-sprint-dates'>
         ${_fmtBacklogDate(sprint.startDate)} – ${_fmtBacklogDate(endDate)}
@@ -1599,11 +1737,8 @@ export async function _renderBacklogView() {
     DB.getAll(DB.STORES.SUB_FOCUSES),
   ]);
 
-  // Apply filters
-  let filteredStories = _applyStatusFilter(allStories);
-  if (epicFilter) filteredStories = _applyEpicFilter(filteredStories);
-  filteredStories = _applyNameFilter(filteredStories);
-  filteredStories = _applyHorizonFilter(filteredStories, allEpics);
+  // Apply filters — shared with the lazy section fill so the two cannot diverge.
+  const filteredStories = _applyAllFilters(allStories, allEpics);
 
   // Build HTML
   const toolbarHtml = _renderToolbar(allFocuses.filter(f => f.status === FOCUS_STATUS.ACTIVE), allEpics);
@@ -1697,8 +1832,13 @@ function _refreshRowContent(storyId) {
     badge.textContent = STATUS_DISPLAY_LABELS[story.status] || story.status;
   }
 
+  // @intent weight, not fibonacciSize. ADR-0009 made `weight` the single effort
+  // field and `fibonacciSize` is never populated, so this read resolved to
+  // undefined and BLANKED the badge on every patch — a status tick silently
+  // erased the size until the next full render. Must match what _renderStoryRow
+  // emits, or patching and rendering disagree.
   const fibEl = row.querySelector('.bl-fib-badge');
-  if (fibEl) fibEl.textContent = story.fibonacciSize ? String(story.fibonacciSize) : '';
+  if (fibEl) fibEl.textContent = sizeLabel(story.weight ?? 1);
 
   row.dataset.priority = story.priority || ''; // recolour the priority border after a move
 
@@ -1766,6 +1906,19 @@ async function _handleSortableReorder(evt) {
 
 // ── SortableJS lifecycle ─────────────────────────────────────────────────────
 
+// Live lookup, never cached: #bl-list is replaced wholesale on every render
+// (see the innerHTML assignments in _renderBacklogView), so a held reference
+// would point at a detached node after the first re-render.
+function _blList() {
+  return document.getElementById('bl-list');
+}
+
+// @intent binds only the bands the user can actually reach. A collapsed section
+// cannot be dropped into, yet every one of its bands used to get a Sortable:
+// measured 60 of 65 instances bound to hidden content, each holding element
+// refs and pointer/touch listeners for nothing. Expanding a section binds its
+// bands on the spot (_toggleSection), so the drop targets a user can see are
+// always live. Safe to call repeatedly — each element is destroyed first.
 function _initSprintSortables(rootEl) {
   const sortableEls = rootEl.querySelectorAll(
     '.bl-section-sprint .bl-band-body, .bl-section-backlog .bl-band-body'
@@ -1773,6 +1926,8 @@ function _initSprintSortables(rootEl) {
 
   for (const el of sortableEls) {
     el._sortable?.destroy();
+    delete el._sortable;
+    if (el.closest('.bl-section-body')?.classList.contains('bl-hidden')) continue;
     el._sortable = new Sortable(el, {
       group:               'stories',
       animation:           150,
@@ -1787,6 +1942,14 @@ function _initSprintSortables(rootEl) {
       delayOnTouchOnly:    false,
       touchStartThreshold: 5,
 
+      // @intent onStart/onEnd only flip a class on the list root — no re-render.
+      // Empty priority bands are collapsed to their label row and show no drop
+      // affordance at rest; this reveals every valid target for the duration of
+      // a drag, so destinations are visible at a glance rather than one at a
+      // time on hover. The class is removed in onEnd for every outcome,
+      // including a cancelled or reverted drag.
+      onStart()     { _blList()?.classList.add('bl-list--dragging'); },
+      onEnd()       { _blList()?.classList.remove('bl-list--dragging'); },
       onAdd(evt)    { _handleSortableCross(evt); },
       onUpdate(evt) { _handleSortableReorder(evt); },
     });

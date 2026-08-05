@@ -138,6 +138,14 @@ async function handleInvalidationMessage(message) {
       const idx = hierarchyCache.data.sprints.findIndex(s => s.id === sprint.id);
       if (idx >= 0) hierarchyCache.data.sprints[idx] = sprint;
     }
+    // @intent this branch used to update hierarchyCache and nothing else, which
+    // left DB's own sprints slice stale in every OTHER tab. Two consequences,
+    // both silent: the remote sprint was missing from anything reading
+    // DB.getAll(SPRINTS) — the backlog list, the capacity headers — until some
+    // unrelated write happened to invalidate it; and _incrementSprintCounter
+    // computed max(sprintNumber) over that stale list and minted a DUPLICATE
+    // number. Dropping the slice makes the next read fetch the truth.
+    DB.invalidateStore('sprints');
     return;
   }
   if (message?.type === 'travelSegment') return; // segments not cached

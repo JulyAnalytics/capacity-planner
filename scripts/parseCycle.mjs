@@ -135,6 +135,12 @@ function parseCycleThesis(md) {
     constraints: sectionBullets(md, 'KNOWN CONSTRAINTS'),
     nonGoals: sectionBullets(md, 'WHAT THIS CYCLE EXPLICITLY EXCLUDES'),
     killCriterion: sectionText(md, 'CYCLE-LEVEL KILL CRITERION'),
+    // @intent the raw markdown is carried alongside the structured fields so
+    // importCycle can attach it to the cycle record (cycle-2 format). The app
+    // then holds both the derived data AND the source prose it came from, so a
+    // theme or candidate traces back to its exact paragraph. Empty string when
+    // the file was absent — importCycle skips attaching empties.
+    rawMd: md,
   };
 }
 
@@ -250,12 +256,17 @@ function parseFocusFolder(dir, focusName) {
   const candidates = [];
   if (candDir) {
     for (const f of readdirSync(candDir).filter(f => f.endsWith('.md')).sort()) {
-      const parsed = parseCandidate(readIf(join(candDir, f)));
-      if (parsed) candidates.push({ ...parsed, sourceFile: f });
+      const rawMd = readIf(join(candDir, f));
+      const parsed = parseCandidate(rawMd);
+      // rawMd carried alongside each candidate so importCycle can attach it to
+      // the created epic (cycle-2). sourceFile is the filename; rawMd the content.
+      if (parsed) candidates.push({ ...parsed, sourceFile: f, rawMd });
     }
   }
 
-  return { focusName, thesis, themes, candidates };
+  // rawMd for the brain dump + focus thesis, so the focus record carries its
+  // source prose (the load-bearing file for themes + member ideas per ADR-0013).
+  return { focusName, thesis, themes, candidates, rawMd: bdMd, focusThesisRawMd: ftMd };
 }
 
 // ── Main ─────────────────────────────────────────────────────────────────────
@@ -292,7 +303,10 @@ for (const f of focuses) {
 }
 
 const payload = {
-  version: 'cycle-1',
+  // cycle-2: artifacts now carry `rawMd` (the source markdown) so importCycle
+  // can attach the prose to the created records. cycle-1 payloads (no rawMd)
+  // still import — importCycle treats a missing rawMd as 'nothing to attach'.
+  version: 'cycle-2',
   sourceFolder: root,
   generatedAt: new Date().toISOString(),
   cycle,
@@ -305,9 +319,14 @@ writeFileSync(out, JSON.stringify(payload, null, 2));
 
 const themeCount = focuses.reduce((n, f) => n + f.themes.length, 0);
 const candCount  = focuses.reduce((n, f) => n + f.candidates.length, 0);
+// Source .md files carried for attachment (cycle-2): cycle thesis + per-focus
+// brain dump + per-focus focus thesis + each candidate file.
+const mdCount = (cycle.rawMd ? 1 : 0)
+  + focuses.reduce((n, f) => n + (f.rawMd ? 1 : 0) + (f.focusThesisRawMd ? 1 : 0) + f.candidates.filter(c => c.rawMd).length, 0);
 console.log(`parseCycle → ${out}`);
 console.log(`  cycle:      ${cycle.name || '(unnamed)'} ${cycle.startDate} → ${cycle.endDate}`);
 console.log(`  weighting:  ${weighting.length} focuses (${weighting.map(w => `${w.focusName} ${w.targetPct}%`).join(', ')})`);
 console.log(`  folders:    ${focuses.length}`);
 console.log(`  themes:     ${themeCount}`);
 console.log(`  candidates: ${candCount}`);
+console.log(`  source .md: ${mdCount} file(s) carried for attachment`);

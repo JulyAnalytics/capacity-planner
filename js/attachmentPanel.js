@@ -39,6 +39,19 @@ const OWNERS = {
     find:  (id) => window.app?.data?.focuses?.find(f => f.id === id),
     write: (id, updates) => window.app.saveFocus({ ...window.app.data.focuses.find(f => f.id === id), ...updates }),
   },
+  // @intent cycle attachments hold the seeded cycle's source prose — the cycle
+  // thesis .md and the cross-focus artifacts. Cycles write through strategyWrites
+  // (ADR-0012), not a hierarchy store, so this owner routes through commitCycleField
+  // (which funnels commitCycle: gated, emits, broadcasts). importCycle attaches the
+  // cycle thesis here; the focus/candidate .md attach to their own owners.
+  cycle: {
+    find:  (id) => window.strategyWrites?.byId?.(id),
+    write: (id, updates) => {
+      // commitCycleField takes a single (field, value); updates is { attachments: [...] }.
+      const [field, value] = Object.entries(updates)[0] || [];
+      return window.strategyWrites?.commitCycleField?.(id, field, value);
+    },
+  },
 };
 
 function _entity(type, id) {

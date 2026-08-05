@@ -31,9 +31,48 @@ export function esc(s) {
  * shown (design-review pass 1, B3). Moved here from calendarView so all five
  * former raw-id sites share one source.
  */
-export function sprintLabel(sprint) {
+/**
+ * Sprint ordinals DERIVED from chronology — 1 = earliest start date.
+ *
+ * @intent the stored `sprintNumber` is not unique. _incrementSprintCounter is
+ * `max(sprintNumber) + 1` read from a CACHED store, so two tabs (and the
+ * pre-mutex era that migrateDedupeSprintsByWindow was written for) mint the
+ * same number; real data carries three sprints numbered 1. Those are distinct
+ * sprints on different windows, so the dedupe migration correctly leaves them
+ * alone — the number itself is simply unreliable. Position in date order always
+ * is, so the label is derived and never read from the record. Nothing is
+ * rewritten; `sprintNumber` stays on disk untouched.
+ *
+ * Pure: pass the list. Deliberately NOT memoised — a sort of a dozen sprints is
+ * far cheaper than a cache that goes stale when app.data.sprints is mutated in
+ * place, and the cost was measured as noise.
+ */
+export function deriveSprintOrdinals(sprints) {
+  const map = new Map();
+  [...(sprints || [])]
+    .sort((a, b) => (a.startDate || '').localeCompare(b.startDate || '')
+                 || String(a.id).localeCompare(String(b.id)))
+    .forEach((s, i) => map.set(s.id, i + 1));
+  return map;
+}
+
+/** This sprint's derived ordinal, or null when it is not in the list. */
+export function sprintOrdinal(sprint, allSprints) {
+  if (!sprint) return null;
+  const list = allSprints || (typeof window !== 'undefined' ? window.app?.data?.sprints : null) || [];
+  return deriveSprintOrdinals(list).get(sprint.id) ?? null;
+}
+
+/** Compact chip form — "S7". The one place the S-prefix is spelled. */
+export function sprintShortLabel(sprint, allSprints) {
+  const n = sprintOrdinal(sprint, allSprints);
+  return n ? `S${n}` : 'S?';
+}
+
+export function sprintLabel(sprint, allSprints) {
   if (!sprint) return 'Sprint';
-  const base = sprint.sprintNumber ? `Sprint ${sprint.sprintNumber}` : 'Sprint';
+  const n = sprintOrdinal(sprint, allSprints);
+  const base = n ? `Sprint ${n}` : 'Sprint';
   return sprint.goal ? `${base} · ${sprint.goal}` : base;
 }
 
