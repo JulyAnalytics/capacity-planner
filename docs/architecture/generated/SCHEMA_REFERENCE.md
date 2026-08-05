@@ -49,7 +49,7 @@ Supabase table: `epics`
 
 | field | note |
 |---|---|
-| `attachments` | array (default []); same pointer shape as stories.attachments, written by window.attachmentPanel. Storage key stays `{uid}/{entityId}/{attId}/{filename}` — entity ids are globally unique, so no type segment was needed and every pre-existing story key still resolves. |
+| `attachments` | array (default []); same pointer shape as stories.attachments, written by window.attachmentPanel. Storage key stays `{uid}/{entityId}/{attId}/{filename}` — entity ids are globally unique, so no type segment was needed and every pre-existing story key still resolves. A seeded candidate also carries its source `.md` here (the parser's `rawMd`, attached by dataPortability.importCycle, `seeded:true`). |
 | `businessCase` | object {problem, outcome, timeEstimate, goNoGo, measurement} — the MVP spec's 5-field Epic Business Case. Completeness is the promotion gate out of 'candidate' (canPromoteEpic); the whitelist alone cannot express it because canTransitionStatus takes no record. |
 | `generationSource` | enum GENERATION_SOURCE 'brainstorm'\|'backlog'\|'parked' — provenance of a candidate; 'parked' means carried forward from a previous cycle's below-the-line set. |
 | `horizon` | enum HORIZON 'now'\|'next'\|'later'\|'never' (constants.js); ABSENT = unclassified. Backlog + story-map filter dimension; 'next'/'later' double as the strategic parked queue (a parked candidate carries to the next cycle by horizon, not a separate flag). Seeded from status by migrateEpicsToIncludeHorizon (active→now, planning→next; completed/archived left unset). NEW epics default to 'later' at both creation sites (creationModal.getFormData, dataPortability.mergeImport) per the MVP spec's standing rule "New ideas enter Later or Never first. Nothing enters Now without deliberate promotion." Without that default they landed unset and were invisible to every horizon filter — which is what happened to the epics created after the one-time migration stamped its guard. |
@@ -70,6 +70,7 @@ Supabase table: `stories`
 |---|---|
 | `actionItems` | array; seeded by migrateStoriesToIncludeActionItems. |
 | `attachments` | array (default []); items {id 'att-…', filename, storageKey '{uid}/{storyId}/{attId}/{filename}', size, type ATTACHMENT_TYPES, version ≥1, createdAt}. Content lives in private Storage bucket capacity-planner-docs (RLS user-scoped); records here are pointers only. Seeded by migrateStoriesToIncludeAttachments. |
+| `auditedAt` | ISO\|null + stories.auditSource: 'sprint-audit'\|null (F4, 2026-08-05) — backdate provenance. The ONLY path that writes them is scripts/auditSprint.mjs's apply snippet: a 'done' audit verdict writes { status:'completed', completed:true, completedAt:<doneDate> } through storyWrites.commitStoryUpdate (ADR-0006) plus auditedAt=now + auditSource='sprint-audit'. completedAt is not gated by canTransitionStatus, which is why the provenance fields exist — a backdated completion must be distinguishable from a same-day completeStory stamp. Absent on all rows until the first sprint audit runs; no migration. |
 | `cellSortOrder` | per-cell (epic×sprint) rank in the story map; sibling of sortOrder. |
 | `epicId` | DB CHECK NOT NULL — a story must pin an epic. |
 | `estimatedBlocks` | DEPRECATED (ADR-0009) — legacy user estimate; read only for variance on completion of pre-migration records. Nothing writes it; new records store null. |
@@ -162,7 +163,7 @@ Supabase table: `import_queue`
 | field | note |
 |---|---|
 | `contentHash` | sha256 of the source file's content; the dedup/idempotency key. |
-| `status` | enum 'pending'\|'processed'. Never deleted on processing — status flip only, so the unique (user_id, contentHash) index keeps guarding against re-queuing an already-seen file. |
+| `status` | enum 'pending'\|'processed'\|'failed' (F2, 2026-08-05). Never deleted on processing — status flip only, so the unique (user_id, contentHash) index keeps guarding against re-queuing an already-seen file. 'failed' is terminal for the drain: a row that fails FAILED_AFTER=3 consecutive drains (js/triageQueue.js) stops auto-retrying and surfaces in the Inbox's Stuck-imports section for explicit Retry ('pending' again with a clean slate) / Recreate (create branch direct, idempotent) / Dismiss ('processed' without writing). Failure bookkeeping lives on the row: failCount, lastError, failedAt — JSONB only, no migration. |
 
 ## CYCLES → `cycles`
 
@@ -172,9 +173,10 @@ Supabase table: `cycles`
 
 | field | note |
 |---|---|
-| `attachments` | array (default []); the cycle free-write .md, via window.attachmentPanel. |
+| `attachments` | array (default []); markdown attachments via window.attachmentPanel (the cycle is an attachable owner there, writing through strategyWrites.commitCycleField). Holds both the cycle free-write .md and — when the cycle was seeded by dataPortability.importCycle — the source `01_cycle_thesis.md` prose it was parsed from. Seeded attachments carry `seeded:true` to distinguish them from manually-attached files; re-import dedups by filename (use the panel's replace to update a changed file). |
 | `closedSnapshot` | {sprintIds[], epicIds[], focusActualPct{}, closedAt} — written once at close. Derivation answers for open cycles; this answers for closed ones. See ADR-0012. |
 | `focuses` | embedded array of FocusThesis records {focusId, rank, targetPct, classification, strategicRole, thesis, endState, nonGoals, themeIds[], status}. classification is FOCUS_CLASSIFICATION (active-strategic\|active-maintenance\|dormant); the spec caps active-strategic at MAX_ACTIVE_STRATEGIC=5, enforced as a coherence flag not a hard gate. Editable in the cycle detail panel (classification select + target input) via saveFocusThesis. Embedded, not a store — the monthlyPlans[].epics[] precedent; a focus thesis has no lifecycle outside its cycle. |
+| `import-format` | the JSON scripts/parseCycle.mjs emits and dataPortability.importCycle ingests. version 'cycle-1' carried structured fields only (cycle, weighting, focuses[].themes/candidates); version 'cycle-2' adds `rawMd` on the cycle, each focus (brain dump + focus thesis), and each candidate, so importCycle can attach the source prose to the created records (cycle → cycles.attachments, focus → focuses.attachments, candidate → its epic's epics.attachments). Both versions import — a missing rawMd means nothing to attach. Idempotent by (cycle name, startDate) for the cycle and by filename per entity for attachments; themes dedup by normalized name within their focus. |
 | `killCriterion` | the cycle-level go/no-go — dated, binary, observable. Surfaced on Today as its date approaches. |
 | `status` | 'planning'\|'active'\|'closed'. Closed is terminal and locks the dates — re-dating a closed cycle would retroactively rewrite which sprints belonged to it. |
 

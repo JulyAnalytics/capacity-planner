@@ -54,24 +54,25 @@
 
 | stem | sites |
 |---|---|
-| `${prefix}-{…}` | `utils.js:215` |
-| `${type}-{…}` | `creationModal.js:665`, `dataPortability.js:397`, `dataPortability.js:43` |
-| `ai-{…}` | `app.js:1157`, `app.js:437`, `backlogDetailPanel.js:931`, `dataPortability.js:60` |
-| `att-{…}` | `attachmentPanel.js:130`, `triageQueue.js:69` |
+| `${prefix}-{…}` | `utils.js:254` |
+| `${type}-{…}` | `creationModal.js:665`, `dataPortability.js:497`, `dataPortability.js:53` |
+| `ai-{…}` | `app.js:1365`, `app.js:636`, `backlogDetailPanel.js:931`, `dataPortability.js:70` |
+| `att-{…}` | `attachmentPanel.js:143`, `dataPortability.js:115`, `triageQueue.js:69` |
 | `bdp-ai-input-{…}` | `backlogDetailPanel.js:926` |
-| `capacity-data-{…}` | `dataPortability.js:101` |
-| `crypto.randomUUID(){…}` | `dataPortability.js:322`, `locationManager.js:24`, `sprintManager.js:45`, `strategyView.js:737`, `strategyWrites.js:217`, `strategyWrites.js:243`, `utils.js:30` |
+| `capacity-data-{…}` | `dataPortability.js:169` |
+| `crypto.randomUUID(){…}` | `dataPortability.js:394`, `locationManager.js:24`, `sprintManager.js:45`, `strategyView.js:737`, `strategyWrites.js:217`, `strategyWrites.js:243`, `utils.js:30` |
 | `cv-dt-val-{…}` | `calendarView.js:1238` |
-| `cycle-{…}` | `dataPortability.js:322`, `strategyView.js:737` |
-| `focus-{…}` | `app.js:860`, `migrationRunner.js:186` |
+| `cycle-{…}` | `dataPortability.js:394`, `strategyView.js:737` |
+| `epic-{…}` | `dataPortability.js:684` |
+| `focus-{…}` | `app.js:1068`, `migrationRunner.js:186` |
 | `loc-{…}` | `locationManager.js:24` |
 | `log-{…}` | `dailyLogOverlay.js:161`, `dailyLogOverlay.js:186`, `dailyLogOverlay.js:309`, `dailyLogOverlay.js:425`, `todayView.js:35` |
-| `plan-{…}` | `db.js:437`, `db.js:446`, `db.js:461`, `db.js:493`, `db.js:505`, `db.js:520` |
+| `plan-{…}` | `db.js:467`, `db.js:476`, `db.js:491`, `db.js:523`, `db.js:535`, `db.js:550` |
 | `session-{…}` | `strategyWrites.js:217`, `strategyWrites.js:243` |
 | `sf-{…}` | `migrationRunner.js:16`, `migrationRunner.js:30` |
 | `snapshot-{…}` | `errorHandler.js:136` |
 | `tab-{…}` | `hierarchyCache.js:39`, `strategyWrites.js:32` |
-| `theme-{…}` | `dataPortability.js:347`, `migrationRunner.js:787` |
+| `theme-{…}` | `dataPortability.js:421`, `migrationRunner.js:787` |
 
 ## Build order (JS_FILES)
 

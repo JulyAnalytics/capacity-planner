@@ -9,7 +9,10 @@
     "docs:check": "node scripts/doc-checks.mjs && node scripts/css-check.mjs",
     "css:check": "node scripts/css-check.mjs",
     "parse:cycle": "node scripts/parseCycle.mjs",
-    "test": "node tests/t-phase2.mjs && node tests/t-phase4.mjs && node tests/t-funnel.mjs && node tests/t-final.mjs"
+    "bulk:sheet": "node scripts/generateBulkSheet.mjs",
+    "bulk:parse": "node scripts/parseBulkSheet.mjs",
+    "test": "node tests/t-phase2.mjs && node tests/t-phase4.mjs && node tests/t-funnel.mjs && node tests/t-final.mjs && node tests/t-audit.mjs",
+    "audit:sprint": "node scripts/auditSprint.mjs"
   },
   "dependencies": {
     "cssnano": "^7",

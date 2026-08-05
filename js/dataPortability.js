@@ -6,8 +6,8 @@
 
 import DB from './db.js';
 import { validateExternalInput } from './barricade.js';
-import { validateStory, normalize, nameSimilarity as _nameSimilarity, NEAR_MISS_THRESHOLD } from './businessRules.js';
-import { REVIEW_STATE, STORY_STATUS, EPIC_STATUS, HORIZON } from './constants.js';
+import { validateStory, normalize, nameSimilarity, NEAR_MISS_THRESHOLD } from './businessRules.js';
+import { REVIEW_STATE, STORY_STATUS, EPIC_STATUS, HORIZON, ATTACHMENT_TYPES } from './constants.js';
 import { snapshotAllStores, restoreFromSnapshot } from './importUtils.js';
 
 // Name-similarity + threshold now live in businessRules.js as the single pure
@@ -15,6 +15,16 @@ import { snapshotAllStores, restoreFromSnapshot } from './importUtils.js';
 // window.dataPortability below for js/triageQueue.js, which resolves at call time
 // rather than load time — kept that way to avoid a load-order dependency.
 const _norm = (s) => normalize(s);
+
+// ── Shared epic-matching rule (F3) ──────────────────────────────────────────
+// Single implementation of the epic-resolution rule used by mergeImport (step 3)
+// and the inbox approval modal's save path: same normalized name in the target
+// sub-focus, else anywhere in the target focus — never outside it, so a triaged
+// spec can't land under a user-curated epic in another focus. @see ADR-0007
+function _findEpicInFocus(focusId, subFocusId, epicName, epics) {
+  return epics.find(e => e.subFocusId === subFocusId && _norm(e.name) === _norm(epicName))
+      || epics.find(e => e.focusId === focusId && _norm(e.name) === _norm(epicName));
+}
 
 // ── Import serialization ──────────────────────────────────────────────────────
 // @intent mergeImport / attachNewStoryToEpic resolve-or-create sub-focuses and
@@ -63,6 +73,64 @@ async function _buildStoryFields(epic, focusName, s, existingStories) {
     activatedAt: null, completedAt: null, abandonedAt: null, abandonReason: '', completed: false,
     reviewState: REVIEW_STATE.PROPOSED, sourceRef: s.sourceRef || null,
   };
+}
+
+/**
+ * Attach a source `.md` string to an entity during cycle import. Mirrors
+ * attachmentPanel._upload's write half but takes raw content (no file picker):
+ * mint the attachment record, upload the blob to storage, then append it via
+ * the owning write spine.
+ *
+ * @intent the dedup is "skip if an attachment with the same filename already
+ * exists on this entity" — re-importing a cycle folder must not stack a second
+ * copy of the brain dump under the same name. A changed file under the same
+ * name is not detected (content-hash compare is a follow-up); use the panel's
+ * replace path to update.
+ *
+ * Failure-isolated: a storage/write error is logged and counted as skipped,
+ * never thrown — the structured data is the point of the import; the source
+ * prose is enrichment and must not fail the cycle creation.
+ *
+ * @returns {Promise<boolean>} true if a new attachment was created
+ */
+async function _attachMd(entityType, entityId, filename, content, result) {
+  // Read the current record through the same owner the panel uses, so the
+  // existing-attachment check and the append write go through one spine.
+  const find = { story: id => window.app?.data?.stories?.find(s => s.id === id),
+                 epic:  id => window.app?.data?.epics?.find(e => e.id === id),
+                 focus: id => window.app?.data?.focuses?.find(f => f.id === id),
+                 cycle: id => window.strategyWrites?.byId?.(id) }[entityType];
+  const write = { story: (id, u) => window.storyWrites.commitStoryUpdate(id, u),
+                  epic:  (id, u) => window.epicWrites.commitEpicUpdate(id, u),
+                  focus: (id, u) => window.app.saveFocus({ ...window.app.data.focuses.find(f => f.id === id), ...u }),
+                  cycle: (id, u) => { const [f, v] = Object.entries(u)[0] || []; return window.strategyWrites?.commitCycleField?.(id, f, v); } }[entityType];
+  if (!find || !write) return false;
+  try {
+    const entity = find(entityId);
+    if (!entity) return false;
+    const atts = entity.attachments || [];
+    if (atts.some(a => a.filename === filename)) { result.reused.attachments++; return false; }
+    const bytes = new TextEncoder().encode(content);
+    const att = {
+      id: `att-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+      filename, size: bytes.length,
+      type: ATTACHMENT_TYPES.SPEC, version: 1,
+      createdAt: new Date().toISOString(),
+      // Mark seeded provenance so the panel can distinguish import-attached from
+      // manually-attached files (the cycle-2 backfill marker for attachments).
+      seeded: true,
+    };
+    att.storageKey = DB.storage.keyFor(entityId, att.id, filename);
+    await DB.storage.upload(att.storageKey, new Blob([content], { type: 'text/markdown' }));
+    const ok = await write(entityId, { attachments: [...atts, att] });
+    if (ok) { result.created.attachments++; return true; }
+    // Write rolled back — clean up the orphaned storage blob.
+    await DB.storage.remove(att.storageKey).catch(() => {});
+    return false;
+  } catch (err) {
+    console.warn(`[importCycle] attach failed for ${entityType}:${entityId} ${filename}:`, err);
+    return false;
+  }
 }
 
 const dataPortability = {
@@ -283,13 +351,17 @@ const dataPortability = {
   //
   // Idempotent by (name, startDate): re-running does not create a second cycle.
   // Themes dedup by normalized name within their focus, the same rule
-  // GEOMETRY's "one record per name within a focus" states for triage.
+  // GEOMETRY's "one record per name within a focus" states for triage. Source
+  // .md attachments (cycle-2) dedup by filename per entity — re-import skips a
+  // file already attached under the same name (use the panel's replace to update).
   async importCycle(data) {
     const app = window.app;
-    const result = { ok: false, created: { cycles: 0, themes: 0 }, reused: { cycles: 0, themes: 0 }, unmatchedFocuses: [], errors: [] };
+    const result = { ok: false, created: { cycles: 0, themes: 0, attachments: 0 }, reused: { cycles: 0, themes: 0, attachments: 0 }, unmatchedFocuses: [], errors: [] };
 
-    if (!data || data.version !== 'cycle-1') {
-      app.showNotification(`Cycle import rejected: expected version "cycle-1", got "${data?.version}".`, 'error');
+    // cycle-2 carries source .md; cycle-1 is the original structured-only format.
+    // Both import — a missing rawMd just means nothing to attach.
+    if (!data || (data.version !== 'cycle-1' && data.version !== 'cycle-2')) {
+      app.showNotification(`Cycle import rejected: expected version "cycle-1" or "cycle-2", got "${data?.version}".`, 'error');
       return result;
     }
     const c = data.cycle || {};
@@ -315,11 +387,13 @@ const dataPortability = {
 
       const existing = window.strategyWrites.all()
         .find(x => _norm(x.name) === _norm(c.name) && x.startDate === c.startDate);
+      let cycleId = existing?.id || null;
       if (existing) {
         result.reused.cycles = 1;
       } else {
+        cycleId = `cycle-${crypto.randomUUID()}`;
         const ok = await window.strategyWrites.commitCycle({
-          id: `cycle-${crypto.randomUUID()}`,
+          id: cycleId,
           name: c.name, startDate: c.startDate, endDate: c.endDate,
           status: c.status || 'active',
           thesis: c.thesis || '',
@@ -355,11 +429,37 @@ const dataPortability = {
         if (dirty) await app.saveFocus({ ...focus, themes });
       }
 
+      // Source .md attachments (cycle-2). The app holds both the derived data AND
+      // the prose it came from, so a theme/candidate traces back to its paragraph.
+      // cycle-1 payloads have no rawMd → this pass is a no-op. Failure-isolated: a
+      // storage/attachment error is logged and skipped, never failing the import
+      // (the structured data is the point; the .md is enrichment).
+      if (cycleId && c.rawMd) {
+        await _attachMd('cycle', cycleId, '01_cycle_thesis.md', c.rawMd, result);
+      }
+      for (const fx of (data.focuses || [])) {
+        const focus = byName(fx.focusName);
+        if (!focus) continue;
+        if (fx.rawMd) await _attachMd('focus', focus.id, 'brain_dump.md', fx.rawMd, result);
+        if (fx.focusThesisRawMd) await _attachMd('focus', focus.id, 'focus_thesis.md', fx.focusThesisRawMd, result);
+        // Candidate .md attach to the epic created from that candidate. Match by
+        // normalized title within the focus (the rule mergeImport uses to create
+        // epics); skip if no match rather than failing.
+        for (const cand of (fx.candidates || [])) {
+          if (!cand.rawMd || !cand.title) continue;
+          const epic = (app.data.epics || []).find(e =>
+            e.focusId === focus.id && _norm(e.name) === _norm(cand.title));
+          if (epic) await _attachMd('epic', epic.id, cand.sourceFile || `${cand.title}.md`, cand.rawMd, result);
+        }
+      }
+
       result.ok = true;
       const bits = [
         result.created.cycles ? `cycle "${c.name}" created` : `cycle "${c.name}" already present`,
         `${result.created.themes} theme(s) added`,
         result.reused.themes ? `${result.reused.themes} already there` : null,
+        result.created.attachments ? `${result.created.attachments} source file(s) attached` : null,
+        result.reused.attachments ? `${result.reused.attachments} file(s) already attached` : null,
         result.unmatchedFocuses.length ? `no focus match for: ${result.unmatchedFocuses.join(', ')}` : null,
       ].filter(Boolean);
       app.showNotification(bits.join(' · '), 'success');
@@ -414,7 +514,7 @@ const dataPortability = {
       else {
         const near = liveSubFocuses
           .filter(s => s.focusId === focus.id)
-          .map(s => ({ name: s.name, score: _nameSimilarity(s.name, cand.subFocus) }))
+          .map(s => ({ name: s.name, score: nameSimilarity(s.name, cand.subFocus) }))
           .filter(x => x.score >= NEAR_MISS_THRESHOLD)
           .sort((a, b) => b.score - a.score)[0];
         if (near) result.nearMisses.push({ created: cand.subFocus, existing: near.name, score: +near.score.toFixed(2) });
@@ -430,9 +530,9 @@ const dataPortability = {
       // resolved sub-focus; else reuse any same-named epic elsewhere in THIS focus
       // (Option A — closes the cross-folderStage duplication hole). Scope stays
       // within the target focus (Admin for triage) so a triaged spec never lands
-      // under a user-curated epic in another focus. @see ADR-0007.
-      let epic = liveEpics.find(e => e.subFocusId === sf.id && _norm(e.name) === _norm(cand.epic.title))
-              || liveEpics.find(e => e.focusId === focus.id && _norm(e.name) === _norm(cand.epic.title));
+      // under a user-curated epic in another focus. Shared rule with the inbox
+      // approval modal's save path (resolveOrCreateEpic). @see ADR-0007.
+      let epic = _findEpicInFocus(focus.id, sf.id, cand.epic.title, liveEpics);
       if (epic) { result.reused.epics++; }
       else {
         // Structured scoring rides alongside vision when the parser supplies it
@@ -556,6 +656,50 @@ const dataPortability = {
     window.backlogView?.render();
     app.updateLastSaved();
     return { ok: true, story };
+  },
+
+  // ── SINGLE-EPIC resolve-or-create (F3) ────────────────────────────────────
+  // Inbox approval modal save path: the story was moved to a different
+  // focus/sub-focus and no existing epic was picked there. Same rule as
+  // mergeImport step 3 (shared _findEpicInFocus): reuse a same-named epic in
+  // the target sub-focus, else anywhere in the target focus; only when neither
+  // exists, create a planning/LATER epic with mergeImport's exact record shape.
+  // Never creates a sub-focus (sub-focus creation stays curation territory —
+  // the modal's pickers only offer existing ones) and never a top-level focus.
+  // Locked with the import mutex so a concurrent drain/import can't race the
+  // check-then-create (the 61-duplicate-epic audit, ADR-0007).
+  resolveOrCreateEpic({ focusId, subFocusId, epicName }) {
+    return _withImportLock(() => this._resolveOrCreateEpicImpl({ focusId, subFocusId, epicName }));
+  },
+
+  async _resolveOrCreateEpicImpl({ focusId, subFocusId, epicName }) {
+    const app = window.app;
+    if (!focusId || !subFocusId || !epicName?.trim()) {
+      return { ok: false, reason: 'missing focusId / subFocusId / epicName' };
+    }
+    const found = _findEpicInFocus(focusId, subFocusId, epicName, app.data.epics);
+    if (found) return { ok: true, epic: found, created: false };
+
+    const epic = {
+      id: `epic-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+      name: epicName.trim(), vision: '',
+      status: EPIC_STATUS.PLANNING, horizon: HORIZON.LATER,
+      focusId, subFocusId,
+      createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
+    };
+    const gate = validateExternalInput('store:epics', epic);
+    if (!gate.valid) return { ok: false, reason: 'validation failed', errors: gate.errors };
+
+    try {
+      await DB.putAll(DB.STORES.EPICS, [epic]);
+    } catch (writeErr) {
+      return { ok: false, reason: `write failed: ${writeErr.message}` };
+    }
+    app.data.epics = await DB.getAll(DB.STORES.EPICS);
+    await window.invalidateCache('epic');
+    NotificationRegistry.emit('epic');
+    app.updateLastSaved();
+    return { ok: true, epic, created: true };
   },
 
   // ── ADDITIVE history importer (F4) ────────────────────────────────────────
@@ -691,8 +835,12 @@ const dataPortability = {
 // threshold for js/triageQueue.js's story/epic matching and js/inboxView.js's
 // live near-miss recompute — same algorithm/threshold the epic/subFocus check
 // already uses; reused rather than reimplemented or redefined.
-dataPortability._nameSimilarity = _nameSimilarity;
+// @intent kept as window.dataPortability._nameSimilarity (the legacy name
+// triageQueue resolves at call time) — points at the single source in
+// businessRules now. Not aliased on import: the concat build strips imports,
+// so an `as _nameSimilarity` alias would leave the local name undefined.
+dataPortability._nameSimilarity = nameSimilarity;
 dataPortability.NEAR_MISS_THRESHOLD = NEAR_MISS_THRESHOLD;
 
-// @owns dataPortability — whole-store export (version 6, includes the strategic-layer stores cycles + strategicSessions) + destructive full-replace import; every data-in/out path lives here. attachNewStoryToEpic adds a single-story additive path for an already-matched epic (spec-triage queue); _nameSimilarity exposed for js/triageQueue.js reuse (now defined in businessRules as the single source).
+// @owns dataPortability — whole-store export (version 6, includes the strategic-layer stores cycles + strategicSessions) + destructive full-replace import; every data-in/out path lives here. attachNewStoryToEpic adds a single-story additive path for an already-matched epic (spec-triage queue); resolveOrCreateEpic is the shared epic resolve-or-create (F3) — mergeImport step 3 and the inbox approval modal resolve through the same _findEpicInFocus rule; _nameSimilarity exposed for js/triageQueue.js reuse (now defined in businessRules as the single source).
 window.dataPortability = dataPortability;

@@ -6,9 +6,22 @@
     <title>Capacity Planner</title>
     <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
     <link rel="dns-prefetch" href="https://cdn.jsdelivr.net">
-    <link rel="stylesheet" href="styles.0961dcbd.min.css">
+    <link rel="stylesheet" href="styles.06c391ce.min.css">
   </head>
 <body>
+    <!-- Boot failure banner. Revealed by the app bundle's onerror (injected by
+         build.js). A cached index.html points at content-hashed files that the
+         next build DELETED, so both the CSS and the JS 404 and the page renders
+         as bare static chrome with no error anywhere — silently blank.
+         Styles are INLINE on purpose: when this fires the stylesheet 404'd too,
+         so it is the one element that cannot rely on tokens. Not stripped by
+         build.js, which only rewrites <link> and <script src> tags. -->
+    <div id="boot-failed" hidden style="position:fixed;inset:0 0 auto 0;z-index:9999;padding:16px 20px;background:#7f1d1d;color:#fff;font:14px/1.5 system-ui,sans-serif;">
+      <strong>The app failed to load.</strong>
+      This page is a cached copy pointing at a build that no longer exists.
+      Hard-reload to fix it — <strong>⌘⇧R</strong> (Mac) or <strong>Ctrl-F5</strong>.
+    </div>
+
     <!-- Auth Overlay — shown when no session exists -->
     <div id="auth-overlay" style="display:none;">
       <div id="auth-box">
@@ -134,6 +147,6 @@
     </div>
 
     <script defer src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-    <script defer src="app.50fc99d8.min.js"></script>
+    <script defer src="app.b9007971.min.js" onerror="document.getElementById('boot-failed').hidden=false"></script>
   </body>
 </html>

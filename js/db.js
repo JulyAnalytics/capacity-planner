@@ -229,6 +229,21 @@ const DB = {
   // portfolioUpdater.js uses window.invalidateCache() — it is a globals file, no imports.
   // Date: 2026-04-15
 
+  /**
+   * Drop one cached slice so the next getAll re-fetches from the server.
+   *
+   * @intent the public way to say "my copy of this store may be stale". Writes
+   * made in ANOTHER tab arrive over BroadcastChannel and update
+   * hierarchyCache, but nothing was clearing this cache — so a tab that had
+   * been open kept serving a sprint list missing the remote sprint, and
+   * _incrementSprintCounter computed max() over it and minted a duplicate
+   * number. Reaching into _cache from other modules would work; a named method
+   * makes the intent greppable and keeps the field private.
+   */
+  invalidateStore(storeName) {
+    if (storeName in this._cache) this._cache[storeName] = null;
+  },
+
   async getAll(storeName) {
     if (storeName === 'metadata') return [];
     const table = _TABLE_MAP[storeName];
@@ -357,7 +372,22 @@ const DB = {
   storage: {
     _from() { return DB._sb().storage.from(ATTACHMENT_BUCKET); },
     keyFor(storyId, attId, filename) {
-      return `${DB._uid()}/${storyId}/${attId}/${filename}`;
+      // F1 (triage intake audit, 2026-08-05): Supabase Storage rejects
+      // non-ASCII (em-dash U+2014, emoji) and backtick characters in object
+      // keys with 400 InvalidKey — that failure class stranded 8 import_queue
+      // rows in the drain's ATTACH branch, retrying forever every 5 min. This
+      // is the single choke point every upload key flows through (triageQueue
+      // _attach, attachmentPanel _upload, dataPortability _attachMd), so
+      // sanitize the FILENAME segment here: whitelist [A-Za-z0-9._ -], replace
+      // everything else with _, collapse runs. Deterministic — the same pretty
+      // name always yields the same key segment. The attachment RECORD keeps
+      // the pretty filename (viewers, versioning, dedup-by-filename all
+      // unchanged); existing stored keys are untouched (they live in records,
+      // this only runs for new uploads).
+      const safeName = String(filename || '')
+        .replace(/[^A-Za-z0-9._ -]+/g, '_')
+        .replace(/_+/g, '_');
+      return `${DB._uid()}/${storyId}/${attId}/${safeName}`;
     },
     async upload(key, fileOrBlob) {
       const { error } = await this._from().upload(key, fileOrBlob, { upsert: true });

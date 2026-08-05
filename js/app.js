@@ -4,11 +4,21 @@ import DB from './db.js';
 import { validateExternalInput } from './barricade.js';
 import { STORY_STATUS, EPIC_STATUS, FOCUS_STATUS, REVIEW_STATE, SPRINT_STATUS, STORY_SIZES, STORY_SIZE_LABELS, CHANNEL_CAPACITY_PLANNER } from './constants.js';
 import { deriveSprintMeta } from './sprintCapacity.js';
+// sprintLabel derives the ordinal from chronology; sprint.sprintNumber is not
+// unique (see utils.js). Imported so this toast agrees with every other surface.
+import { sprintLabel } from './utils.js';
+// Normalized-name matching for the story modal's hierarchy cascade (F3) — the
+// same rule mergeImport resolves epics by, so the intake paths can't disagree.
+import { normalize } from './businessRules.js';
 
 // ── localStorage/sessionStorage fallback defaults ────────────────────────────
 // Named constants required by the barricade gate — never use raw string literals
 // as fallbacks; corruption should be visible in the constant, not buried inline.
 const DEFAULT_CALENDAR_VIEW    = 'default';
+
+// Normalized-name matcher shared by the modal cascade's carry-over lookups.
+// (Named _normName — dataPortability.js already owns `_norm` in the concat scope.)
+const _normName = (s) => normalize(s);
 
 // ── Shared sub-focus form component (OQ-4) ────────────────────────────────────
 class SubFocusForm {
@@ -129,7 +139,46 @@ class ModalManager {
     if (type === 'story') {
       const updated = this._collectFormValues('story', item);
       if (!updated) return;                       // validation failed (blank name)
-      const { id, ...updates } = updated;
+      const { id, focusId, subFocusId, status, ...rest } = updated;
+      const updates = { ...rest };
+
+      // F3 hierarchy resolution. The cascade prefills the intake placement; a
+      // focus/sub-focus change re-files the story. No epic picked in the new
+      // location → resolve-or-create with the CURRENT epic's name, through the
+      // exact mergeImport rule (shared _findEpicInFocus — never creates a
+      // sub-focus; that stays curation territory). Multi-call sequence:
+      // resolve → create-if-absent → lifecycle status → spine commit.
+      const curEpic = this.app.data.epics.find(e => e.id === item.epicId) || null;
+      let epicId = rest.epicId;
+      if (!epicId) {
+        if (!subFocusId) {
+          this.app.showNotification('Select a Sub-Focus for this story', 'warning');
+          return;
+        }
+        const res = await window.dataPortability.resolveOrCreateEpic({
+          focusId, subFocusId, epicName: curEpic?.name || rest.name,
+        });
+        if (!res.ok) {
+          this.app.showNotification('Epic resolution failed: ' + res.reason, 'error');
+          return;
+        }
+        if (res.created) {
+          window.showToast?.(`Created epic "${res.epic.name}" in the new location`, 'success');
+        }
+        epicId = res.epic.id;
+      }
+      updates.epicId = epicId;
+      // Re-derive the focus string from the epic (detail-panel parity).
+      const newEpic  = this.app.data.epics.find(e => e.id === epicId);
+      const newFocus = newEpic && this.app.data.focuses.find(f => f.id === newEpic.focusId);
+      updates.focus = newFocus?.name || '';
+
+      // Status routes through the lifecycle so completion side-effects fire
+      // (detail-panel parity) — the spine alone would not stamp completedAt.
+      if (status && status !== item.status) {
+        const ok = await window.storyLifecycle.setStatus(id, status);
+        if (!ok) return;                            // rejected transition — toast already shown
+      }
       // Inbox approval contract: saving a proposed story approves it (leaves the
       // queue). No-op for normal edits — absent/approved rows are already approved.
       if (item.reviewState === REVIEW_STATE.PROPOSED) updates.reviewState = REVIEW_STATE.APPROVED;
@@ -385,6 +434,38 @@ class ModalManager {
 
   _editStory(story) {
     this._actionItemDraft = (story.actionItems || []).map(ai => ({ ...ai }));
+
+    // F3: the cascade prefills the story's intake placement — its epic and the
+    // epic's sub-focus/focus (drain placement), sprint, priority and status.
+    // The story's current names are captured for the carry-over match that
+    // re-files them when the user changes focus/sub-focus (see
+    // _onStoryFocusChange) — the intake categorization is the default, not a
+    // blank form.
+    const data       = this.app.data;
+    const curEpic    = data.epics.find(e => e.id === story.epicId) || null;
+    const curSubF    = data.subFocuses.find(sf => sf.id === curEpic?.subFocusId) || null;
+    const focusId    = curEpic?.focusId || '';
+    const subFocusId = curEpic?.subFocusId || '';
+    this._editStoryContext = { subFocusName: curSubF?.name || '', epicName: curEpic?.name || '' };
+
+    // Same picker filter as the creation modal and the detail panel
+    // (backlogDetailPanel.js:212) — candidates/completed/archived epics are
+    // not filing destinations. The story's CURRENT epic stays in the list even
+    // when filtered, labelled with its state, so the prefill always shows the
+    // intake placement honestly.
+    const pickable  = e => e.status !== EPIC_STATUS.COMPLETED
+                        && e.status !== EPIC_STATUS.ARCHIVED
+                        && e.status !== EPIC_STATUS.CANDIDATE;
+    const focuses   = data.focuses.filter(f => f.status !== FOCUS_STATUS.ARCHIVED);
+    const subFocuses = focusId ? data.subFocuses.filter(sf => sf.focusId === focusId) : [];
+    let epics       = subFocusId ? data.epics.filter(e => e.subFocusId === subFocusId) : [];
+    if (curEpic && !pickable(curEpic)) {
+      epics = [curEpic, ...epics.filter(e => e.id !== curEpic.id)];
+    }
+    const sprints = (window.hierarchyCache?.data?.sprints || [])
+      .filter(s => s.status !== SPRINT_STATUS.COMPLETED)
+      .sort((a, b) => a.startDate.localeCompare(b.startDate));
+
     return {
       header: `<h3>Edit Story<span class="modal-type-badge edit">Editing</span></h3>`,
       body: `
@@ -395,6 +476,69 @@ class ModalManager {
         <div class="form-group">
           <label>Description (optional)</label>
           <textarea id="editField_description" class="form-input" rows="3">${escapeHtml(story.description || '')}</textarea>
+        </div>
+
+        <div class="form-group">
+          <label>Categorize</label>
+          <div class="cm-hierarchy-breadcrumb" id="editHierarchyBreadcrumb">
+            ${this._breadcrumbText(focusId, subFocusId, story.epicId)}
+          </div>
+          <label>Focus</label>
+          <select id="editField_focus" class="form-input"
+            onchange="app.modal._onStoryFocusChange(this.value)">
+            <option value="">Select Focus</option>
+            ${focuses.map(f =>
+              `<option value="${f.id}" ${focusId === f.id ? 'selected' : ''}>${escapeHtml(f.name)}</option>`
+            ).join('')}
+          </select>
+          <label>Sub-Focus</label>
+          <select id="editField_subFocus" class="form-input"
+            ${!focusId || subFocuses.length === 0 ? 'disabled' : ''}
+            onchange="app.modal._onStorySubFocusChange(this.value)">
+            <option value="">${!focusId ? 'Select Focus first' : 'Select Sub-Focus'}</option>
+            ${subFocuses.map(sf =>
+              `<option value="${sf.id}" ${subFocusId === sf.id ? 'selected' : ''}>${escapeHtml(sf.icon ? sf.icon + ' ' + sf.name : sf.name)}</option>`
+            ).join('')}
+          </select>
+          <label>Epic</label>
+          <select id="editField_epic" class="form-input"
+            ${!subFocusId || epics.length === 0 ? 'disabled' : ''}>
+            <option value="">${!subFocusId ? 'Select Sub-Focus first' : 'Select Epic'}</option>
+            ${epics.map(e =>
+              `<option value="${e.id}" ${story.epicId === e.id ? 'selected' : ''}>${escapeHtml(e.name)}${pickable(e) ? '' : ' (' + escapeHtml(e.status) + ')'}</option>`
+            ).join('')}
+          </select>
+          <small class="form-hint">Changing focus/sub-focus re-files the story under a same-named epic there — creating one if needed.</small>
+        </div>
+
+        <div class="form-group">
+          <label>Sprint (optional)</label>
+          <select id="editField_sprint" class="form-input">
+            <option value="">Backlog (no sprint)</option>
+            ${sprints.map(s =>
+              `<option value="${s.id}" ${story.sprintId === s.id ? 'selected' : ''}>${sprintLabel(s)} · ${s.startDate}</option>`
+            ).join('')}
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Priority</label>
+          <select id="editField_priority" class="form-input">
+            <option value="">—</option>
+            <option value="primary" ${story.priority === 'primary' ? 'selected' : ''}>primary</option>
+            <option value="secondary1" ${story.priority === 'secondary1' ? 'selected' : ''}>secondary1</option>
+            <option value="secondary2" ${story.priority === 'secondary2' ? 'selected' : ''}>secondary2</option>
+            <option value="floor" ${story.priority === 'floor' ? 'selected' : ''}>floor</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Status</label>
+          <select id="editField_status" class="form-input">
+            <option value="${STORY_STATUS.BACKLOG}" ${story.status === STORY_STATUS.BACKLOG ? 'selected' : ''}>Backlog</option>
+            <option value="${STORY_STATUS.ACTIVE}" ${story.status === STORY_STATUS.ACTIVE ? 'selected' : ''}>Active</option>
+            <option value="${STORY_STATUS.COMPLETED}" ${story.status === STORY_STATUS.COMPLETED ? 'selected' : ''}>Completed</option>
+            <option value="${STORY_STATUS.ABANDONED}" ${story.status === STORY_STATUS.ABANDONED ? 'selected' : ''}>Abandoned</option>
+            <option value="${STORY_STATUS.BLOCKED}" ${story.status === STORY_STATUS.BLOCKED ? 'selected' : ''}>Blocked</option>
+          </select>
         </div>
         <div class="form-group">
           <label>Size</label>
@@ -415,6 +559,61 @@ class ModalManager {
         </div>
       `,
     };
+  }
+
+  // ── F3 cascade helpers ─────────────────────────────────────────────────────
+  // In-place option repopulation (no body re-render — typed name/description
+  // and the action-item draft survive a hierarchy change), with the story's
+  // current names carried over by normalized-name match so the intake placement
+  // follows a one-click focus change instead of a three-select re-pick.
+
+  _breadcrumbText(focusId, subFocusId, epicId) {
+    const data = this.app.data;
+    const f  = data.focuses.find(x => x.id === focusId);
+    const sf = data.subFocuses.find(x => x.id === subFocusId);
+    const e  = data.epics.find(x => x.id === epicId);
+    const parts = [];
+    if (f)  parts.push(escapeHtml(f.name));
+    if (sf) parts.push(escapeHtml(sf.icon ? sf.icon + ' ' + sf.name : sf.name));
+    if (e)  parts.push(escapeHtml(e.name));
+    return parts.length
+      ? parts.join(' <span class="cm-breadcrumb-arrow">→</span> ')
+      : '<span class="cm-breadcrumb-empty">Select hierarchy…</span>';
+  }
+
+  _onStoryFocusChange(focusId) {
+    const data = this.app.data;
+    const ctx  = this._editStoryContext || {};
+    const sfEl = document.getElementById('editField_subFocus');
+    const subFocuses = focusId ? data.subFocuses.filter(sf => sf.focusId === focusId) : [];
+    const match = subFocuses.find(sf => _normName(sf.name) === _normName(ctx.subFocusName));
+    sfEl.innerHTML = `<option value="">${focusId ? 'Select Sub-Focus' : 'Select Focus first'}</option>` +
+      subFocuses.map(sf =>
+        `<option value="${sf.id}"${match && sf.id === match.id ? ' selected' : ''}>${escapeHtml(sf.icon ? sf.icon + ' ' + sf.name : sf.name)}</option>`
+      ).join('');
+    sfEl.disabled = !focusId || subFocuses.length === 0;
+    this._onStorySubFocusChange(match ? match.id : (sfEl.value || ''));
+  }
+
+  _onStorySubFocusChange(subFocusId) {
+    const data = this.app.data;
+    const ctx  = this._editStoryContext || {};
+    const eEl  = document.getElementById('editField_epic');
+    const pickable = e => e.status !== EPIC_STATUS.COMPLETED
+                       && e.status !== EPIC_STATUS.ARCHIVED
+                       && e.status !== EPIC_STATUS.CANDIDATE;
+    const epics = subFocusId ? data.epics.filter(e => e.subFocusId === subFocusId && pickable(e)) : [];
+    const match = epics.find(e => _normName(e.name) === _normName(ctx.epicName));
+    eEl.innerHTML = `<option value="">${subFocusId ? 'Select Epic' : 'Select Sub-Focus first'}</option>` +
+      epics.map(e =>
+        `<option value="${e.id}"${match && e.id === match.id ? ' selected' : ''}>${escapeHtml(e.name)}</option>`
+      ).join('');
+    eEl.disabled = !subFocusId || epics.length === 0;
+    const bcEl = document.getElementById('editHierarchyBreadcrumb');
+    if (bcEl) {
+      bcEl.innerHTML = this._breadcrumbText(
+        document.getElementById('editField_focus')?.value || '', subFocusId, match ? match.id : '');
+    }
   }
 
   renderActionItemList() {
@@ -487,6 +686,15 @@ class ModalManager {
           ...existing,
           name,
           description: document.getElementById('editField_description')?.value.trim() || '',
+          // F3: hierarchy + placement fields. focusId/subFocusId are UI-only —
+          // save() resolves them into an epicId and the `focus` string; they
+          // are never written onto the story record itself.
+          focusId:     document.getElementById('editField_focus')?.value || null,
+          subFocusId:  document.getElementById('editField_subFocus')?.value || null,
+          epicId:      document.getElementById('editField_epic')?.value || null,
+          sprintId:    document.getElementById('editField_sprint')?.value || null,
+          priority:    document.getElementById('editField_priority')?.value || null,
+          status:      document.getElementById('editField_status')?.value || existing.status || 'backlog',
           weight:      parseFloat(document.getElementById('editField_size')?.value) || 1,
           actionItems: [...this._actionItemDraft],
         };
@@ -1090,7 +1298,7 @@ class CapacityManager {
           : { status: next };
         await window.sprintManager.updateSprint(sprint.id, fields);
         this.updateSprintInMemory(sprint.id, fields);
-        this.showNotification(`${next === SPRINT_STATUS.ACTIVE ? 'Started' : 'Closed'} Sprint ${sprint.sprintNumber || ''}`.trim(), 'info');
+        this.showNotification(`${next === SPRINT_STATUS.ACTIVE ? 'Started' : 'Closed'} ${sprintLabel(sprint)}`.trim(), 'info');
       } catch (err) {
         console.warn('auto-advance sprint failed:', sprint.id, err);
       }

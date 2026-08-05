@@ -109,7 +109,13 @@ async function _createUnmatched(row) {
     version: 'candidates-1',
     focus: DEFAULT_FOCUS,
     candidates: [{
-      subFocus: row.folderStage || 'Unsorted',
+      // F3 (E6): every unmatched row lands in ONE 'Unsorted' sub-focus under
+      // Admin — the old `row.folderStage || 'Unsorted'` fabricated one
+      // sub-focus per archive stage folder, which produced duplicate
+      // epics/stories for same-titled specs in different stage folders
+      // ("Protocol Document Set: Evaluation" ×4). mergeImport resolves-or-
+      // creates 'Unsorted' on first use, so every later row reuses it.
+      subFocus: 'Unsorted',
       epic: { title: row.title, vision: '' },
       stories: [{
         name: row.title, description: (row.content || '').slice(0, 500),
@@ -147,6 +153,23 @@ async function _processRow(row) {
 // resolve sprints against a stale snapshot and mint duplicate sprints (see
 // sprintManager _withSprintLock). Bail if a drain is already in flight.
 let _draining = false;
+
+// F2 (triage intake audit, 2026-08-05): a row that fails N consecutive drains
+// stops retrying and surfaces as 'failed' in the Inbox's Stuck-imports section
+// instead of retrying silently forever (the 8 em-dash rows retried every 5 min
+// while the tab was open, invisible to the user). Retry/Recreate/Dismiss act
+// on failed rows explicitly.
+const FAILED_AFTER = 3;
+async function _recordFailure(row, message) {
+  const failCount = (row.failCount || 0) + 1;
+  const updates = { failCount, lastError: String(message).slice(0, 300) };
+  if (failCount >= FAILED_AFTER) {
+    updates.status = 'failed';
+    updates.failedAt = new Date().toISOString();
+  }
+  await DB.put(DB.STORES.IMPORT_QUEUE, { ...row, ...updates });
+}
+
 async function drain() {
   if (_draining) return;
   if (!window.app?.data) return;
@@ -156,19 +179,95 @@ async function drain() {
 
   _draining = true;
   try {
+    let touched = false;
     for (const row of rows) {
-      let ok = false;
-      try { ok = await _processRow(row); }
-      catch (err) { console.warn('[triageQueue] row failed:', row.id, err); }
-      if (ok) {
-        await DB.put(DB.STORES.IMPORT_QUEUE, {
-          ...row, status: 'processed', processedAt: new Date().toISOString(),
-        });
+      // @intent per-row error isolation (F2): the flip lives INSIDE this
+      // try/catch. The pre-F2 flip sat OUTSIDE it, so a flip failure stranded
+      // the row while the loop kept going — from then on every drain re-entered
+      // the failing branch forever. Here a failed row OR a failed flip is
+      // recorded on the row (failCount/lastError) and never aborts the run.
+      try {
+        const ok = await _processRow(row);
+        if (ok) {
+          await DB.put(DB.STORES.IMPORT_QUEUE, {
+            ...row, status: 'processed', processedAt: new Date().toISOString(),
+            failCount: 0, lastError: null,
+          });
+        } else {
+          await _recordFailure(row, 'row processing returned false');
+        }
+        touched = true;
+      } catch (err) {
+        console.warn('[triageQueue] row failed:', row.id, err);
+        try { await _recordFailure(row, err.message || String(err)); }
+        catch (flipErr) { console.warn('[triageQueue] failure-flip failed:', row.id, flipErr); }
+        touched = true;
       }
     }
+    // F2: the Inbox's Stuck-imports section re-renders off this emit (the
+    // queue store is not part of app.data, so no notification existed before).
+    if (touched) NotificationRegistry.emit('importQueue');
   } finally {
     _draining = false;
   }
+}
+
+// ── Stuck-imports actions (F2) ────────────────────────────────────────────────
+// Act on 'failed' rows from the Inbox section. All three write the queue store
+// directly (it has no write spine — the drain itself is the queue's writer).
+
+async function _getRow(rowId) {
+  return (await DB.getAll(DB.STORES.IMPORT_QUEUE)).find(r => r.id === rowId) || null;
+}
+
+async function getStuckRows() {
+  return (await DB.getAll(DB.STORES.IMPORT_QUEUE)).filter(r => r.status === 'failed');
+}
+
+// Retry: back to 'pending' with a clean failure slate — the next drain (or an
+// immediate one) attempts the row again.
+async function retryRow(rowId) {
+  const row = await _getRow(rowId);
+  if (!row) return false;
+  try {
+    await DB.put(DB.STORES.IMPORT_QUEUE, {
+      ...row, status: 'pending', failCount: 0, lastError: null, failedAt: null,
+    });
+    NotificationRegistry.emit('importQueue');
+    return true;
+  } catch (err) { console.warn('[triageQueue] retry failed:', rowId, err); return false; }
+}
+
+// Recreate: run the CREATE branch directly (Admin / Unsorted / epic = title).
+// mergeImport dedups by normalized name, so a row whose story already exists
+// flips to processed as a no-op — idempotent by construction.
+async function recreateRow(rowId) {
+  const row = await _getRow(rowId);
+  if (!row) return false;
+  try {
+    const ok = await _createUnmatched(row);
+    if (!ok) return false;
+    await DB.put(DB.STORES.IMPORT_QUEUE, {
+      ...row, status: 'processed', processedAt: new Date().toISOString(),
+      failCount: 0, lastError: null,
+    });
+    NotificationRegistry.emit('importQueue');
+    return true;
+  } catch (err) { console.warn('[triageQueue] recreate failed:', rowId, err); return false; }
+}
+
+// Dismiss: mark processed without writing anything (the row's content was
+// junk or already captured elsewhere by hand).
+async function dismissRow(rowId) {
+  const row = await _getRow(rowId);
+  if (!row) return false;
+  try {
+    await DB.put(DB.STORES.IMPORT_QUEUE, {
+      ...row, status: 'processed', processedAt: new Date().toISOString(), lastError: null,
+    });
+    NotificationRegistry.emit('importQueue');
+    return true;
+  } catch (err) { console.warn('[triageQueue] dismiss failed:', rowId, err); return false; }
 }
 
 let _timer = null;
@@ -181,5 +280,7 @@ function start() {
 // @owns triageQueue — drains import_queue (new Ashurbanipal Triage entries + the
 // A-capacity-planner archive reconciliation) into attach/epic-match/create
 // outcomes against existing stories/epics; runs on app load + a 5-minute
-// interval while the tab stays open. @see ADR-0007
-window.triageQueue = { start, drain };
+// interval while the tab stays open. F2: per-row error isolation, failCount/
+// lastError on the row, 'failed' after 3 consecutive failures, and the
+// Retry/Recreate/Dismiss actions for the Inbox's Stuck-imports section. @see ADR-0007
+window.triageQueue = { start, drain, getStuckRows, retryRow, recreateRow, dismissRow, FAILED_AFTER };

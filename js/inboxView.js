@@ -120,6 +120,61 @@ const renderInbox = () => {
       ${items.length ? `<div class="inbox-list">${cards}</div>`
         : '<div class="empty-state"><p class="empty-state-title">Inbox zero</p><p class="empty-state-text">Imported candidate stories appear here as proposed items.</p></div>'}
     </div>`;
+  _renderStuckSection(rootEl);
+};
+
+// ── Stuck imports (F2) ───────────────────────────────────────────────────────
+// Rows the drain gave up on (status:'failed' after FAILED_AFTER consecutive
+// failures) — previously these retried every 5 minutes, invisible to the user.
+// The section is fetched async (the queue store is not part of app.data) and
+// rendered under the card. A seq guard drops stale fetches when a newer render
+// supersedes this one (approve/discard re-render mid-flight).
+let _stuckSeq = 0;
+const _FAILED_AFTER = window.triageQueue?.FAILED_AFTER ?? 3;
+const _renderStuckSection = async (rootEl) => {
+  const seq = ++_stuckSeq;
+  const cont = document.createElement('div');
+  cont.id = 'inbox-stuck-section';
+  rootEl.appendChild(cont);
+
+  let rows = [];
+  try { rows = await window.triageQueue.getStuckRows(); }
+  catch { /* DB not ready yet — leave the placeholder in place */ }
+  if (seq !== _stuckSeq) return; // superseded by a newer render
+
+  const cards = rows.map(r => `
+    <div class="inbox-card inbox-card--stuck" data-row-id="${esc(r.id)}">
+      <div class="inbox-card-line1">
+        <span class="inbox-card-name">${esc(r.title || '(untitled)')}</span>
+        <span class="inbox-actions">
+          <button class="btn-secondary btn-sm" onclick="window.inboxView.retryStuck('${esc(r.id)}')" title="Try the drain again">Retry</button>
+          <button class="btn-secondary btn-sm" onclick="window.inboxView.recreateStuck('${esc(r.id)}')" title="Create Admin/Unsorted epic+story directly (idempotent)">Recreate</button>
+          <button class="btn-secondary btn-sm" onclick="window.inboxView.dismissStuck('${esc(r.id)}')" title="Mark processed without writing">Dismiss</button>
+        </span>
+      </div>
+      <div class="inbox-card-line2">
+        <span class="inbox-breadcrumb">${r.failedAt ? 'failed ' + esc(r.failedAt.slice(0, 10)) : 'failed'} · ${r.failCount || _FAILED_AFTER} attempt(s)</span>
+      </div>
+      ${r.lastError ? `<div class="inbox-card-line3"><span class="inbox-tag inbox-tag--warn">${esc(r.lastError)}</span></div>` : ''}
+    </div>`).join('');
+
+  cont.innerHTML = rows.length
+    ? `<div class="inbox-stuck-title">⚠ ${rows.length} stuck import(s) — the drain stopped retrying after ${_FAILED_AFTER} failures</div>
+       <div class="inbox-list">${cards}</div>`
+    : '';
+};
+
+const retryStuck   = async (rowId) => {
+  const ok = await window.triageQueue.retryRow(rowId);
+  if (!ok) window.showToast?.('Retry failed', 'error');
+};
+const recreateStuck = async (rowId) => {
+  const ok = await window.triageQueue.recreateRow(rowId);
+  if (!ok) window.showToast?.('Recreate failed — is the Admin focus present?', 'error');
+};
+const dismissStuck = async (rowId) => {
+  const ok = await window.triageQueue.dismissRow(rowId);
+  if (!ok) window.showToast?.('Dismiss failed', 'error');
 };
 
 // PERF (A2): removing a single card after approve/discard is O(1) and instant.
@@ -243,6 +298,13 @@ NotificationRegistry.on('story',    _invalidateAdvisoryCache);
 NotificationRegistry.on('epic',     _invalidateAdvisoryCache);
 NotificationRegistry.on('subFocus', _invalidateAdvisoryCache);
 
+// F2: the drain emits 'importQueue' after any row state change — the stuck
+// section re-fetches and the badge stays fresh even though the queue store is
+// not part of app.data.
+NotificationRegistry.on('importQueue', () => {
+  if (document.getElementById('inbox')?.classList.contains('active')) renderInbox();
+});
+
 // Eager listener: badge always fresh; full re-render only when the view is visible.
 NotificationRegistry.on('story', () => {
   refreshBadge();
@@ -310,8 +372,8 @@ const confirmHistoryImport = async () => {
   if (data) await window.dataPortability.importHistoryManifest(data);
 };
 
-// @owns inboxView — review Inbox for proposed (candidate-imported) stories; sidebar badge; candidates file-pick → mergeImport; history import preview → importHistoryManifest.
-window.inboxView = { render: renderInbox, approve, discard, pickCandidatesFile, pickHistoryFile, closeHistoryPreview, confirmHistoryImport, refreshBadge };
+// @owns inboxView — review Inbox for proposed (candidate-imported) stories; sidebar badge; candidates file-pick → mergeImport; history import preview → importHistoryManifest; F2 Stuck-imports section (Retry/Recreate/Dismiss on failed queue rows).
+window.inboxView = { render: renderInbox, approve, discard, pickCandidatesFile, pickHistoryFile, closeHistoryPreview, confirmHistoryImport, refreshBadge, retryStuck, recreateStuck, dismissStuck };
 
 // Wire the delegated file-input listener once #inbox exists (A4). It is in the
 // static HTML, so this resolves on first run; the _candidatesWired guard makes
